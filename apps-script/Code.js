@@ -1,6 +1,7 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.10.0 — Höhenprofil über 2 km geglättet (gleitender Median) vor dem 10-m-Filter; Straßennamen gekürzt.
  * Version 0.9.1 — Zuordnungskorridor 10 km.
  * Version 0.9.0 — Zuordnung bis 5 km mit Querabstand, Straße und Raststätten-Kennung; Höhenfilter 10 m.
  * Version 0.8.0 — Savona als zwei Varianten (Simplon, Gr. St. Bernhard), Mont Blanc gestrichen; routenVorgabenUebernehmen().
@@ -14,7 +15,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.9.1';
+const VERSION = '0.10.0';
 
 const BLATT_PUNKTE = 'Ladepunkte';
 const BLATT_ROUTEN = 'Routen';
@@ -761,7 +762,7 @@ function strasseBeiKm_(strassen, km) {
   if (!strassen || strassen.length === 0) return '';
   let i = 0;
   while (i + 1 < strassen.length && strassen[i + 1][0] <= km) i++;
-  if (strassen[i][1]) return strassen[i][1];
+  if (strassen[i][1]) return kurzStrasse_(strassen[i][1]);
 
   let davor = i - 1, danach = i + 1;
   while (davor >= 0 && !strassen[davor][1]) davor--;
@@ -769,36 +770,91 @@ function strasseBeiKm_(strassen, km) {
   const abstandDavor = davor >= 0 ? km - strassen[davor + 1][0] : Infinity;
   const abstandDanach = danach < strassen.length ? strassen[danach][0] - km : Infinity;
   if (Math.min(abstandDavor, abstandDanach) > 3) return '';
-  return abstandDavor <= abstandDanach ? strassen[davor][1] : strassen[danach][1];
+  return kurzStrasse_(abstandDavor <= abstandDanach ? strassen[davor][1] : strassen[danach][1]);
 }
 
-// Höhenfilter: Anstieg/Gefälle zählt erst, wenn sich die Höhe seit dem letzten gezählten Punkt
-// um mindestens 10 m geändert hat. Ohne Filter summiert das Rauschen der Höhendaten sich auf
-// das Zwei- bis Dreifache (Rheinebene +965 statt +53 m). Ergebnis bleibt ein Näherungswert.
+/**
+ * Kurzform für die Anzeige: Autobahnnummer, wenn vorhanden („Autostrada dei Trafori, A26" → „A26"),
+ * sonst der erste Teil vor dem Komma („Kantonsstrasse, 9" → „Kantonsstrasse").
+ */
+function kurzStrasse_(name) {
+  const n = String(name || '').trim();
+  if (!n) return '';
+  const autobahn = n.match(/(?:^|[\s,])(A ?\d{1,3})(?=$|[\s,])/);
+  if (autobahn) return autobahn[1];
+  return n.split(',')[0].trim();
+}
+
+// Höhenmeter sind ein Näherungswert zur Einschätzung der Reichweite. Die Höhendaten rauschen
+// stark, in engen Tälern (Gondoschlucht, Apennin) um mehr als 50 m. Deshalb zweistufig:
+//  1. Profil im 100-m-Raster über 2 km mit gleitendem Median glätten (entfernt Ausreißer an Talwänden),
+//  2. Anstieg/Gefälle erst ab 10 m Änderung seit dem letzten gezählten Punkt zählen.
+// Geprüft am 15.09.2026: Simplon-Route 3225 m statt 9180 m ungefiltert, Passhöhe bleibt erhalten.
 const HOEHEN_SCHWELLE_M = 10;
+const GLAETTUNG_FENSTER_KM = 2;
+const GLAETTUNG_RASTER_KM = 0.1;
 // Bei jeder Änderung an Rechnung oder Linienformat erhöhen — erzwingt Neuberechnung der Routen.
-const LINIEN_FORMAT = 2;
+const LINIEN_FORMAT = 3;
 
 /**
- * [lon, lat, höhe] in voller Auflösung → [lat, lon, km, anstieg_hin, anstieg_rueck, höhe].
+ * [lon, lat, höhe] in voller Auflösung → [lat, lon, km, anstieg_hin, anstieg_rueck, höhe_geglättet].
  * Der Anstieg in Rückrichtung ist das kumulierte Gefälle in Hinrichtung.
  */
 function kumuliere_(koordinaten) {
+  const n = koordinaten.length;
+  const kms = new Array(n);
+  let km = 0;
+  for (let i = 0; i < n; i++) {
+    if (i > 0) km += haversine_(koordinaten[i - 1][1], koordinaten[i - 1][0], koordinaten[i][1], koordinaten[i][0]);
+    kms[i] = km;
+  }
+  const glatt = glaetteHoehen_(kms, koordinaten.map(function (p) { return p[2]; }));
+
   const erg = [];
-  let km = 0, auf = 0, ab = 0;
-  let bezug = koordinaten.length > 0 ? koordinaten[0][2] : 0;
-  for (let i = 0; i < koordinaten.length; i++) {
-    const p = koordinaten[i];
-    if (i > 0) {
-      const v = koordinaten[i - 1];
-      km += haversine_(v[1], v[0], p[1], p[0]);
-      const d = p[2] - bezug;
-      if (d >= HOEHEN_SCHWELLE_M) { auf += d; bezug = p[2]; }
-      else if (-d >= HOEHEN_SCHWELLE_M) { ab -= d; bezug = p[2]; }
-    }
-    erg.push([p[1], p[0], km, auf, ab, p[2]]);
+  let auf = 0, ab = 0;
+  let bezug = n > 0 ? glatt[0] : 0;
+  for (let i = 0; i < n; i++) {
+    const d = glatt[i] - bezug;
+    if (d >= HOEHEN_SCHWELLE_M) { auf += d; bezug = glatt[i]; }
+    else if (-d >= HOEHEN_SCHWELLE_M) { ab -= d; bezug = glatt[i]; }
+    erg.push([koordinaten[i][1], koordinaten[i][0], kms[i], auf, ab, glatt[i]]);
   }
   return erg;
+}
+
+/**
+ * Gleitender Median über GLAETTUNG_FENSTER_KM. Wegen der ungleichmäßigen Punktdichte
+ * (dicht in Kurven, dünn auf Geraden) wird zuerst auf ein gleichmäßiges Raster interpoliert
+ * und das Ergebnis danach wieder auf die Originalpunkte übertragen.
+ */
+function glaetteHoehen_(kms, hoehen) {
+  const n = hoehen.length;
+  const laenge = n > 0 ? kms[n - 1] : 0;
+  if (n < 3 || laenge <= 0) return hoehen.slice();
+
+  const schritte = Math.max(1, Math.round(laenge / GLAETTUNG_RASTER_KM));
+  const raster = new Array(schritte + 1);
+  let j = 0;
+  for (let s = 0; s <= schritte; s++) {
+    const k = laenge * s / schritte;
+    while (j + 1 < n - 1 && kms[j + 1] < k) j++;
+    const spann = kms[j + 1] - kms[j];
+    const t = spann > 0 ? Math.max(0, Math.min(1, (k - kms[j]) / spann)) : 0;
+    raster[s] = hoehen[j] + t * (hoehen[j + 1] - hoehen[j]);
+  }
+
+  const radius = Math.max(1, Math.round(GLAETTUNG_FENSTER_KM / 2 / (laenge / schritte)));
+  const median = raster.map(function (_, s) {
+    const fenster = raster.slice(Math.max(0, s - radius), s + radius + 1).sort(function (a, b) { return a - b; });
+    return fenster[Math.floor(fenster.length / 2)];
+  });
+
+  return kms.map(function (k) {
+    const pos = k / laenge * schritte;
+    const s0 = Math.min(schritte, Math.floor(pos));
+    const s1 = Math.min(schritte, s0 + 1);
+    return median[s0] + (pos - s0) * (median[s1] - median[s0]);
+  });
 }
 
 /**

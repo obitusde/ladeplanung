@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const quelle = fs.readFileSync(path.join(__dirname, '..', 'apps-script', 'Code.js'), 'utf8');
-const gs = new Function(quelle + '; return { haversine_, kumuliere_, duenneAus_, koordinateAusEingabe_, formatiereDauer_, projiziere_, baueExport_, strassenAbschnitte_, strasseBeiKm_, istRaststaette_ };')();
+const gs = new Function(quelle + '; return { haversine_, kumuliere_, duenneAus_, koordinateAusEingabe_, formatiereDauer_, projiziere_, baueExport_, strassenAbschnitte_, strasseBeiKm_, istRaststaette_, kurzStrasse_ };')();
 
 let fehler = 0;
 const pruefe = (bedingung, text) => { if (!bedingung) { fehler++; console.log('FEHLER ' + text); } };
@@ -14,20 +14,36 @@ const nah = (a, b, tol) => Math.abs(a - b) <= tol;
 pruefe(nah(gs.haversine_(0, 0, 0, 1), 111.1951, 0.001), 'Haversine 1° am Äquator: ' + gs.haversine_(0, 0, 0, 1));
 pruefe(nah(gs.haversine_(46.5043, 6.4913, 46.5043, 6.4913), 0, 1e-9), 'Haversine Nullabstand');
 
-// Kumulierung: rauf 50, runter 30, rauf 10 → hin 60, rück 30
+// Kumulierung: Grundform. Höhen werden über 2 km geglättet, daher hier nur Verhalten statt exakter Werte.
 const k = gs.kumuliere_([[6.0, 46.0, 400], [6.01, 46.0, 450], [6.02, 46.0, 420], [6.03, 46.0, 430]]);
-const letzter = k[k.length - 1];
-pruefe(letzter[3] === 60 && letzter[4] === 30, 'Anstieg hin/rück: ' + letzter[3] + '/' + letzter[4]);
 pruefe(k[0][2] === 0 && k[0][3] === 0 && k[0][4] === 0, 'Erster Punkt bei 0');
 pruefe(k[0][0] === 46.0 && k[0][1] === 6.0, 'Reihenfolge [lat, lon]');
+pruefe(nah(k[3][2], 3 * 0.01 * 111.1951 * Math.cos(46 * Math.PI / 180), 0.01), 'km kumuliert: ' + k[3][2]);
 
-// Höhenfilter: Rauschen von ±4 m zählt nicht, echter Anstieg über 10 m schon
+// Pass: 20 km je 1000 m rauf und runter, 50 m Auflösung → Anstieg ≈ Höhenunterschied
+const pass = [];
+for (let i = 0; i <= 800; i++) { const km = i * 0.05; pass.push([6 + km / 77.3, 46, 400 + 1000 * (1 - Math.abs(km - 20) / 20)]); }
+const kp = gs.kumuliere_(pass);
+const endePass = kp[kp.length - 1];
+pruefe(endePass[3] > 900 && endePass[3] <= 1000 && endePass[4] > 900 && endePass[4] <= 1000, 'Pass 1000 m: Anstieg/Gefälle ' + Math.round(endePass[3]) + '/' + Math.round(endePass[4]));
+pruefe(Math.max(...kp.map(p => p[5])) > 1350, 'Scheitel bleibt erhalten: ' + Math.round(Math.max(...kp.map(p => p[5]))));
+
+// Rauschen ±4 m auf flacher Strecke zählt nicht
 const rauschen = [];
 for (let i = 0; i <= 200; i++) rauschen.push([6 + i * 0.001, 46, 400 + (i % 2 ? 4 : -4)]);
 const kr = gs.kumuliere_(rauschen);
 pruefe(kr[kr.length - 1][3] === 0 && kr[kr.length - 1][4] === 0, 'Rauschen ±4 m ergibt keinen Anstieg: ' + kr[kr.length - 1][3] + '/' + kr[kr.length - 1][4]);
-const kleineWelle = gs.kumuliere_([[6, 46, 400], [6.001, 46, 406], [6.002, 46, 412], [6.003, 46, 409]]);
-pruefe(kleineWelle[3][3] === 12 && kleineWelle[3][4] === 0, 'Anstieg zählt ab 10 m, 3 m Rückgang nicht: ' + kleineWelle[3][3] + '/' + kleineWelle[3][4]);
+
+// Ausreißer an Talwänden: flach, alle 1 km ein Sprung um +80 m über 100 m → fast kein Anstieg
+const talwand = [];
+for (let i = 0; i <= 300; i++) talwand.push([6 + i * 0.0013, 46, 400 + (i % 10 === 5 ? 80 : 0)]);
+const kt = gs.kumuliere_(talwand);
+pruefe(kt[kt.length - 1][3] < 20, 'Talwand-Ausreißer werden geglättet: Anstieg ' + Math.round(kt[kt.length - 1][3]));
+
+// Straßennamen kürzen
+pruefe(gs.kurzStrasse_('Autostrada dei Trafori, A26') === 'A26', 'Autobahnnummer aus langem Namen');
+pruefe(gs.kurzStrasse_('A 5') === 'A 5' && gs.kurzStrasse_('Route du Grand-Saint-Bernard, N21, 21') === 'Route du Grand-Saint-Bernard', 'Kurzformen');
+pruefe(gs.kurzStrasse_('Kantonsstrasse, 9') === 'Kantonsstrasse' && gs.kurzStrasse_('') === '', 'erster Teil vor Komma / leer');
 
 // Straßenabschnitte aus ORS-Schritten
 const vollKurz = [[46, 6, 0], [46, 6.1, 5], [46, 6.2, 10], [46, 6.3, 15], [46, 6.4, 20]];
@@ -57,10 +73,11 @@ pruefe(duenn.every(p => p.length === 5), 'Stützpunkt hat 5 Werte');
 
 // Ausdünnung: steile Rampe → Höhenkriterium hält mehr Punkte als 250-m-Kriterium allein
 const steil = [];
-for (let i = 0; i <= 100; i++) steil.push([6.0 + i * 0.00013, 46.0, 400 + i * 2]); // 1 km, 200 m Anstieg
-const duennSteil = gs.duenneAus_(gs.kumuliere_(steil));
-pruefe(duennSteil.length >= 18, 'Höhenkriterium greift: ' + duennSteil.length + ' Punkte');
-pruefe(duennSteil[duennSteil.length - 1][3] === 200, 'Anstieg bleibt nach Ausdünnung exakt: ' + duennSteil[duennSteil.length - 1][3]);
+for (let i = 0; i <= 1000; i++) steil.push([6.0 + i * 0.00013, 46.0, 400 + i * 1]); // 10 km, 1000 m Anstieg
+const vollSteil = gs.kumuliere_(steil);
+const duennSteil = gs.duenneAus_(vollSteil);
+pruefe(duennSteil.length > 60, 'Höhenkriterium greift: ' + duennSteil.length + ' Punkte (nur 250 m wären ~40)');
+pruefe(duennSteil[duennSteil.length - 1][3] === Math.round(vollSteil[vollSteil.length - 1][3]), 'Anstieg bleibt nach Ausdünnung gleich: ' + duennSteil[duennSteil.length - 1][3]);
 
 // Rundung
 const r = gs.duenneAus_([[46.123456789, 6.987654321, 0, 0, 0, 400], [46.2, 7.0, 12.3456, 10.6, 3.4, 410]]);
