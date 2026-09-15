@@ -1,6 +1,7 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.5.0 — Etappe 6: exportJson() mit Zuordnung und GitHub-Upload.
  * Version 0.4.0 — Etappe 4/5: berechneRouten() mit Kumulierung, Ausdünnung, Rundung.
  * Version 0.3.0 — Etappe 3: aufloeseLinks().
  * Version 0.2.0 — Etappe 2: setup() und Menü.
@@ -8,7 +9,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.4.0';
+const VERSION = '0.5.0';
 
 const BLATT_PUNKTE = 'Ladepunkte';
 const BLATT_ROUTEN = 'Routen';
@@ -40,6 +41,7 @@ function onOpen() {
     .addItem('Links auflösen', 'aufloeseLinks')
     .addItem('Routen berechnen (geänderte)', 'berechneRouten')
     .addItem('Routen neu berechnen (alle)', 'berechneRoutenNeu')
+    .addItem('Export nach GitHub', 'exportJson')
     .addSeparator()
     .addSubMenu(SpreadsheetApp.getUi().createMenu('Zugänge')
       .addItem('ORS-Schlüssel hinterlegen', 'orsSchluesselHinterlegen')
@@ -561,6 +563,152 @@ function duenneAus_(voll) {
   return behalten.map(function (p) {
     return [runde_(p[0], 5), runde_(p[1], 5), runde_(p[2], 2), Math.round(p[3]), Math.round(p[4])];
   });
+}
+
+// ---------------------------------------------------------------------------
+// exportJson() — ordnet Punkte den Routen zu (Querabstand ≤ 2 km), baut
+// routes.json und lädt sie ins Repo. Reine Rechenarbeit, kein Routing-Aufruf.
+// ---------------------------------------------------------------------------
+
+const ZUORDNUNG_MAX_KM = 2;
+const STATUS_OHNE_ROUTE = 'keiner Route zugeordnet (> 2 km)';
+
+function exportJson() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActive();
+  const routenBlatt = ss.getSheetByName(BLATT_ROUTEN);
+  const punkteBlatt = ss.getSheetByName(BLATT_PUNKTE);
+  if (!routenBlatt || !punkteBlatt) {
+    ui.alert('Export', 'Blätter fehlen — zuerst Setup ausführen.', ui.ButtonSet.OK);
+    return;
+  }
+  const meldungen = [];
+
+  try {
+    // Routen: Linien aus dem Repo, Name aus dem Sheet.
+    const spR = spaltenIndex_(routenBlatt);
+    const routen = [];
+    if (routenBlatt.getLastRow() >= 2) {
+      routenBlatt.getRange(2, 1, routenBlatt.getLastRow() - 1, routenBlatt.getLastColumn()).getValues().forEach(function (z) {
+        const id = String(z[spR.id - 1]).trim();
+        if (!id) return;
+        const text = githubLies_(LINIEN_ORDNER + '/' + id + '.json');
+        if (text === null) { meldungen.push(id + ': noch nicht berechnet — übersprungen'); return; }
+        const datei = JSON.parse(text);
+        const eingabe = [spR.Start, spR.Via, spR.Ziel].map(function (s) { return String(z[s - 1]).trim(); }).join('|');
+        if (datei.eingabe !== eingabe) meldungen.push(id + ': Start/Via/Ziel geändert, Linie veraltet — bitte Routen berechnen');
+        routen.push({ id: id, name: String(z[spR.Name - 1]).trim() || datei.name, linie: datei.linie });
+      });
+    }
+    if (routen.length === 0) throw new Error('keine berechnete Route vorhanden');
+
+    // Punkte: alle Zeilen mit Koordinaten.
+    const spP = spaltenIndex_(punkteBlatt);
+    const punkte = [];
+    const statusZeilen = [];
+    if (punkteBlatt.getLastRow() >= 2) {
+      punkteBlatt.getRange(2, 1, punkteBlatt.getLastRow() - 1, punkteBlatt.getLastColumn()).getValues().forEach(function (z, i) {
+        const feld = function (name) { return z[spP[name] - 1]; };
+        if (String(feld('id')).trim() === '' || feld('Lat') === '' || feld('Lon') === '') return;
+        punkte.push({
+          id: String(feld('id')).trim(),
+          name: String(feld('Name')).trim(),
+          adresse: String(feld('Adresse')).trim(),
+          lat: Number(feld('Lat')),
+          lon: Number(feld('Lon')),
+          betreiber: String(feld('Betreiber')).trim(),
+          kw: zahlOderNull_(feld('kW')),
+          anzahl: zahlOderNull_(feld('Anzahl')),
+          richtung: RICHTUNGEN.indexOf(String(feld('Richtung')).trim()) !== -1 ? String(feld('Richtung')).trim() : 'beide',
+          favorit: String(feld('Favorit')).trim().toLowerCase() === 'ja',
+          notiz: String(feld('Notiz')).trim(),
+        });
+        statusZeilen.push({ zeile: i + 2, status: String(feld('Status')) });
+      });
+    }
+
+    const json = baueExport_(routen, punkte, new Date().toISOString());
+    githubSchreibe_('routes.json', JSON.stringify(json), 'routes.json exportiert (Apps Script v' + VERSION + ')');
+
+    // Status-Spalte: nicht zugeordnete Punkte kennzeichnen, erledigte Kennzeichnung entfernen.
+    const ohne = [];
+    json.punkte.forEach(function (p, k) {
+      const s = statusZeilen[k];
+      if (p.zuordnung.length === 0) {
+        ohne.push(p.id);
+        if (s.status === '') punkteBlatt.getRange(s.zeile, spP.Status).setValue(STATUS_OHNE_ROUTE);
+      } else if (s.status === STATUS_OHNE_ROUTE) {
+        punkteBlatt.getRange(s.zeile, spP.Status).setValue('');
+      }
+    });
+
+    json.routen.forEach(function (r) {
+      const n = json.punkte.filter(function (p) { return p.zuordnung.some(function (zu) { return zu.route === r.id; }); }).length;
+      meldungen.push(r.id + ': ' + n + ' Punkte, ' + r.laenge_km + ' km, Anstieg ' + r.hm_hin + ' m hin / ' + r.hm_rueck + ' m rück');
+    });
+    meldungen.push(json.punkte.length + ' Punkte exportiert' + (ohne.length ? ', ohne Route: ' + ohne.join(', ') : ''));
+  } catch (e) {
+    meldungen.push('Fehler: ' + e.message);
+  }
+
+  ui.alert('Export v' + VERSION, meldungen.join('\n'), ui.ButtonSet.OK);
+}
+
+/**
+ * Baut das routes.json-Objekt. Rein rechnerisch (testbar ohne Apps Script).
+ * routen: [{ id, name, linie }], punkte: [{ id, name, …, lat, lon }] ohne zuordnung.
+ */
+function baueExport_(routen, punkte, zeitstempel) {
+  const vorbereitet = routen.map(function (r) {
+    let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity, summe = 0;
+    r.linie.forEach(function (p) {
+      summe += p[0];
+      if (p[0] < minLat) minLat = p[0];
+      if (p[0] > maxLat) maxLat = p[0];
+      if (p[1] < minLon) minLon = p[1];
+      if (p[1] > maxLon) maxLon = p[1];
+    });
+    const lat0 = summe / r.linie.length;
+    const randLat = ZUORDNUNG_MAX_KM / 110.574;
+    const randLon = ZUORDNUNG_MAX_KM / (111.320 * Math.cos(lat0 * Math.PI / 180));
+    return {
+      r: r, lat0: lat0,
+      box: [minLat - randLat, maxLat + randLat, minLon - randLon, maxLon + randLon],
+    };
+  });
+
+  const punkteMitZuordnung = punkte.map(function (p) {
+    const zuordnung = [];
+    vorbereitet.forEach(function (v) {
+      if (p.lat < v.box[0] || p.lat > v.box[1] || p.lon < v.box[2] || p.lon > v.box[3]) return;
+      const pr = projiziere_(v.r.linie, p.lat, p.lon, v.lat0);
+      if (pr.q <= ZUORDNUNG_MAX_KM) {
+        zuordnung.push({ route: v.r.id, km: runde_(pr.km, 2), hm_hin: Math.round(pr.hm_hin), hm_rueck: Math.round(pr.hm_rueck) });
+      }
+    });
+    const kopie = {};
+    Object.keys(p).forEach(function (k) { kopie[k] = p[k]; });
+    kopie.lat = runde_(p.lat, 5);
+    kopie.lon = runde_(p.lon, 5);
+    kopie.zuordnung = zuordnung;
+    return kopie;
+  });
+
+  return {
+    version: '1.0',
+    erzeugt: zeitstempel,
+    routen: routen.map(function (r) {
+      const letzter = r.linie[r.linie.length - 1];
+      return { id: r.id, name: r.name, laenge_km: letzter[2], hm_hin: letzter[3], hm_rueck: letzter[4], linie: r.linie };
+    }),
+    punkte: punkteMitZuordnung,
+  };
+}
+
+function zahlOderNull_(wert) {
+  if (wert === '' || wert === null) return null;
+  const n = Number(wert);
+  return isNaN(n) ? null : n;
 }
 
 // ---------------------------------------------------------------------------

@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const quelle = fs.readFileSync(path.join(__dirname, '..', 'apps-script', 'Code.js'), 'utf8');
-const gs = new Function(quelle + '; return { haversine_, kumuliere_, duenneAus_, koordinateAusEingabe_, formatiereDauer_, projiziere_ };')();
+const gs = new Function(quelle + '; return { haversine_, kumuliere_, duenneAus_, koordinateAusEingabe_, formatiereDauer_, projiziere_, baueExport_ };')();
 
 let fehler = 0;
 const pruefe = (bedingung, text) => { if (!bedingung) { fehler++; console.log('FEHLER ' + text); } };
@@ -62,6 +62,27 @@ const abseits = gs.projiziere_(linieOst, 46.02, 6.15); // ~2.2 km nördlich
 pruefe(nah(abseits.q, 0.02 * 110.574, 0.001) && nah(abseits.km, 11.6, 0.01), 'Querabstand nördlich: ' + JSON.stringify(abseits));
 const vorStart = gs.projiziere_(linieOst, 46.0, 5.9); // vor dem Start: t wird auf 0 geklemmt
 pruefe(vorStart.km === 0 && nah(vorStart.q, 0.1 * 111.320 * Math.cos(46 * Math.PI / 180), 0.001), 'Klemmung am Linienanfang: ' + JSON.stringify(vorStart));
+
+// Export: Zuordnung nur bis 2 km, Rundung, Punkt ohne Route bleibt mit leerer Zuordnung drin
+const exp = gs.baueExport_(
+  [{ id: 'test', name: 'Test', linie: linieOst }],
+  [
+    { id: 'p001', name: 'Auf der Linie', lat: 46.0000012, lon: 6.0512345, richtung: 'beide' },
+    { id: 'p002', name: '1,1 km nördlich', lat: 46.01, lon: 6.15, richtung: 'hin' },
+    { id: 'p003', name: '5,5 km nördlich', lat: 46.05, lon: 6.15, richtung: 'beide' },
+    { id: 'p004', name: 'weit weg', lat: 50.0, lon: 8.0, richtung: 'beide' },
+  ],
+  '2026-09-15T08:00:00Z'
+);
+pruefe(exp.version === '1.0' && exp.erzeugt === '2026-09-15T08:00:00Z', 'Kopf von routes.json');
+pruefe(exp.routen[0].laenge_km === 15.47 && exp.routen[0].hm_hin === 100 && exp.routen[0].hm_rueck === 20, 'Routen-Summen: ' + JSON.stringify(exp.routen[0]).slice(0, 80));
+pruefe(exp.punkte.length === 4, 'alle Punkte exportiert');
+pruefe(exp.punkte[0].zuordnung.length === 1 && exp.punkte[0].lat === 46 && exp.punkte[0].lon === 6.05123, 'Punkt auf Linie zugeordnet und gerundet: ' + JSON.stringify(exp.punkte[0]));
+pruefe(exp.punkte[1].zuordnung.length === 1 && exp.punkte[1].richtung === 'hin', '1,1 km abseits zugeordnet');
+pruefe(exp.punkte[2].zuordnung.length === 0, '5,5 km abseits nicht zugeordnet');
+pruefe(exp.punkte[3].zuordnung.length === 0, 'außerhalb des Rechtecks nicht zugeordnet');
+const zu = exp.punkte[0].zuordnung[0];
+pruefe(zu.route === 'test' && zu.km === 3.96 && zu.hm_hin === 26 && zu.hm_rueck === 5, 'Zuordnungswerte: ' + JSON.stringify(zu));
 
 console.log(fehler === 0 ? 'Alle Prüfungen bestanden.' : fehler + ' Prüfungen fehlgeschlagen.');
 process.exit(fehler === 0 ? 0 : 1);
