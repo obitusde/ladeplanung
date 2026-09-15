@@ -26,6 +26,9 @@
         antwort(this, { ok: false, naehe: { id: 'p011', name: 'EnBW Ladestation Appenweier', abstand_m: 240 } }); },
       speichereFahrt(d) { __aufrufe.push(['speichereFahrt', d]); antwort(this, { ok: true, warnung: '',
         meldung: 'Fahrt gespeichert: 212 km, Ø 12 °C, 118 km/h (Bordcomputer).\nErwartet waren 31 %, tatsächlich 27 % (-4).\n\nVerbrauchsmodell: Gesamtfaktor aus 1 Fahrt(en).\nKorrektur: gesamt 1.09, Fahrt 1, Höhe 1, Heizung 1\nØ Abweichung: 0 % Akku je Fahrt.' }); },
+      speichereVergleich(d) { __aufrufe.push(['speichereVergleich', d]); antwort(this, { ok: true, warnung: '',
+        meldung: d.quelle + ': 35 % Akku für 205 km.', kalibrierung: 'Verbrauchsmodell: Gesamtfaktor aus 1 Fahrt(en).\nABRP: 1 × Ø 0 % Abweichung (Modell im Schnitt +0 %)',
+        zeile: { von: d.von, nach: d.nach, km: 205, referenz: d.start_soc - d.ende_soc, modell: 38, quelle: d.quelle } }); },
       wartungAusfuehren(aktion) { __aufrufe.push(['wartungAusfuehren', aktion]);
         const texte = { bereinigen_vorschau: 'Punkte bereinigen v0.12.0 — Vorschau, nichts geändert\nZusammenführen: p032 → p010 (EnBW Ladestation Haiger)', routen: 'Routen berechnen v0.12.0\nneuenrade: unverändert, übersprungen\n\nExport v0.12.0\nneuenrade: 26 Punkte, 716.36 km' };
         antwort(this, { ok: true, text: texte[aktion] || 'Export v0.12.0\n41 Punkte exportiert', status: Object.assign({}, window.__status, { routen: window.__status.routen.map(x => Object.assign({}, x, { aktuell: true, stand: '15.09.2026 11:40' })) }) }); },

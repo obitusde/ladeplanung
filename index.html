@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.14.0 — Knopf „Vergleichswert eintragen (ABRP / My CUPRA)" in den Details.
   Version 0.13.0 — Akku-Prognose je Station (Bedarf, Ankunft, rot wenn unter Reserve); optional Losfahren/Angekommen
                    mit Kalibrierung; Einstellungen Geschwindigkeit, Zusatzgewicht, Temperatur, Reserve.
                    Rote Schrift auf Christofs Wunsch (15.09.2026) — bewusste Abweichung vom Nicht-Ziel „Farblogik" im Brief.
@@ -203,6 +204,7 @@
       <a id="d-ort" class="knopf" target="_blank" rel="noopener">In Google Maps ansehen</a>
       <a id="d-abrp" class="knopf" target="_blank" rel="noopener">ABRP</a>
       <a id="d-bearbeiten" class="knopf" target="_blank" rel="noopener">Bearbeiten</a>
+      <a id="d-vergleich" class="knopf" target="_blank" rel="noopener">Vergleichswert eintragen (ABRP / My CUPRA)</a>
       <button id="d-sim" class="knopf" type="button" hidden>Simulierte Position hierher</button>
     </div>
   </section>
@@ -236,6 +238,7 @@
     <p>Der Akkubedarf bis zu jeder Station wird aus Strecke, Höhenmetern, deiner <b>Reisegeschwindigkeit</b>, dem <b>Zusatzgewicht</b> (beides unter ⚙) und der <b>Außentemperatur</b> geschätzt. Die Temperatur ist der Durchschnitt aus jetzt und in drei Stunden am Standort – oder dein eigener Wert unter ⚙.</p>
     <p>Die Geschwindigkeit hat den größten Einfluss: 130 statt 110 km/h brauchen rund ein Viertel mehr. 1000 Höhenmeter bergauf kosten etwa 11 % Akku, bergab kommt gut ein Drittel davon zurück.</p>
     <p><b>Optional:</b> Tippst du beim Losfahren den Akkustand ein, zeigt die Liste den <b>Akku bei Ankunft</b>. „Angekommen" öffnet ein kurzes Formular: echter Akkustand rein, fertig – daraus lernt das Modell und wird mit jeder Fahrt genauer. Ohne diese Eingaben siehst du nur den Bedarf.</p>
+    <p><b>Vergleichswerte:</b> In den Details einer Station „Vergleichswert eintragen" – Strecke in ABRP oder My CUPRA planen und die beiden Akkuwerte abschreiben. Das hilft dem Modell schon vor der ersten Fahrt; echte Fahrten zählen aber mehr.</p>
     <p id="info-modell" class="klein-hinweis"></p>
 
     <h3>Richtung</h3>
@@ -310,7 +313,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.13.0';
+    const APP_VERSION = '0.14.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -773,6 +776,8 @@
       $('d-maps').href = mapsUrl(p);
       $('d-ort').href = ortUrl(p);
       $('d-bearbeiten').href = FORMULAR_URL + '?id=' + encodeURIComponent(p.id);
+      $('d-vergleich').href = FORMULAR_URL + '?seite=vergleich&route=' + encodeURIComponent(zustand.route) +
+        '&richtung=' + zustand.richtung + '&nach=' + encodeURIComponent(p.id);
       $('d-abrp').href = abrpUrl(p, aktuellePosition());
       $('d-sim').hidden = !zustand.sim.aktiv;
 

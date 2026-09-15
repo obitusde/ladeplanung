@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<!--
+  Ladeplanung — Vergleichswert aus ABRP oder My CUPRA eintragen (Strecke Station X → Y, Akku Start/Ankunft).
+  Wird von doGet() mit ?seite=vergleich[&route=…&richtung=…&nach=p023] ausgeliefert. Version 0.14.0
+-->
+<html lang="de">
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script>window.__status = {"modell":{"gespeichert":3,"kalibrierung":{"fahrten":3,"abweichung_prozent":2.4,"methode":"Gesamtfaktor aus 3 Fahrt(en)"}},"punkte":41,"ohneKoordinaten":1,"nichtAufloesbar":0,"ohneRoute":["p019 EnBW Ladestation Lörrach"],"letzterExport":"2026-09-15T09:35:21.521Z","routen":[{"id":"neuenrade","name":"Morges – Neuenrade","laenge":"716.4","stand":"15.09.2026 09:34","aktuell":false},{"id":"savona_simplon","name":"Morges – Savona (Simplon)","laenge":"478.2","stand":"Fehler: ORS HTTP 403: Quota exceeded","aktuell":false},{"id":"ingolstadt","name":"Morges – Ingolstadt","laenge":"620.7","stand":"15.09.2026 09:34","aktuell":true}]};</script>
+  <script>
+  window.__aufrufe = [];
+  const antwort = (r, wert) => setTimeout(() => r.ok(wert), 200);
+  window.google = { script: { get run() {
+    const r = { ok: null, fehler: null,
+      withSuccessHandler(f) { this.ok = f; return this; },
+      withFailureHandler(f) { this.fehler = f; return this; },
+      speicherePunkt(d) { __aufrufe.push(['speicherePunkt', d]); antwort(this, { ok: true, meldung: 'Gespeichert: Richtung, Notiz.', warnung: '',
+        punkt: { id: 'p023', name: 'EnBW Ladestation Lorsch', zuordnung: [{ route: 'Morges – Neuenrade', km: 468, quer_km: 4.2, strasse: 'A 5', raststaette: false }] } }); },
+      loeschePunkt(id) { __aufrufe.push(['loeschePunkt', id]); antwort(this, { ok: true, meldung: 'Gelöscht: p023 EnBW Ladestation Lorsch.\nDie Zeile liegt im Blatt „Gelöscht" und kann von dort zurückkopiert werden.', warnung: '' }); },
+      legePunktAn(d) { __aufrufe.push(['legePunktAn', d]);
+        if (d.trotzdem) return antwort(this, { ok: true, meldung: 'Angelegt als p048: EnBW Ladestation Appenweier.', warnung: '', punkt: { id: 'p048', name: 'EnBW Ladestation Appenweier', zuordnung: [{ route: 'Morges – Neuenrade', km: 330, quer_km: 0.1, strasse: 'A 5', raststaette: true }] } });
+        if (/doppelt/.test(d.link)) return antwort(this, { ok: false, dublette: { id: 'p010', name: 'EnBW Ladestation Haiger', abstand_m: 12 } });
+        antwort(this, { ok: false, naehe: { id: 'p011', name: 'EnBW Ladestation Appenweier', abstand_m: 240 } }); },
+      speichereFahrt(d) { __aufrufe.push(['speichereFahrt', d]); antwort(this, { ok: true, warnung: '',
+        meldung: 'Fahrt gespeichert: 212 km, Ø 12 °C, 118 km/h (Bordcomputer).\nErwartet waren 31 %, tatsächlich 27 % (-4).\n\nVerbrauchsmodell: Gesamtfaktor aus 1 Fahrt(en).\nKorrektur: gesamt 1.09, Fahrt 1, Höhe 1, Heizung 1\nØ Abweichung: 0 % Akku je Fahrt.' }); },
+      speichereVergleich(d) { __aufrufe.push(['speichereVergleich', d]); antwort(this, { ok: true, warnung: '',
+        meldung: d.quelle + ': 35 % Akku für 205 km.', kalibrierung: 'Verbrauchsmodell: Gesamtfaktor aus 1 Fahrt(en).\nABRP: 1 × Ø 0 % Abweichung (Modell im Schnitt +0 %)',
+        zeile: { von: d.von, nach: d.nach, km: 205, referenz: d.start_soc - d.ende_soc, modell: 38, quelle: d.quelle } }); },
+      wartungAusfuehren(aktion) { __aufrufe.push(['wartungAusfuehren', aktion]);
+        const texte = { bereinigen_vorschau: 'Punkte bereinigen v0.12.0 — Vorschau, nichts geändert\nZusammenführen: p032 → p010 (EnBW Ladestation Haiger)', routen: 'Routen berechnen v0.12.0\nneuenrade: unverändert, übersprungen\n\nExport v0.12.0\nneuenrade: 26 Punkte, 716.36 km' };
+        antwort(this, { ok: true, text: texte[aktion] || 'Export v0.12.0\n41 Punkte exportiert', status: Object.assign({}, window.__status, { routen: window.__status.routen.map(x => Object.assign({}, x, { aktuell: true, stand: '15.09.2026 11:40' })) }) }); },
+    };
+    return r;
+  } } };
+</script>
+  <meta charset="utf-8">
+  <style>
+    :root {
+      --grund: #ffffff; --flaeche: #f2f2f2; --text: #000000; --leise: #3d3d3d; --linie: #c8c8c8;
+      --akzent: #9a4a00; --akzent-text: #ffffff; --fehler: #7a0000; --fehler-grund: #ffe3e3; --ok-grund: #e4f4e4;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --grund: #000000; --flaeche: #161616; --text: #ffffff; --leise: #c4c4c4; --linie: #3a3a3a;
+        --akzent: #ffac4a; --akzent-text: #000000; --fehler: #ffc9c9; --fehler-grund: #3d0b0b; --ok-grund: #0f2a12;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--grund); color: var(--text); font: 18px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 560px; margin: 0 auto; padding: 16px; }
+    h1 { font-size: 26px; margin: 4px 0 6px; }
+    h2 { font-size: 20px; margin: 22px 0 8px; }
+    .leise { color: var(--leise); margin: 0 0 12px; overflow-wrap: anywhere; }
+    label { display: grid; gap: 4px; margin-bottom: 14px; font-weight: 600; }
+    label small { font-weight: 400; color: var(--leise); }
+    input, select, textarea {
+      font: inherit; color: inherit; background: var(--flaeche);
+      border: 2px solid var(--linie); border-radius: 10px; padding: 10px; width: 100%; min-height: 50px;
+    }
+    .zwei { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+    .quelle { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+    .quelle button {
+      min-height: 60px; border-radius: 12px; border: 2px solid var(--linie); background: var(--flaeche);
+      color: var(--text); font: inherit; font-weight: 800; font-size: 20px; cursor: pointer;
+    }
+    .quelle button[aria-pressed="true"] { background: var(--akzent); border-color: var(--akzent); color: var(--akzent-text); }
+    .knopf {
+      display: flex; align-items: center; justify-content: center; width: 100%; min-height: 56px; margin-top: 10px;
+      border-radius: 10px; border: 2px solid var(--linie); background: var(--flaeche); color: var(--text);
+      font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; text-align: center; padding: 0 12px;
+    }
+    .knopf.haupt { background: var(--akzent); border-color: var(--akzent); color: var(--akzent-text); }
+    .knopf:disabled { opacity: .6; }
+    .hinweis { padding: 12px; border-radius: 10px; margin: 12px 0; white-space: pre-line; overflow-wrap: anywhere; }
+    .hinweis.fehler { background: var(--fehler-grund); color: var(--fehler); font-weight: 600; }
+    .hinweis.ok { background: var(--ok-grund); }
+    ul.eingetragen { list-style: none; padding: 0; margin: 0; }
+    ul.eingetragen li { padding: 8px 0; border-bottom: 1px solid var(--linie); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Vergleichswert eintragen</h1>
+    <p class="leise">Strecke in ABRP oder My CUPRA von einer Station zur nächsten planen und die beiden Akkuwerte abschreiben. Kilometer und Höhenmeter rechnet das Script selbst.</p>
+
+    <div class="quelle" role="group" aria-label="Quelle">
+      <button type="button" data-quelle="ABRP" aria-pressed="false">ABRP</button>
+      <button type="button" data-quelle="My CUPRA" aria-pressed="false">My CUPRA</button>
+    </div>
+
+    <form id="form" novalidate>
+      <div class="zwei">
+        <label>Route <select name="route"></select></label>
+        <label>Richtung <select name="richtung"><option value="hin">Hinfahrt</option><option value="rueck">Rückfahrt</option></select></label>
+      </div>
+      <label>Von <select name="von"></select></label>
+      <label>Nach <select name="nach"></select></label>
+      <div class="zwei">
+        <label>Akku Start (%) <input name="start_soc" type="number" inputmode="numeric" min="0" max="100"></label>
+        <label>Akku Ankunft (%) <input name="ende_soc" type="number" inputmode="numeric" min="0" max="100"></label>
+      </div>
+      <div class="zwei">
+        <label>Fahrzeit laut App <small>optional, z. B. 2:10</small><input name="fahrzeit" inputmode="numeric" autocomplete="off" placeholder="h:mm"></label>
+        <label>Temperatur (°C) <small>optional, sonst Wetter heute</small><input name="temperatur" type="number" inputmode="decimal" min="-30" max="45"></label>
+      </div>
+      <div id="hinweis" class="hinweis" hidden></div>
+      <button id="senden" class="knopf haupt" type="submit">Speichern und weiter</button>
+    </form>
+
+    <section id="liste-bereich" hidden>
+      <h2>Eingetragen</h2>
+      <ul id="eingetragen" class="eingetragen"></ul>
+      <div id="kalibrierung" class="hinweis ok"></div>
+    </section>
+
+    <a id="zur-app" class="knopf" href="#">Fertig – zur App</a>
+    <p id="version" class="leise"></p>
+  </main>
+
+  <script>
+    'use strict';
+    const MODELL = {"routen":[{"id":"neuenrade","name":"Morges – Neuenrade","laenge_km":716.36,"stationen":[{"id":"p001","name":"AMAG Lausanne","km":8,"richtung":"beide","quer_km":4},{"id":"p005","name":"AMAG Rheinfelden","km":187,"richtung":"beide","quer_km":5},{"id":"p006","name":"AMAG Bern","km":110,"richtung":"beide","quer_km":0.5},{"id":"p007","name":"Amag Zuchwil","km":140,"richtung":"beide","quer_km":2.1},{"id":"p008","name":"AMAG Oftringen","km":165,"richtung":"beide","quer_km":7.6},{"id":"p010","name":"EnBW Haiger","km":626,"richtung":"beide","quer_km":0.2},{"id":"p011","name":"EnBW Appenweier","km":330,"richtung":"rueck","quer_km":0.1},{"id":"p012","name":"EnBW Mahlberg","km":297,"richtung":"rueck","quer_km":0.1},{"id":"p013","name":"EnBW Karlsruhe","km":393,"richtung":"beide","quer_km":0.2},{"id":"p014","name":"EnBW Karlsruhe","km":393,"richtung":"beide","quer_km":0.2},{"id":"p015","name":"EnBW Hüttenberg","km":579,"richtung":"beide","quer_km":0.8},{"id":"p016","name":"EnBW Freudenberg","km":649,"richtung":"rueck","quer_km":0.1},{"id":"p017","name":"EnBW Eschborn","km":526,"richtung":"beide","quer_km":0.9},{"id":"p018","name":"EnBW Walldorf","km":429,"richtung":"beide","quer_km":0.3},{"id":"p019","name":"EnBW Lörrach","km":206,"richtung":"beide","quer_km":6.6},{"id":"p022","name":"AMAG Crissier","km":8,"richtung":"beide","quer_km":0.2},{"id":"p023","name":"EnBW Lorsch","km":468,"richtung":"rueck","quer_km":4.2},{"id":"p024","name":"EnBW Bad Krozingen","km":252,"richtung":"beide","quer_km":3.5},{"id":"p025","name":"EnBW Riegel am Kaiserstuhl","km":280,"richtung":"beide","quer_km":0.9},{"id":"p026","name":"EnBW Ringsheim","km":291,"richtung":"beide","quer_km":0.4},{"id":"p027","name":"EnBW Rastatt","km":369,"richtung":"beide","quer_km":0.2},{"id":"p028","name":"EnBW Bensheim","km":472,"richtung":"beide","quer_km":0.4},{"id":"p029","name":"EnBW Büttelborn","km":498,"richtung":"rueck","quer_km":4.4},{"id":"p030","name":"EnBW Langgöns","km":571,"richtung":"beide","quer_km":2.1},{"id":"p031","name":"EnBW Ehringshausen","km":600,"richtung":"rueck","quer_km":0.1},{"id":"p033","name":"EnBW Siegen","km":648,"richtung":"hin","quer_km":0.1},{"id":"p036","name":"EnBW Appenweier","km":330,"richtung":"hin","quer_km":0.1},{"id":"p037","name":"EnBW Hockenheim","km":431,"richtung":"hin","quer_km":3.9},{"id":"p038","name":"EnBW Pfungstadt","km":486,"richtung":"hin","quer_km":3.5},{"id":"p039","name":"EnBW Sandhausen","km":435,"richtung":"hin","quer_km":0.1},{"id":"p040","name":"EnBW Mahlberg","km":297,"richtung":"hin","quer_km":0.1},{"id":"p041","name":"EnBW Weil am Rhein","km":205,"richtung":"hin","quer_km":0},{"id":"p042","name":"EnBW Bühl","km":355,"richtung":"hin","quer_km":0.1},{"id":"p043","name":"EnBW Herborn","km":611,"richtung":"hin","quer_km":0.1}]},{"id":"ingolstadt","name":"Morges – Ingolstadt","laenge_km":620.65,"stationen":[{"id":"p001","name":"AMAG Lausanne","km":8,"richtung":"beide","quer_km":4.1},{"id":"p002","name":"AMAG Baden Fislisbach","km":207,"richtung":"beide","quer_km":1.7},{"id":"p004","name":"AMAG Winterthur","km":247,"richtung":"beide","quer_km":0.1},{"id":"p006","name":"AMAG Bern","km":110,"richtung":"beide","quer_km":0.5},{"id":"p007","name":"Amag Zuchwil","km":140,"richtung":"beide","quer_km":2.2},{"id":"p008","name":"AMAG Oftringen","km":170,"richtung":"beide","quer_km":0.4},{"id":"p009","name":"Porsche Sales & Marketplace Winterthur","km":246,"richtung":"beide","quer_km":0.1},{"id":"p022","name":"AMAG Crissier","km":8,"richtung":"beide","quer_km":0.2},{"id":"p048","name":"EnBW Kißlegg","km":393,"richtung":"beide","quer_km":0.1},{"id":"p049","name":"EWE Go Lindau (Bodensee)","km":367,"richtung":"beide","quer_km":0.5}]},{"id":"savona_simplon","name":"Morges – Savona (Simplon)","laenge_km":478.22,"stationen":[{"id":"p001","name":"AMAG Lausanne","km":17,"richtung":"beide","quer_km":2.8},{"id":"p022","name":"AMAG Crissier","km":8,"richtung":"beide","quer_km":0.2},{"id":"p044","name":"Tesla Supercharger","km":236,"richtung":"beide","quer_km":0.1},{"id":"p045","name":"Tesla Supercharger","km":322,"richtung":"beide","quer_km":1},{"id":"p046","name":"Tesla Supercharger Steg-Hohtenn","km":143,"richtung":"beide","quer_km":0.4},{"id":"p047","name":"Tesla Supercharger Alessandria","km":386,"richtung":"beide","quer_km":1.7}]},{"id":"savona_bernhard","name":"Morges – Savona (Gr. St. Bernhard)","laenge_km":414.54,"stationen":[{"id":"p001","name":"AMAG Lausanne","km":17,"richtung":"beide","quer_km":2.8},{"id":"p022","name":"AMAG Crissier","km":8,"richtung":"beide","quer_km":0.2},{"id":"p047","name":"Tesla Supercharger Alessandria","km":322,"richtung":"beide","quer_km":1.7}]}],"vorwahl":{"route":"neuenrade","richtung":"hin","nach":""},"appUrl":"https://obitusde.github.io/ladeplanung/","formularUrl":"https://script.google.com/macros/s/TEST/exec","version":"0.12.0"};
+    const $ = id => document.getElementById(id);
+    const form = $('form');
+    const routen = MODELL.routen || [];
+    const vorwahl = MODELL.vorwahl || {};
+
+    $('zur-app').href = MODELL.appUrl;
+    $('version').textContent = 'Apps Script v' + MODELL.version;
+
+    const merke = (k, v) => { try { localStorage.setItem('ladeplanung.vergleich.' + k, v); } catch (e) { /* ohne Speicher */ } };
+    const erinnere = k => { try { return localStorage.getItem('ladeplanung.vergleich.' + k); } catch (e) { return null; } };
+
+    // Quelle: zwei große Knöpfe, zuletzt benutzte vorgewählt
+    let quelle = erinnere('quelle') || '';
+    function zeigeQuelle() {
+      document.querySelectorAll('.quelle button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.quelle === quelle)));
+    }
+    document.querySelectorAll('.quelle button').forEach(b => b.addEventListener('click', () => { quelle = b.dataset.quelle; merke('quelle', quelle); zeigeQuelle(); }));
+    zeigeQuelle();
+
+    // Route und Richtung
+    for (const r of routen) { const o = document.createElement('option'); o.value = r.id; o.textContent = r.name; form.route.append(o); }
+    form.route.value = routen.some(r => r.id === vorwahl.route) ? vorwahl.route : (erinnere('route') || (routen[0] && routen[0].id) || '');
+    if (!form.route.value && routen[0]) form.route.value = routen[0].id;
+    form.richtung.value = vorwahl.route ? vorwahl.richtung : (erinnere('richtung') || 'hin');
+
+    /** Orte in Fahrtreihenfolge: Routenanfang/-ende und die in dieser Richtung erreichbaren Stationen. */
+    function orte() {
+      const r = routen.find(x => x.id === form.route.value);
+      if (!r) return [];
+      const hin = form.richtung.value === 'hin';
+      const [anfang, ende] = r.name.split(/\s+[–-]\s+/);
+      const liste = r.stationen
+        .filter(s => s.richtung === 'beide' || s.richtung === form.richtung.value)
+        .sort((a, b) => hin ? a.km - b.km : b.km - a.km)
+        .map(s => ({ id: s.id, text: s.name + ' · km ' + s.km + (s.quer_km > 1 ? ' (' + String(s.quer_km).replace('.', ',') + ' km abseits)' : '') }));
+      const a = { id: 'anfang', text: (anfang || 'Anfang') + ' · km 0' };
+      const e = { id: 'ende', text: (ende || 'Ende') + ' · km ' + Math.round(r.laenge_km) };
+      return hin ? [a, ...liste, e] : [e, ...liste, a];
+    }
+
+    function fuelleOrte(vonWert, nachWert) {
+      const liste = orte();
+      for (const sel of [form.von, form.nach]) {
+        sel.replaceChildren();
+        for (const o of liste) { const opt = document.createElement('option'); opt.value = o.id; opt.textContent = o.text; sel.append(opt); }
+      }
+      const index = id => liste.findIndex(o => o.id === id);
+      let n = index(nachWert);
+      let v = index(vonWert);
+      if (n < 0) n = Math.min(1, liste.length - 1);
+      if (v < 0 || v >= n) v = Math.max(0, n - 1);
+      form.von.selectedIndex = v;
+      form.nach.selectedIndex = n;
+    }
+
+    form.route.addEventListener('change', () => { merke('route', form.route.value); fuelleOrte(); });
+    form.richtung.addEventListener('change', () => { merke('richtung', form.richtung.value); fuelleOrte(); });
+    fuelleOrte(null, vorwahl.nach);
+
+    function hinweis(text) { const h = $('hinweis'); h.textContent = text || ''; h.className = 'hinweis fehler'; h.hidden = !text; }
+
+    form.addEventListener('submit', ev => {
+      ev.preventDefault();
+      hinweis('');
+      if (!quelle) { hinweis('Bitte oben die Quelle wählen: ABRP oder My CUPRA.'); return; }
+      if (form.von.selectedIndex >= form.nach.selectedIndex) { hinweis('„Nach" muss in Fahrtrichtung hinter „Von" liegen.'); return; }
+      if (form.start_soc.value.trim() === '' || form.ende_soc.value.trim() === '') { hinweis('Bitte Akku Start und Akku Ankunft eintragen.'); return; }
+
+      const daten = {
+        quelle, route: form.route.value, richtung: form.richtung.value, von: form.von.value, nach: form.nach.value,
+        start_soc: form.start_soc.value, ende_soc: form.ende_soc.value, fahrzeit: form.fahrzeit.value, temperatur: form.temperatur.value,
+      };
+      $('senden').disabled = true;
+      $('senden').textContent = 'Speichere … (ca. 10 Sekunden)';
+
+      google.script.run
+        .withSuccessHandler(erg => {
+          $('senden').disabled = false;
+          $('senden').textContent = 'Speichern und weiter';
+          if (!erg || !erg.ok) { hinweis((erg && erg.fehler) || 'Unbekannter Fehler.'); return; }
+
+          const z = erg.zeile;
+          const li = document.createElement('li');
+          li.textContent = z.quelle + ': ' + z.von + ' → ' + z.nach + ' · ' + z.km + ' km · ' + z.referenz + ' % (Modell bisher ' + z.modell + ' %)';
+          $('eingetragen').prepend(li);
+          $('kalibrierung').textContent = erg.kalibrierung + (erg.warnung ? '\n' + erg.warnung : '');
+          $('liste-bereich').hidden = false;
+
+          // weiter: „Von" = bisheriges „Nach", „Nach" = nächster Ort
+          const naechsterVon = form.nach.value;
+          const liste = orte();
+          const i = liste.findIndex(o => o.id === naechsterVon);
+          fuelleOrte(naechsterVon, liste[Math.min(i + 1, liste.length - 1)].id);
+          form.start_soc.value = '';
+          form.ende_soc.value = '';
+          form.fahrzeit.value = '';
+          form.start_soc.focus();
+        })
+        .withFailureHandler(e => {
+          $('senden').disabled = false;
+          $('senden').textContent = 'Speichern und weiter';
+          hinweis('Fehler: ' + ((e && e.message) || e));
+        })
+        .speichereVergleich(daten);
+    });
+  </script>
+</body>
+</html>

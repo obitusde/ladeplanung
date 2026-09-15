@@ -87,6 +87,13 @@
     </div>
 
     <div class="karte">
+      <h3>Vergleichswerte aus ABRP / My CUPRA</h3>
+      <p><b>Wann:</b> wann immer du magst – z. B. zu Hause eine Strecke von Station zu Station planen und die beiden Akkuwerte abschreiben.</p>
+      <p class="leise">Zählt in der Kalibrierung weniger als echte Fahrten; unten im Status siehst du, wie gut das Modell zu jeder Quelle passt.</p>
+      <a id="vergleich-link" class="knopf haupt" href="#">Vergleichswert eintragen</a>
+    </div>
+
+    <div class="karte">
       <h3>Verbrauchsmodell neu kalibrieren</h3>
       <p><b>Wann:</b> nachdem du im Blatt „Fahrten" eine Zeile gelöscht oder bei „verwenden" <i>nein</i> eingetragen hast, z. B. bei einer Fahrt mit Tippfehler oder unterwegs geladen.</p>
       <p class="leise">Nach „Angekommen" in der App passiert das automatisch.</p>
@@ -115,6 +122,7 @@
     const $ = id => document.getElementById(id);
 
     $('zur-app').href = MODELL.appUrl;
+    $('vergleich-link').href = MODELL.formularUrl + '?seite=vergleich';
     $('version').textContent = 'Apps Script v' + MODELL.version;
 
     function datum(iso) {
@@ -139,7 +147,13 @@
       if (s.modell) {
         const k = s.modell.kalibrierung;
         zeile('Verbrauchsmodell: ' + (k && k.fahrten ? k.methode + ', Ø Abweichung ' + String(k.abweichung_prozent).replace('.', ',') + ' % Akku' : 'Physik-Startwerte, noch keine Fahrt kalibriert') +
-          ' · ' + s.modell.gespeichert + ' Fahrt(en) im Sheet', 'info');
+          ' · ' + s.modell.gespeichert + ' Zeile(n) im Blatt „Fahrten"', 'info');
+        const quellen = (k && k.quellen) || {};
+        for (const name of Object.keys(quellen)) {
+          const q = quellen[name];
+          zeile('Modell gegen ' + name + ': ' + q.n + ' Wert(e), Ø ' + String(q.abweichung).replace('.', ',') + ' % Abweichung, Modell im Schnitt ' +
+            (q.tendenz >= 0 ? '+' : '') + String(q.tendenz).replace('.', ',') + ' %', 'info');
+        }
       }
       for (const r of s.routen || []) {
         if (r.aktuell) zeile(r.name + ' – ' + (r.laenge ? String(r.laenge).replace('.', ',') + ' km, ' : '') + 'berechnet ' + r.stand, 'ok');
