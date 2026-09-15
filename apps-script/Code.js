@@ -1,12 +1,13 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.3.0 — Etappe 3: aufloeseLinks().
  * Version 0.2.0 — Etappe 2: setup() und Menü.
  *
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 
 const BLATT_PUNKTE = 'Ladepunkte';
 const BLATT_ROUTEN = 'Routen';
@@ -35,6 +36,8 @@ const STAMMSTRECKEN = [
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Ladeplanung')
+    .addItem('Links auflösen', 'aufloeseLinks')
+    .addSeparator()
     .addItem('Setup (Blätter anlegen)', 'setup')
     .addToUi();
 }
@@ -148,6 +151,194 @@ function richtungAusAltText_(text) {
   if (/^morges-/.test(t)) return 'hin';
   if (/-morges$/.test(t)) return 'rueck';
   return 'beide';
+}
+
+// ---------------------------------------------------------------------------
+// aufloeseLinks() — ergänzt Name, Adresse, Koordinaten und Betreiber aus dem Maps-Link.
+// Gefüllte Felder bleiben unangetastet, die Spalte „Notiz" wird nie gelesen oder geschrieben.
+// ---------------------------------------------------------------------------
+
+// Teilstring im Maps-Namen (klein geschrieben) → Betreiber. Erster Treffer gewinnt.
+const BETREIBER_MUSTER = [
+  ['enbw', 'EnBW'], ['ionity', 'Ionity'], ['tesla', 'Tesla'], ['amag', 'AMAG'], ['porsche', 'Porsche'],
+  ['fastned', 'Fastned'], ['allego', 'Allego'], ['aral', 'Aral pulse'], ['shell', 'Shell Recharge'],
+  ['gofast', 'GOFAST'], ['swisscharge', 'Swisscharge'], ['electra', 'Electra'], ['atlante', 'Atlante'],
+  ['free to x', 'Free To X'], ['ewiva', 'Ewiva'], ['be charge', 'Be Charge'], ['e.on', 'E.ON'],
+  ['totalenergies', 'TotalEnergies'], ['lidl', 'Lidl'], ['kaufland', 'Kaufland'],
+];
+
+const STATUS_FEHLER_PRAEFIX = 'nicht auflösbar';
+const MAX_LAUFZEIT_MS = 5 * 60 * 1000; // Reserve zur Sechs-Minuten-Grenze
+
+function aufloeseLinks() {
+  const ui = SpreadsheetApp.getUi();
+  const blatt = SpreadsheetApp.getActive().getSheetByName(BLATT_PUNKTE);
+  if (!blatt || blatt.getLastRow() < 2) {
+    ui.alert('Links auflösen', 'Blatt „' + BLATT_PUNKTE + '" fehlt oder ist leer — zuerst Setup ausführen.', ui.ButtonSet.OK);
+    return;
+  }
+
+  const sp = spaltenIndex_(blatt);
+  const werte = blatt.getRange(2, 1, blatt.getLastRow() - 1, blatt.getLastColumn()).getValues();
+  const start = Date.now();
+  const bilanz = { ergaenzt: 0, fehler: 0, vollstaendig: 0, abgebrochen: false };
+
+  for (let i = 0; i < werte.length; i++) {
+    if (Date.now() - start > MAX_LAUFZEIT_MS) { bilanz.abgebrochen = true; break; }
+
+    const z = werte[i];
+    const zeile = i + 2;
+    const feld = function (name) { return z[sp[name] - 1]; };
+    const setze = function (name, wert) { blatt.getRange(zeile, sp[name]).setValue(wert); };
+
+    const link = String(feld('Maps-Link')).trim();
+    if (!link) continue;
+
+    const fehltName = feld('Name') === '';
+    const fehltKoord = feld('Lat') === '' || feld('Lon') === '';
+    const fehltAdresse = feld('Adresse') === '';
+    const fehltBetreiber = feld('Betreiber') === '';
+    if (!fehltName && !fehltKoord && !fehltAdresse && !fehltBetreiber) { bilanz.vollstaendig++; continue; }
+
+    try {
+      let lat = feld('Lat');
+      let lon = feld('Lon');
+      let linkName = '';
+
+      if (fehltName || fehltKoord) {
+        const info = werteMapsUrlAus_(folgeWeiterleitungen_(link));
+        if (info.lat === null) throw new Error('keine Koordinaten im Link gefunden');
+        linkName = info.name;
+        if (fehltKoord) {
+          lat = runde_(info.lat, 6);
+          lon = runde_(info.lon, 6);
+          setze('Lat', lat);
+          setze('Lon', lon);
+        }
+      }
+
+      let ort = '';
+      if (fehltAdresse || fehltName) {
+        const geo = adresseZuKoordinate_(Number(lat), Number(lon));
+        ort = geo.ort;
+        if (fehltAdresse && geo.adresse) setze('Adresse', geo.adresse);
+      }
+
+      const name = fehltName ? nameMitOrt_(linkName || 'Ladepunkt', ort) : feld('Name');
+      if (fehltName) setze('Name', name);
+
+      if (fehltBetreiber) {
+        const betreiber = betreiberAusName_(name);
+        if (betreiber) setze('Betreiber', betreiber);
+      }
+
+      if (String(feld('Status')).indexOf(STATUS_FEHLER_PRAEFIX) === 0) setze('Status', '');
+      bilanz.ergaenzt++;
+    } catch (e) {
+      setze('Status', STATUS_FEHLER_PRAEFIX + ': ' + e.message);
+      bilanz.fehler++;
+    }
+  }
+
+  const text = [
+    bilanz.ergaenzt + ' Zeilen ergänzt',
+    bilanz.vollstaendig + ' Zeilen waren schon vollständig',
+    bilanz.fehler + ' Zeilen nicht auflösbar (siehe Spalte Status)',
+  ];
+  if (bilanz.abgebrochen) text.push('\nZeitlimit erreicht — bitte „Links auflösen" noch einmal starten.');
+  ui.alert('Links auflösen v' + VERSION, text.join('\n'), ui.ButtonSet.OK);
+}
+
+/** Spaltenkopf → Spaltennummer (1-basiert). */
+function spaltenIndex_(blatt) {
+  const koepfe = blatt.getRange(1, 1, 1, blatt.getLastColumn()).getValues()[0];
+  const index = {};
+  koepfe.forEach(function (k, i) { if (k !== '') index[k] = i + 1; });
+  return index;
+}
+
+/**
+ * Folgt Weiterleitungen einzeln (followRedirects: false) bis zu einer Maps-URL mit Inhalt.
+ * Eine Zustimmungsseite von Google wird über ihren continue-Parameter übersprungen.
+ */
+function folgeWeiterleitungen_(url) {
+  let aktuell = url;
+  for (let schritt = 0; schritt < 6; schritt++) {
+    if (/consent\.google\./.test(aktuell)) {
+      const weiter = aktuell.match(/[?&]continue=([^&]+)/);
+      if (!weiter) throw new Error('Google-Zustimmungsseite ohne Weiterleitung');
+      aktuell = decodeURIComponent(weiter[1]);
+      continue;
+    }
+    if (/\/maps\/(place|dir|search)\//.test(aktuell) || /!3d-?\d/.test(aktuell)) return aktuell;
+
+    const antwort = UrlFetchApp.fetch(aktuell, { followRedirects: false, muteHttpExceptions: true });
+    const code = antwort.getResponseCode();
+    if (code < 300 || code >= 400) return aktuell;
+    const kopf = antwort.getAllHeaders();
+    const ziel = kopf.Location || kopf.location;
+    if (!ziel) return aktuell;
+    aktuell = Array.isArray(ziel) ? ziel[0] : ziel;
+  }
+  return aktuell;
+}
+
+/**
+ * Liest Name und Koordinaten aus einer aufgelösten Maps-URL.
+ * Vorrang haben die Paare !3d<lat>!4d<lon> (exakter Ort), danach @lat,lon oder q=lat,lon.
+ * Gibt { name, lat, lon } zurück; lat/lon sind null, wenn nichts gefunden wurde.
+ */
+function werteMapsUrlAus_(url) {
+  const u = String(url);
+  let name = '';
+  const mName = u.match(/\/maps\/place\/([^\/@?]+)/);
+  if (mName) {
+    try { name = decodeURIComponent(mName[1].replace(/\+/g, ' ')).trim(); } catch (e) { name = ''; }
+  }
+
+  const paare = [];
+  const muster = /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/g;
+  let treffer;
+  while ((treffer = muster.exec(u)) !== null) paare.push(treffer);
+  if (paare.length > 0) {
+    const letztes = paare[paare.length - 1];
+    return { name: name, lat: Number(letztes[1]), lon: Number(letztes[2]) };
+  }
+
+  const ersatz = u.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || u.match(/[?&]q=(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
+  if (ersatz) return { name: name, lat: Number(ersatz[1]), lon: Number(ersatz[2]) };
+  return { name: name, lat: null, lon: null };
+}
+
+/** Rückwärts-Geokodierung über den eingebauten Maps-Dienst (kein Schlüssel nötig). */
+function adresseZuKoordinate_(lat, lon) {
+  const antwort = Maps.newGeocoder().setLanguage('de').reverseGeocode(lat, lon);
+  if (antwort.status !== 'OK' || !antwort.results || antwort.results.length === 0) return { adresse: '', ort: '' };
+  const erstes = antwort.results[0];
+  let ort = '';
+  (erstes.address_components || []).forEach(function (k) {
+    if (!ort && k.types.indexOf('locality') !== -1) ort = k.long_name;
+  });
+  return { adresse: erstes.formatted_address || '', ort: ort };
+}
+
+/** Hängt den Ort an, damit gleichnamige Stationen („EnBW Ladestation") unterscheidbar sind. */
+function nameMitOrt_(name, ort) {
+  if (!ort || name.toLowerCase().indexOf(ort.toLowerCase()) !== -1) return name;
+  return name + ' ' + ort;
+}
+
+function betreiberAusName_(name) {
+  const n = String(name || '').toLowerCase();
+  for (let i = 0; i < BETREIBER_MUSTER.length; i++) {
+    if (n.indexOf(BETREIBER_MUSTER[i][0]) !== -1) return BETREIBER_MUSTER[i][1];
+  }
+  return '';
+}
+
+function runde_(zahl, stellen) {
+  const f = Math.pow(10, stellen);
+  return Math.round(zahl * f) / f;
 }
 
 function setzeValidierungen_(punkte) {
