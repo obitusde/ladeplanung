@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.12.1 — Getrennt: „Navigieren (Google Maps)" und „In Google Maps ansehen" (Ort ohne Route).
   Version 0.12.0 — Info-Seite (ⓘ) mit Erklärung und Link zu „Wartung & Status"; Hinweis zu My CUPRA.
   Version 0.11.0 — Knopf „＋" (Ladepunkt hinzufügen) und „Bearbeiten" öffnen das Formular; Daten laden bei Rückkehr neu.
   Version 0.10.0 — Ein Richtungsknopf, Namen ohne „Ladestation", Betreiber nicht doppelt, Korridor 10 km.
@@ -179,7 +180,8 @@
     <div class="aktionen">
       <button id="d-kopieren" class="knopf haupt" type="button">Adresse kopieren</button>
       <p class="klein-hinweis">Danach in My CUPRA ins Zielfeld einfügen – Teilen an My CUPRA geht nicht.</p>
-      <a id="d-maps" class="knopf" target="_blank" rel="noopener">Google Maps</a>
+      <a id="d-maps" class="knopf" target="_blank" rel="noopener">Navigieren (Google Maps)</a>
+      <a id="d-ort" class="knopf" target="_blank" rel="noopener">In Google Maps ansehen</a>
       <a id="d-abrp" class="knopf" target="_blank" rel="noopener">ABRP</a>
       <a id="d-bearbeiten" class="knopf" target="_blank" rel="noopener">Bearbeiten</a>
       <button id="d-sim" class="knopf" type="button" hidden>Simulierte Position hierher</button>
@@ -257,7 +259,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.12.0';
+    const APP_VERSION = '0.12.1';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -346,6 +348,12 @@
 
     function mapsUrl(p) {
       return 'https://www.google.com/maps/dir/?api=1&destination=' + p.lat + ',' + p.lon;
+    }
+
+    /** Ort ohne Route: der gespeicherte Maps-Link öffnet die genaue Ortskarte; sonst eine Stecknadel auf den Koordinaten. */
+    function ortUrl(p) {
+      if (p.link && /^https:\/\/(maps\.app\.goo\.gl|(www\.)?google\.[a-z.]+\/maps|goo\.gl\/maps)/.test(p.link)) return p.link;
+      return 'https://www.google.com/maps/search/?api=1&query=' + p.lat + ',' + p.lon;
     }
 
     /**
@@ -538,6 +546,7 @@
       for (const [k, v] of felder) dl.append(el('dt', '', k), el('dd', '', v));
 
       $('d-maps').href = mapsUrl(p);
+      $('d-ort').href = ortUrl(p);
       $('d-bearbeiten').href = FORMULAR_URL + '?id=' + encodeURIComponent(p.id);
       $('d-abrp').href = abrpUrl(p, aktuellePosition());
       $('d-sim').hidden = !zustand.sim.aktiv;

@@ -1,6 +1,7 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.12.1 — Export enthält den Maps-Link je Punkt.
  * Version 0.12.0 — Löschen (ins Blatt „Gelöscht"), Nähe-Warnung bis 300 m, Seite „Wartung & Status".
  * Version 0.11.0 — Web-App-Formular zum Bearbeiten und Hinzufügen von Ladepunkten (nur eigenes Google-Konto).
  * Version 0.10.0 — Höhenprofil über 2 km geglättet (gleitender Median) vor dem 10-m-Filter; Straßennamen gekürzt.
@@ -17,7 +18,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.12.0';
+const VERSION = '0.12.1';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -1298,6 +1299,7 @@ function exportJson() {
           richtung: RICHTUNGEN.indexOf(String(feld('Richtung')).trim()) !== -1 ? String(feld('Richtung')).trim() : 'beide',
           favorit: String(feld('Favorit')).trim().toLowerCase() === 'ja',
           notiz: String(feld('Notiz')).trim(),
+          link: String(feld('Maps-Link')).trim(), // für „In Google Maps ansehen" (öffnet die genaue Ortskarte)
         });
         statusZeilen.push({ zeile: i + 2, status: String(feld('Status')) });
       });
