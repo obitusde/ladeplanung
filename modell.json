@@ -16,22 +16,22 @@
   "heiz_schwelle_c": 18
  },
  "korrektur": {
-  "gesamt": 0.8030621104430654,
+  "gesamt": 0.9257249088249981,
   "fahrt": 1,
   "hoehe": 1,
   "heizung": 1
  },
- "erzeugt": "2026-09-15T12:00:14.499Z",
+ "erzeugt": "2026-09-15T12:12:41.077Z",
  "kalibrierung": {
-  "fahrten": 4,
-  "abweichung_prozent": 11.2,
-  "stand": "2026-09-15T12:00:14.499Z",
-  "methode": "Gesamtfaktor aus 4 Fahrt(en)",
+  "fahrten": 2,
+  "abweichung_prozent": 1.5,
+  "stand": "2026-09-15T12:12:41.077Z",
+  "methode": "Gesamtfaktor aus 2 Fahrt(en)",
   "quellen": {
    "ABRP": {
-    "n": 4,
-    "abweichung": 10.7,
-    "tendenz": 4.1
+    "n": 2,
+    "abweichung": 1.5,
+    "tendenz": 0.4
    }
   }
  }
