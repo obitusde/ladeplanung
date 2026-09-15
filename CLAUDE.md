@@ -1,6 +1,6 @@
 # Ladeplanung Cupra Born — Projektstand für Claude
 
-**Stand 15.09.2026** · App (`index.html`) v0.14.0 · Apps Script (`apps-script/Code.js`) v0.15.0 · Web-App-Deployment @7
+**Stand 15.09.2026** · App (`index.html`) v0.15.0 · Apps Script (`apps-script/Code.js`) v0.15.0 · Web-App-Deployment @7
 Ursprünglicher Auftrag: [`docs/Umsetzungsbrief_v5.0.md`](docs/Umsetzungsbrief_v5.0.md). Diese Datei beschreibt den **tatsächlichen** Stand inklusive aller späteren Entscheidungen und hat Vorrang vor dem Brief.
 
 ---

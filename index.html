@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.15.0 — Hauptansicht kompakter: Route größer, Akku beim Start direkt oben mit „▶ Los", Akku eindeutig
+                   („braucht ≈" / „Rest bei Ankunft ≈"), Anzahl × kW, Notiz hinterlegt, Fußzeile ohne Datenstand.
   Version 0.14.0 — Knopf „Vergleichswert eintragen (ABRP / My CUPRA)" in den Details.
   Version 0.13.0 — Akku-Prognose je Station (Bedarf, Ankunft, rot wenn unter Reserve); optional Losfahren/Angekommen
                    mit Kalibrierung; Einstellungen Geschwindigkeit, Zusatzgewicht, Temperatur, Reserve.
@@ -53,6 +55,7 @@
       }
     }
     * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
     html, body { margin: 0; background: var(--grund); color: var(--text); }
     body {
       font: 18px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -67,15 +70,17 @@
       position: sticky; top: 0; z-index: 2;
       background: var(--grund);
       border-bottom: 2px solid var(--linie);
-      padding: 10px 12px;
-      display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px;
+      padding: 8px 10px;
+      display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px;
     }
-    .zeile { display: flex; gap: 8px; align-items: stretch; }
+    .zeile { display: flex; gap: 6px; align-items: stretch; }
     select#route {
-      flex: 1; min-width: 0; min-height: 52px; padding: 0 10px;
+      flex: 1; min-width: 0; min-height: 48px; padding: 0 8px;
       background: var(--flaeche); border: 2px solid var(--linie); border-radius: 10px;
-      font-weight: 600;
+      font-size: 21px; font-weight: 800;
     }
+    header .knopf { min-height: 48px; }
+    header .knopf.icon { width: 46px; padding: 0; flex: none; }
     .knopf {
       min-height: 52px; padding: 0 14px;
       background: var(--flaeche); border: 2px solid var(--linie); border-radius: 10px;
@@ -84,51 +89,60 @@
     .knopf.haupt { background: var(--akzent); color: var(--akzent-text); border-color: var(--akzent); }
     a.knopf { display: flex; align-items: center; justify-content: center; text-decoration: none; color: var(--text); font-size: 24px; }
     .richtung {
-      flex: 1; min-width: 0; min-height: 52px; padding: 0 12px;
+      flex: 1; min-width: 0; min-height: 48px; padding: 0 12px;
       background: var(--text); color: var(--grund); border: 0; border-radius: 10px;
       font-size: 20px; font-weight: 800; cursor: pointer;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
 
     .fahrt {
-      margin: 10px 12px 0; padding: 8px 10px; border-radius: 10px; border: 2px solid var(--linie);
+      margin: 8px 10px 0; padding: 6px 8px; border-radius: 10px; border: 2px solid var(--linie);
       display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
     }
     .fahrt.laeuft { border-color: var(--akzent); }
+    .fahrt.laeuft .text { font-size: 16px; }
     .fahrt .text { flex: 1 1 170px; font-weight: 600; font-variant-numeric: tabular-nums; }
     .fahrt .knopf { min-height: 44px; padding: 0 12px; }
     .fahrt a.knopf { font-size: 18px; }
+    #los .text { flex: 1 1 auto; }
+    #los input {
+      width: 4.2em; min-height: 44px; padding: 0 8px; text-align: right;
+      background: var(--flaeche); border: 2px solid var(--linie); border-radius: 10px;
+    }
 
     #hinweis {
-      margin: 10px 12px 0; padding: 10px 12px; border-radius: 10px;
+      margin: 8px 10px 0; padding: 6px 10px; border-radius: 10px;
       background: var(--warnung-grund); color: var(--warnung); font-weight: 600;
     }
     #hinweis.sim { background: var(--flaeche); color: var(--text); border: 2px dashed var(--akzent); }
 
-    main { flex: 1; padding: 6px 0 12px; }
+    main { flex: 1; padding: 2px 0 8px; }
     .leer { padding: 24px 16px; color: var(--leise); font-size: 20px; }
     .eintrag {
-      display: grid; grid-template-columns: auto 1fr; column-gap: 14px; row-gap: 2px;
-      width: 100%; text-align: left; background: transparent;
+      display: grid; grid-template-columns: 74px minmax(0, 1fr); column-gap: 10px; row-gap: 1px;
+      width: 100%; text-align: left; background: transparent; font-size: 16px;
       border: 0; border-bottom: 1px solid var(--linie);
-      padding: 12px 14px; cursor: pointer; min-height: 76px;
+      padding: 8px 12px; cursor: pointer;
     }
-    .eintrag.favorit { background: var(--favorit); border-left: 6px solid var(--akzent); padding-left: 8px; }
+    .eintrag.favorit { background: var(--favorit); border-left: 6px solid var(--akzent); padding-left: 6px; }
     .eintrag .lage { font-weight: 600; color: var(--leise); }
     .eintrag .lage.rast { color: var(--akzent); }
-    .eintrag .km { grid-row: 1 / span 5; font-size: 34px; font-weight: 800; line-height: 1; align-self: center; min-width: 3.6ch; font-variant-numeric: tabular-nums; }
-    .eintrag .km small { font-size: 16px; font-weight: 600; margin-left: 2px; }
-    .eintrag .name { font-weight: 700; overflow-wrap: anywhere; }
+    .eintrag .km { grid-row: 1 / span 4; font-size: 28px; font-weight: 800; line-height: 1; align-self: center; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .eintrag .km small { font-size: 14px; font-weight: 600; margin-left: 2px; }
+    .eintrag .name { font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
     .eintrag .akku { font-weight: 700; font-variant-numeric: tabular-nums; }
     .eintrag .meta { color: var(--text); font-variant-numeric: tabular-nums; }
-    .eintrag .notiz { color: var(--leise); overflow-wrap: anywhere; }
+    .eintrag .notiz {
+      justify-self: start; margin-top: 3px; padding: 0 8px; border-radius: 6px;
+      background: var(--flaeche); border: 1px solid var(--linie); overflow-wrap: anywhere;
+    }
     .rot, .eintrag .rot { color: var(--rot); }
 
     footer {
       position: sticky; bottom: 0;
       background: var(--grund); border-top: 2px solid var(--linie);
-      padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 4px 16px;
-      font-size: 16px; color: var(--leise); font-variant-numeric: tabular-nums;
+      padding: 6px 10px; display: flex; flex-wrap: wrap; gap: 2px 14px;
+      font-size: 15px; color: var(--leise); font-variant-numeric: tabular-nums;
     }
     footer b { color: var(--text); }
 
@@ -177,9 +191,9 @@
   <header>
     <div class="zeile">
       <select id="route" aria-label="Route"></select>
-      <a id="neu" class="knopf" href="#" target="_blank" rel="noopener" aria-label="Ladepunkt hinzufügen">＋</a>
-      <button id="einstellungen" class="knopf" aria-label="Einstellungen">⚙</button>
-      <button id="info" class="knopf" aria-label="Info: was die App macht">ⓘ</button>
+      <a id="neu" class="knopf icon" href="#" target="_blank" rel="noopener" aria-label="Ladepunkt hinzufügen">＋</a>
+      <button id="einstellungen" class="knopf icon" aria-label="Einstellungen">⚙</button>
+      <button id="info" class="knopf icon" aria-label="Info: was die App macht">ⓘ</button>
     </div>
     <div class="zeile">
       <button id="richtung" class="richtung" type="button" aria-label="Fahrtrichtung wechseln">nach …</button>
@@ -188,6 +202,12 @@
   </header>
 
   <div id="fahrt" class="fahrt" hidden></div>
+  <form id="los" class="fahrt" hidden>
+    <label for="los-soc" class="text">Akku beim Start</label>
+    <input type="number" id="los-soc" inputmode="numeric" min="1" max="100" required>
+    <span>%</span>
+    <button class="knopf" type="submit">▶ Los</button>
+  </form>
   <div id="hinweis" hidden></div>
   <main id="liste"><p class="leer">Lade Daten …</p></main>
   <footer id="fuss"></footer>
@@ -228,7 +248,9 @@
     <h3>Was die Angaben bedeuten</h3>
     <ul>
       <li><b>Große Zahl:</b> Kilometer entlang der Route bis auf Höhe des Ladepunkts. Liegt er abseits, kommt der Weg von der Ausfahrt noch dazu („3,2 km abseits").</li>
-      <li><b>≈ 23 % Akku</b> bzw. <b>Ankunft ≈ 34 %</b>: siehe Akku-Prognose. <span class="rot"><b>Rot</b></span> = Ankunft unter deiner Reserve.</li>
+      <li><b>braucht ≈ 23 %</b>: so viel Akku kostet der Weg bis dorthin. <b>Rest bei Ankunft ≈ 34 %</b>: so viel ist dort noch übrig – nur nach „▶ Los". <span class="rot"><b>Rot</b></span> = Rest unter deiner Reserve.</li>
+      <li><b>4 × 150 kW:</b> Anzahl Ladepunkte × Leistung, sofern eingetragen.</li>
+      <li><b>Hinterlegter Text</b> („Raststätte", „McDo"): deine Notiz.</li>
       <li><b>+ hm:</b> Summe der Anstiege bis dorthin, geglättet.</li>
       <li><b>(A 5):</b> Straße, an der der Punkt liegt. <b>Raststätte:</b> direkt an der Autobahn, oft nur in einer Fahrtrichtung erreichbar.</li>
       <li><b>★</b> Favorit.</li>
@@ -237,7 +259,7 @@
     <h3>Akku-Prognose</h3>
     <p>Der Akkubedarf bis zu jeder Station wird aus Strecke, Höhenmetern, deiner <b>Reisegeschwindigkeit</b>, dem <b>Zusatzgewicht</b> (beides unter ⚙) und der <b>Außentemperatur</b> geschätzt. Die Temperatur ist der Durchschnitt aus jetzt und in drei Stunden am Standort – oder dein eigener Wert unter ⚙.</p>
     <p>Die Geschwindigkeit hat den größten Einfluss: 130 statt 110 km/h brauchen rund ein Viertel mehr. 1000 Höhenmeter bergauf kosten etwa 11 % Akku, bergab kommt gut ein Drittel davon zurück.</p>
-    <p><b>Optional:</b> Tippst du beim Losfahren den Akkustand ein, zeigt die Liste den <b>Akku bei Ankunft</b>. „Angekommen" öffnet ein kurzes Formular: echter Akkustand rein, fertig – daraus lernt das Modell und wird mit jeder Fahrt genauer. Ohne diese Eingaben siehst du nur den Bedarf.</p>
+    <p><b>Optional:</b> Trägst du oben „Akku beim Start" ein und drückst <b>▶ Los</b>, zeigt die Liste den <b>Rest bei Ankunft</b>. „Angekommen" öffnet ein kurzes Formular: echter Akkustand rein, fertig – daraus lernt das Modell und wird mit jeder Fahrt genauer. Ohne diese Eingaben siehst du nur den Bedarf.</p>
     <p><b>Vergleichswerte:</b> In den Details einer Station „Vergleichswert eintragen" – Strecke in ABRP oder My CUPRA planen und die beiden Akkuwerte abschreiben. Das hilft dem Modell schon vor der ersten Fahrt; echte Fahrten zählen aber mehr.</p>
     <p id="info-modell" class="klein-hinweis"></p>
 
@@ -296,24 +318,12 @@
     </form>
   </dialog>
 
-  <dialog id="dlg-los">
-    <form>
-      <h2>Losfahren</h2>
-      <p class="klein">Optional. Mit dem Akkustand jetzt zeigt die Liste den Akku bei Ankunft. Start ist deine aktuelle Position.</p>
-      <label>Akkustand jetzt (%)
-        <input type="number" id="los-soc" inputmode="numeric" min="1" max="100" required>
-      </label>
-      <button class="knopf haupt" type="submit" style="width:100%">Losfahren</button>
-      <button class="knopf" type="button" id="los-abbrechen" style="width:100%;margin-top:8px">Abbrechen</button>
-    </form>
-  </dialog>
-
   <div id="toast" hidden></div>
 
   <script>
     'use strict';
 
-    const APP_VERSION = '0.14.0';
+    const APP_VERSION = '0.15.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -614,14 +624,16 @@
 
     function akkuText(pg) {
       if (!pg) return '';
-      if (pg.ankunft === null) return '≈ ' + Math.round(pg.prozent) + ' % Akku';
-      return 'Ankunft ≈ ' + Math.round(pg.ankunft) + ' %';
+      if (pg.ankunft === null) return 'braucht ≈ ' + Math.round(pg.prozent) + ' %';
+      return 'Rest bei Ankunft ≈ ' + Math.round(pg.ankunft) + ' %';
     }
 
     function metaZeile(e) {
       const teile = [];
       teile.push(e.hm === null ? 'keine Höhendaten' : '+ ' + e.hm + ' hm');
-      teile.push((e.punkt.kw ? e.punkt.kw : '–') + ' kW');
+      const p = e.punkt;
+      if (p.kw) teile.push((p.anzahl ? p.anzahl + ' × ' : '') + p.kw + ' kW');
+      else if (p.anzahl) teile.push(p.anzahl + ' Ladepunkte');
       const b = e.punkt.betreiber;
       if (b && kurzname(e.punkt.name).toLowerCase().indexOf(b.toLowerCase()) === -1) teile.push(b);
       return teile.join(' · ');
@@ -679,10 +691,12 @@
         km.append(el('small', '', 'km'));
         const strasse = e.z && e.z.strasse ? ' (' + e.z.strasse + ')' : '';
         zeile.append(km, el('span', 'name' + (pg && pg.unerreichbar ? ' rot' : ''), (e.punkt.favorit ? '★ ' : '') + kurzname(e.punkt.name) + strasse));
-        const lage = lageKurz(e.z);
-        if (lage) zeile.append(el('span', 'lage' + (e.z.raststaette && !(e.z.quer_km > 1) ? ' rast' : ''), lage));
         if (pg) zeile.append(el('span', 'akku' + (pg.unerreichbar ? ' rot' : ''), akkuText(pg)));
-        zeile.append(el('span', 'meta', metaZeile(e)));
+        const meta = el('span', 'meta');
+        const lage = lageKurz(e.z);
+        if (lage) meta.append(el('span', 'lage' + (e.z.raststaette && !(e.z.quer_km > 1) ? ' rast' : ''), lage), ' · ');
+        meta.append(metaZeile(e));
+        zeile.append(meta);
         if (e.punkt.notiz) zeile.append(el('span', 'notiz', e.punkt.notiz));
         zeile.addEventListener('click', () => zeigeDetail(e, erg.modus));
         liste.append(zeile);
@@ -697,6 +711,7 @@
       const leiste = $('fahrt');
       leiste.replaceChildren();
       leiste.hidden = false;
+      $('los').hidden = true;
       leiste.className = 'fahrt';
       const knopf = (text, klasse, aktion, label) => {
         const k = el('button', 'knopf' + (klasse ? ' ' + klasse : ''), text);
@@ -710,7 +725,7 @@
       if (f) {
         leiste.className = 'fahrt laeuft';
         const jetzt = erg && erg.modus === 'strecke' ? akkuJetzt(route.id, erg.pos) : null;
-        let text = 'Fahrt läuft seit ' + uhrzeit(new Date(f.start_zeit).getTime()) + ' · Start ' + f.start_soc + ' %';
+        let text = 'Start ' + uhrzeit(new Date(f.start_zeit).getTime()) + ' mit ' + f.start_soc + ' %';
         if (jetzt !== null) text += ' · jetzt ≈ ' + Math.max(0, Math.round(jetzt)) + ' %';
         else if (f.route !== route.id || f.richtung !== zustand.richtung) text += ' (' + f.route_name + ', ' + (f.richtung === 'hin' ? 'Hinfahrt' : 'Rückfahrt') + ')';
         leiste.append(el('span', 'text', text), knopf('Angekommen', 'haupt', angekommen), knopf('✕', '', verwerfeFahrt, 'Fahrt verwerfen'));
@@ -724,7 +739,9 @@
           knopf('✕', '', () => { zustand.ankunft = null; speichere(); render(); }, 'Erinnerung ausblenden'));
         return;
       }
-      leiste.append(el('span', 'text klein', 'Optional: Akkustand beim Start für die Ankunfts-Prognose'), knopf('▶ Losfahren', '', oeffneLosfahren));
+      // eigenes, festes Formular: render() läuft auch während der Eingabe (GPS, Wetter)
+      leiste.hidden = true;
+      $('los').hidden = false;
     }
 
     function renderFuss(route, erg, pos) {
@@ -735,12 +752,9 @@
       teil('Ziel', erg && erg.rest !== null ? fmtKm(Math.max(0, erg.rest)) + ' km' : '–');
       const t = temperatur();
       teil('Temp', zahl(t.wert, 0) + ' °C' + (t.quelle === 'angenommen' ? ' (ang.)' : ''));
-      teil('Tempo', zustand.einst.geschwindigkeit + ' km/h');
-      const d = new Date(daten.erzeugt);
-      const zwei = n => String(n).padStart(2, '0');
-      teil('Daten', isNaN(d) ? '–' : zwei(d.getDate()) + '.' + zwei(d.getMonth() + 1) + '. ' + zwei(d.getHours()) + ':' + zwei(d.getMinutes()));
-      if (pos && pos.sim) teil('GPS', 'Simulation');
+      if (pos && pos.sim) teil('GPS', 'Sim.');
       else teil('GPS', pos ? '± ' + Math.round(pos.genauigkeit) + ' m' : '–');
+      teil('Tempo', zustand.einst.geschwindigkeit + ' km/h');
     }
 
     function zeigeDetail(e, modus) {
@@ -803,18 +817,12 @@
     // Losfahren / Angekommen (optional)
     // -----------------------------------------------------------------------
 
-    function oeffneLosfahren() {
-      $('los-soc').value = '';
-      $('dlg-los').showModal();
-      setTimeout(() => $('los-soc').focus(), 50);
-    }
-
     function starteFahrt(ev) {
       ev.preventDefault();
       const soc = Number($('los-soc').value);
       if (!(soc >= 1 && soc <= 100)) { toast('Akkustand bitte als Zahl von 1 bis 100'); return; }
       const pos = aktuellePosition();
-      if (!pos) { $('dlg-los').close(); toast('Erst den Standort bestimmen'); holeStandort(); return; }
+      if (!pos) { toast('Erst den Standort bestimmen'); holeStandort(); return; }
       const route = aktuelleRoute();
       const pr = projiziere(route.linie, pos.lat, pos.lon, lat0Von(route));
       zustand.fahrt = {
@@ -824,7 +832,8 @@
       };
       zustand.ankunft = null;
       speichere();
-      $('dlg-los').close();
+      $('los-soc').value = '';
+      $('los-soc').blur();
       render();
       if (pr.q > QUER_MAX_KM) toast('Hinweis: Start liegt abseits der Route – die Prognose ist ungenau');
     }
@@ -1004,8 +1013,7 @@
       $('einstellungen').addEventListener('click', oeffneEinstellungen);
       $('dlg').querySelector('form').addEventListener('submit', schliesseEinstellungen);
       $('dlg').addEventListener('close', schliesseEinstellungen);
-      $('dlg-los').querySelector('form').addEventListener('submit', starteFahrt);
-      $('los-abbrechen').addEventListener('click', () => $('dlg-los').close());
+      $('los').addEventListener('submit', starteFahrt);
       $('zurueck').addEventListener('click', () => history.back());
       window.addEventListener('popstate', () => {
         if (!$('detail').hidden) schliesseDetail();
@@ -1061,7 +1069,8 @@
       }
       const sel = $('route');
       sel.replaceChildren();
-      for (const r of daten.routen) { const o = el('option', '', r.name); o.value = r.id; sel.append(o); }
+      // alle Routen beginnen in Morges – oben nur das Ziel, damit es groß lesbar bleibt
+      for (const r of daten.routen) { const o = el('option', '', r.name.split(/\s+[–-]\s+/).slice(1).join(' – ') || r.name); o.value = r.id; sel.append(o); }
       return true;
     }
 
