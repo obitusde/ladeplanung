@@ -5,7 +5,7 @@ const path = require('path');
 
 const wurzel = path.join(__dirname, '..');
 const quelle = fs.readFileSync(path.join(wurzel, 'apps-script', 'Code.js'), 'utf8');
-const gs = new Function(quelle + '; return { parseFahrzeit_, pruefeVergleich_, positionAufRoute_, streckenwerte_, gewichtFuer_, quellenStatistik_, vergleichsRouten_, kurznameServer_ };')();
+const gs = new Function(quelle + '; return { parseFahrzeit_, pruefeVergleich_, positionAufRoute_, streckenwerte_, gewichtFuer_, quellenStatistik_, vergleichsRouten_, kurznameServer_, istOhneRouteStatus_, betreiberAusName_ };')();
 
 let fehler = 0;
 const pruefe = (bedingung, text) => { if (!bedingung) { fehler++; console.log('FEHLER ' + text); } };
@@ -22,11 +22,14 @@ pruefe(gs.pruefeVergleich_({ ...gut, quelle: '' }) !== '', 'ohne Quelle abgelehn
 pruefe(gs.pruefeVergleich_({ ...gut, nach: 'anfang' }) !== '', 'Von = Nach abgelehnt');
 pruefe(gs.pruefeVergleich_({ ...gut, ende_soc: 95 }) !== '', 'Ankunft > Start abgelehnt');
 pruefe(gs.pruefeVergleich_({ ...gut, fahrzeit: 'bald' }) !== '', 'unlesbare Fahrzeit abgelehnt');
+pruefe(gs.pruefeVergleich_({ ...gut, fahrzeit: '' }) !== '', 'fehlende Fahrzeit abgelehnt (Pflicht)');
+pruefe(gs.istOhneRouteStatus_('keiner Route zugeordnet (> 2 km)') && gs.istOhneRouteStatus_('keiner Route zugeordnet (> 10 km)') && !gs.istOhneRouteStatus_('nicht auflösbar: x') && !gs.istOhneRouteStatus_(''), 'alter und neuer Status erkannt');
+pruefe(gs.betreiberAusName_('EWE Go Ladestation Lindau (Bodensee)') === 'EWE Go', 'Betreiber EWE Go');
 pruefe(gs.pruefeVergleich_({ ...gut, von: 'x; drop' }) !== '', 'ungültige Station abgelehnt');
 
 // Gewichte
 pruefe(gs.gewichtFuer_('gemessen', true, true) === 1 && gs.gewichtFuer_('gemessen', false, true) === 0.5, 'gemessen 1 / 0,5');
-pruefe(gs.gewichtFuer_('ABRP', false, true) === 0.3 && gs.gewichtFuer_('My CUPRA', false, false) === 0.15, 'ABRP / My CUPRA 0,3 / 0,15');
+pruefe(gs.gewichtFuer_('ABRP', false, true) === 0.3 && gs.gewichtFuer_('My CUPRA', false, false) === 0, 'ABRP / My CUPRA mit Fahrzeit 0,3, ohne 0');
 
 // Statistik je Quelle
 const st = gs.quellenStatistik_([{ quelle: 'ABRP', diff: 2 }, { quelle: 'ABRP', diff: -4 }, { quelle: 'gemessen', diff: 1 }]);

@@ -6,7 +6,7 @@ const path = require('path');
 
 const wurzel = path.join(__dirname, '..');
 const quelle = fs.readFileSync(path.join(wurzel, 'apps-script', 'Code.js'), 'utf8');
-const gs = new Function(quelle + '; return { energieAnteile_, energieKwh_, kalibriere_, loese3_, pruefeFahrt_, MODELL_STANDARD };')();
+const gs = new Function(quelle + '; return { energieAnteile_, energieKwh_, kalibriere_, kalibriereZeilen_, loese3_, pruefeFahrt_, MODELL_STANDARD };')();
 const M = gs.MODELL_STANDARD;
 
 let fehler = 0;
@@ -36,12 +36,41 @@ for (let i = 0; i < 20; i++) {
   const km = 80 + rnd() * 200, auf = rnd() * 1500, ab = rnd() * 1200, kmh = 95 + rnd() * 40, T = -8 + rnd() * 32;
   const a = gs.energieAnteile_(M, km, auf, ab, kmh, T, 0);
   const real = gs.energieKwh_({ korrektur: wahr }, a) * (1 + (rnd() - 0.5) * 0.04); // ±2 % Rauschen
-  fahrten.push({ w: 1, real, a: [a.fahrt, a.hoehe, a.heiz] });
+  fahrten.push({ w: 1, real, a: [a.fahrt, a.hoehe, a.heiz], temp: T });
 }
 const k20 = gs.kalibriere_(fahrten, 58);
-pruefe(nah(k20.korrektur.fahrt, 1.12, 0.06) && nah(k20.korrektur.heizung, 1.4, 0.25) && nah(k20.korrektur.hoehe, 0.85, 0.25),
-  '20 Fahrten → Faktoren wiedergefunden: ' + JSON.stringify(k20.korrektur));
+const wirk = n => k20.korrektur.gesamt * k20.korrektur[n];
+pruefe(nah(wirk('fahrt'), 1.12, 0.08) && wirk('heizung') > 1.05 && wirk('heizung') < 1.6 && wirk('hoehe') > 0.6 && wirk('hoehe') < 1.1,
+  '20 Fahrten → wirksame Faktoren in der richtigen Richtung: Fahrt ' + wirk('fahrt').toFixed(2) + ', Höhe ' + wirk('hoehe').toFixed(2) + ', Heizung ' + wirk('heizung').toFixed(2));
 pruefe(k20.abweichung < 1.5, 'Abweichung nach Kalibrierung klein: ' + k20.abweichung + ' %');
+pruefe(k20.ausreisser.every(x => !x), 'keine Ausreißer in sauberen Daten');
+
+// Ausreißer: ein Wert mit 75 % mehr Verbrauch wird erkannt und verfälscht die Faktoren nicht
+const mitAusreisser = fahrten.slice(0, 8).concat([{ ...fahrten[8], real: fahrten[8].real * 1.75 }]);
+const ka = gs.kalibriere_(mitAusreisser, 58);
+pruefe(ka.ausreisser[8] === true && ka.ausreisser.slice(0, 8).every(x => !x), 'Ausreißer erkannt: ' + JSON.stringify(ka.ausreisser));
+pruefe(ka.abweichung < 2, 'Abweichung ohne Ausreißer klein: ' + ka.abweichung);
+
+// Gleiche Temperatur überall → Heizung bleibt fest bei 1
+const warm = fahrten.slice(0, 8).map(f => ({ ...f, temp: 24 }));
+pruefe(gs.kalibriere_(warm, 58).korrektur.heizung === 1, 'Heizung ohne Temperaturspanne fest');
+
+// Echte ABRP-Werte aus dem Blatt „Fahrten" (15.09.2026): Zeile 4 (Oftringen 2:43 h, 64 %) passt nicht zu Zeile 3
+const echt = [
+  ['Morges → EnBW Bühl', 354.7, 1026, 1281, 97, 26.6, 100, 7],
+  ['Morges → EnBW Weil am Rhein', 204.8, 1002, 1135, 92, 24.7, 100, 49],
+  ['Morges → AMAG Oftringen', 172.5, 857, 677, 97, 24.9, 100, 57],
+  ['Morges → AMAG Oftringen', 172.5, 857, 677, 64, 24.9, 100, 36],
+  ['AMAG Crissier → AMAG Bern', 102, 619, 478, 94, 24.1, 100, 70],
+  ['Morges → Tesla Supercharger', 236, 2417, 2569, 81, 23.8, 100, 28],
+].map(r => ({ notiz: r[0], km: r[1], hmAuf: r[2], hmAb: r[3], kmh: r[4], temp: r[5], start: r[6], ende: r[7], zusatzKg: 0, quelle: 'ABRP', bordcomputer: false, dauer: true, verwenden: 'ja' }));
+const ergEcht = gs.kalibriereZeilen_(echt);
+pruefe(/Ausreißer/.test(ergEcht.zeilen[3].status) && ergEcht.zeilen.filter(z => /Ausreißer/.test(z.status)).length === 1, 'Oftringen 2:43 h als einziger Ausreißer: ' + ergEcht.zeilen.map(z => z.status).join(' | '));
+const kg = ergEcht.modell.korrektur;
+pruefe(kg.gesamt > 0.85 && kg.gesamt < 1.0 && kg.heizung === 1, 'echte Werte → Gesamtfaktor ' + kg.gesamt.toFixed(3) + ', Heizung fest: ' + JSON.stringify(kg));
+pruefe(ergEcht.modell.kalibrierung.abweichung_prozent < 6 && Math.abs(ergEcht.modell.kalibrierung.quellen.ABRP.tendenz) < 4,
+  'echte Werte → Abweichung ' + ergEcht.modell.kalibrierung.abweichung_prozent + ' %, Tendenz ' + ergEcht.modell.kalibrierung.quellen.ABRP.tendenz);
+console.log('Echte ABRP-Werte: ' + ergEcht.modell.kalibrierung.methode + ' · Faktoren ' + JSON.stringify(kg) + ' · Ø Abweichung ' + ergEcht.modell.kalibrierung.abweichung_prozent + ' %');
 
 const k2 = gs.kalibriere_(fahrten.slice(0, 2), 58);
 pruefe(k2.korrektur.fahrt === 1 && k2.korrektur.hoehe === 1 && k2.korrektur.gesamt > 1 && /Gesamtfaktor/.test(k2.methode), 'wenige Fahrten → nur Gesamtfaktor: ' + JSON.stringify(k2));

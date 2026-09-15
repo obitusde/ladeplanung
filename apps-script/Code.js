@@ -1,6 +1,10 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.14.1 — Fahrzeit bei Vergleichswerten Pflicht, ohne Fahrzeit zählen sie nicht; veralteter Status „keiner Route
+ *                  zugeordnet (> 2 km)" wird entfernt; Betreiber EWE Go, leerer Betreiber im Export aus dem Namen.
+ *                  Robuste Kalibrierung: Ausreißer (> 35 % neben dem Median) nicht verwenden, erst Gesamtfaktor, dann
+ *                  vorsichtige Einzelfaktoren, Heizung nur bei ≥ 10 °C Temperaturspanne; Spalte „Kalibrierung" je Zeile.
  * Version 0.14.0 — Vergleichswerte aus ABRP / My CUPRA (Formular „Vergleich"), Spalte „Quelle", Gewichte und Abweichung je Quelle;
  *                  Fahrten-Blatt wird vor dem Schreiben auf genug Spalten erweitert.
  * Version 0.13.0 — Verbrauchsmodell: Fahrten speichern (Formular „Kalibrieren"), Temperatur von Open-Meteo, Kalibrierung, modell.json.
@@ -21,7 +25,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.14.0';
+const VERSION = '0.14.1';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -356,7 +360,7 @@ function wartungStatus_() {
       const st = String(z[sp.Status - 1]);
       if (z[sp.Lat - 1] === '' && String(z[sp['Maps-Link'] - 1]).trim() !== '') status.ohneKoordinaten++;
       if (st.indexOf(STATUS_FEHLER_PRAEFIX) === 0) status.nichtAufloesbar++;
-      if (st === STATUS_OHNE_ROUTE) status.ohneRoute.push(id + ' ' + z[sp.Name - 1]);
+      if (istOhneRouteStatus_(st)) status.ohneRoute.push(id + ' ' + z[sp.Name - 1]);
     });
   }
 
@@ -408,7 +412,7 @@ const SPALTEN_FAHRTEN = [
   'km', 'hm auf', 'hm ab', 'Dauer h', 'Ø km/h Bordcomputer', 'km/h verwendet', 'Zusatzgewicht kg',
   'Temp Start', 'Temp Ende', 'Temp Ø', 'Akku Start %', 'Akku Ende %', 'Akku erwartet %',
   'Verbrauch kWh', 'Anteil Fahrt kWh', 'Anteil Höhe kWh', 'Anteil Heizung kWh', 'Modell kWh', 'Abweichung %',
-  'verwenden', 'Notiz', 'Quelle',
+  'verwenden', 'Notiz', 'Quelle', 'Kalibrierung',
 ];
 // Gewicht je Quelle in der Kalibrierung: echte Fahrten zählen voll, Schätzungen anderer Apps nur wenig.
 const QUELLEN_VERGLEICH = ['ABRP', 'My CUPRA'];
@@ -444,73 +448,167 @@ function energieKwh_(modell, a) {
   return Math.max(0, k.gesamt * (k.fahrt * a.fahrt + k.hoehe * a.hoehe + k.heizung * a.heiz));
 }
 
+const AUSREISSER_ABWEICHUNG = 0.35;  // Verhältnis Wert/Physik mehr als 35 % neben dem Median → nicht verwenden
+const MIN_TEMPERATURSPANNE_C = 10;    // darunter lässt sich der Heizungsanteil nicht von den übrigen Anteilen trennen
+
 /**
- * Kalibrierung aus Fahrten [{ w, real, a: [fahrt, hoehe, heiz] }] (kWh).
- * Unter MIN_FAHRTEN_EINZELFAKTOREN nur ein Gesamtfaktor, danach drei Faktoren mit Ridge-Regression
- * Richtung 1 — so springt das Modell bei wenigen oder einseitigen Fahrten (nur Sommer) nicht weg.
+ * Kalibrierung aus Fahrten [{ w, real, a: [fahrt, hoehe, heiz], temp }] (kWh).
+ * 1. Ausreißer (ab 3 Werten): Verhältnis Wert/Physik weicht mehr als 35 % vom Median ab → nicht verwenden.
+ * 2. Gesamtfaktor aus den übrigen Werten (gewichtete kleinste Quadrate).
+ * 3. Ab MIN_FAHRTEN_EINZELFAKTOREN: Einzelfaktoren relativ zum Gesamtfaktor, per Ridge-Regression Richtung 1.
+ *    Die Heizung nur, wenn die Temperaturen mindestens 10 °C auseinanderliegen — sonst ist ihr Anteil nicht bestimmbar.
+ *    (15.09.2026: sechs ABRP-Werte bei ~24 °C mit einem Ausreißer trieben ihn in v0.14.0 auf den Anschlag 2,5.)
+ * Gibt { korrektur, methode, abweichung, ausreisser: [bool je Fahrt] } zurück.
  */
 function kalibriere_(fahrten, kapazitaet) {
   const k = { gesamt: 1, fahrt: 1, hoehe: 1, heizung: 1 };
   const begrenze = function (x, min, max) { return Math.min(max, Math.max(min, x)); };
+  const physik = function (f) { return f.a[0] + f.a[1] + f.a[2]; };
+
+  const ausreisser = fahrten.map(function () { return false; });
+  if (fahrten.length >= 3) {
+    const verhaeltnis = fahrten.map(function (f) { return f.real / Math.max(0.1, physik(f)); });
+    const sortiert = verhaeltnis.slice().sort(function (a, b) { return a - b; });
+    const mitte = Math.floor(sortiert.length / 2);
+    const median = sortiert.length % 2 ? sortiert[mitte] : (sortiert[mitte - 1] + sortiert[mitte]) / 2;
+    verhaeltnis.forEach(function (v, i) { ausreisser[i] = Math.abs(v / median - 1) > AUSREISSER_ABWEICHUNG; });
+  }
+  const gute = fahrten.filter(function (f, i) { return !ausreisser[i]; });
   let methode = 'Physik-Startwerte';
 
-  if (fahrten.length > 0 && fahrten.length < MIN_FAHRTEN_EINZELFAKTOREN) {
+  if (gute.length > 0) {
     let zaehler = 0, nenner = 0;
-    fahrten.forEach(function (f) {
-      const m = f.a[0] + f.a[1] + f.a[2];
+    gute.forEach(function (f) {
+      const m = physik(f);
       zaehler += f.w * f.real * m;
       nenner += f.w * m * m;
     });
     k.gesamt = begrenze(nenner > 0 ? zaehler / nenner : 1, 0.6, 1.6);
-    methode = 'Gesamtfaktor aus ' + fahrten.length + ' Fahrt(en)';
-  } else if (fahrten.length >= MIN_FAHRTEN_EINZELFAKTOREN) {
-    const A = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], b = [0, 0, 0];
-    fahrten.forEach(function (f) {
-      for (let i = 0; i < 3; i++) {
-        b[i] += f.w * f.a[i] * f.real;
-        for (let j = 0; j < 3; j++) A[i][j] += f.w * f.a[i] * f.a[j];
-      }
-    });
-    for (let i = 0; i < 3; i++) {
-      const lambda = 0.3 * A[i][i] / fahrten.length + 1e-9;
-      A[i][i] += lambda;
-      b[i] += lambda;
-    }
-    const c = loese3_(A, b);
-    k.fahrt = begrenze(c[0], 0.6, 1.6);
-    k.hoehe = begrenze(c[1], 0.3, 2);
-    k.heizung = begrenze(c[2], 0.3, 2.5);
-    methode = 'Einzelfaktoren aus ' + fahrten.length + ' Fahrten';
+    methode = 'Gesamtfaktor aus ' + gute.length + ' Wert(en)';
   }
 
+  if (gute.length >= MIN_FAHRTEN_EINZELFAKTOREN) {
+    const temps = gute.map(function (f) { return f.temp; }).filter(function (t) { return typeof t === 'number' && isFinite(t); });
+    const spanne = temps.length ? Math.max.apply(null, temps) - Math.min.apply(null, temps) : 0;
+    const mitHeizung = spanne >= MIN_TEMPERATURSPANNE_C;
+    const idx = mitHeizung ? [0, 1, 2] : [0, 1];
+    const A = idx.map(function () { return idx.map(function () { return 0; }); });
+    const b = idx.map(function () { return 0; });
+    let skala = 0;
+    gute.forEach(function (f) {
+      const ziel = f.real / k.gesamt - (mitHeizung ? 0 : f.a[2]); // ohne Heizungsfaktor: Anteil fest mit 1
+      skala += f.w * physik(f) * physik(f);
+      idx.forEach(function (ii, i) {
+        b[i] += f.w * f.a[ii] * ziel;
+        idx.forEach(function (jj, j) { A[i][j] += f.w * f.a[ii] * f.a[jj]; });
+      });
+    });
+    const lambda = 0.1 * skala / gute.length; // gleich stark für alle Anteile: kleine Anteile bleiben nahe 1
+    for (let i = 0; i < idx.length; i++) { A[i][i] += lambda; b[i] += lambda; }
+    const c = loeseLGS_(A, b);
+    k.fahrt = begrenze(c[0], 0.7, 1.3);
+    k.hoehe = begrenze(c[1], 0.5, 1.5);
+    if (mitHeizung) k.heizung = begrenze(c[2], 0.5, 2);
+    methode = 'Gesamt- und Einzelfaktoren aus ' + gute.length + ' Werten' + (mitHeizung ? '' : ' (Heizung fest, Temperaturen zu ähnlich)');
+  }
+  if (gute.length < fahrten.length) methode += ', ' + (fahrten.length - gute.length) + ' Ausreißer nicht verwendet';
+
   let summe = 0, gewichte = 0;
-  fahrten.forEach(function (f) {
+  gute.forEach(function (f) {
     summe += f.w * Math.abs(energieKwh_({ korrektur: k }, { fahrt: f.a[0], hoehe: f.a[1], heiz: f.a[2] }) - f.real);
     gewichte += f.w;
   });
-  return { korrektur: k, methode: methode, abweichung: gewichte > 0 ? runde_(summe / gewichte / kapazitaet * 100, 1) : null };
+  return { korrektur: k, methode: methode, abweichung: gewichte > 0 ? runde_(summe / gewichte / kapazitaet * 100, 1) : null, ausreisser: ausreisser };
 }
 
-/** Gauß-Elimination für ein 3×3-System. */
-function loese3_(A, b) {
+/** Gauß-Elimination mit Pivotsuche für ein kleines n×n-System; bei Singularität alle Faktoren 1. */
+function loeseLGS_(A, b) {
+  const n = b.length;
   const m = A.map(function (z, i) { return z.concat([b[i]]); });
-  for (let s = 0; s < 3; s++) {
+  for (let s = 0; s < n; s++) {
     let p = s;
-    for (let r = s + 1; r < 3; r++) if (Math.abs(m[r][s]) > Math.abs(m[p][s])) p = r;
+    for (let r = s + 1; r < n; r++) if (Math.abs(m[r][s]) > Math.abs(m[p][s])) p = r;
     const t = m[s]; m[s] = m[p]; m[p] = t;
-    if (Math.abs(m[s][s]) < 1e-12) return [1, 1, 1];
-    for (let r = s + 1; r < 3; r++) {
+    if (Math.abs(m[s][s]) < 1e-12) return b.map(function () { return 1; });
+    for (let r = s + 1; r < n; r++) {
       const f = m[r][s] / m[s][s];
-      for (let c = s; c < 4; c++) m[r][c] -= f * m[s][c];
+      for (let c = s; c <= n; c++) m[r][c] -= f * m[s][c];
     }
   }
-  const x = [0, 0, 0];
-  for (let s = 2; s >= 0; s--) {
-    let summe = m[s][3];
-    for (let c = s + 1; c < 3; c++) summe -= m[s][c] * x[c];
+  const x = b.map(function () { return 0; });
+  for (let s = n - 1; s >= 0; s--) {
+    let summe = m[s][n];
+    for (let c = s + 1; c < n; c++) summe -= m[s][c] * x[c];
     x[s] = summe / m[s][s];
   }
   return x;
+}
+
+function loese3_(A, b) { return loeseLGS_(A, b); }
+
+/**
+ * Rechnet alle Zeilen des Blatts „Fahrten" nach und kalibriert — rein rechnerisch (testbar ohne Apps Script).
+ * zeilen: [{ km, hmAuf, hmAb, kmh, temp, zusatzKg, start, ende, quelle, bordcomputer, dauer, verwenden, notiz }]
+ * Gibt { modell, zeilen: [{ real, a, gueltig, verwenden, ausreisser, modellKwh, abweichung, status }], text } zurück.
+ */
+function kalibriereZeilen_(zeilen) {
+  const kap = MODELL_STANDARD.fahrzeug.kapazitaet_kwh;
+  const fahrten = [];
+  const erg = zeilen.map(function (z) {
+    const quelle = String(z.quelle || '').trim() || 'gemessen';
+    const temp = typeof z.temp === 'number' && isFinite(z.temp) ? z.temp : TEMPERATUR_ERSATZ_C;
+    const a = energieAnteile_(MODELL_STANDARD, Number(z.km), Number(z.hmAuf), Number(z.hmAb), Number(z.kmh) || 120, temp, Number(z.zusatzKg) || 0);
+    const real = (Number(z.start) - Number(z.ende)) / 100 * kap;
+    const gueltig = isFinite(a.fahrt) && isFinite(real) && real > 0.5 && Number(z.km) >= 10;
+    const gewicht = gewichtFuer_(quelle, !!z.bordcomputer, !!z.dauer);
+    const abgewaehlt = String(z.verwenden || '').trim().toLowerCase() === 'nein';
+    const e = { a: a, real: real, quelle: quelle, notiz: String(z.notiz || ''), gueltig: gueltig, gewicht: gewicht,
+      verwenden: gueltig && gewicht > 0 && !abgewaehlt, ausreisser: false, modellKwh: null, abweichung: null, status: '' };
+    if (!gueltig) e.status = 'nicht verwendet: ungültig (unter 10 km oder Akku nicht gesunken)';
+    else if (abgewaehlt) e.status = 'nicht verwendet: auf „nein" gesetzt';
+    else if (gewicht === 0) e.status = 'nicht verwendet: Fahrzeit fehlt';
+    if (e.verwenden) {
+      e.fahrtIndex = fahrten.length;
+      fahrten.push({ w: gewicht, real: real, a: [a.fahrt, a.hoehe, a.heiz], temp: temp });
+    }
+    return e;
+  });
+
+  const kal = kalibriere_(fahrten, kap);
+  const modell = JSON.parse(JSON.stringify(MODELL_STANDARD));
+  modell.erzeugt = new Date().toISOString();
+  modell.korrektur = kal.korrektur;
+
+  erg.forEach(function (e) {
+    if (e.verwenden && kal.ausreisser[e.fahrtIndex]) { e.ausreisser = true; e.verwenden = false; }
+    if (e.gueltig) {
+      e.modellKwh = energieKwh_(modell, e.a);
+      e.abweichung = (e.modellKwh - e.real) / kap * 100;
+    }
+    if (e.ausreisser) e.status = 'nicht verwendet: Ausreißer (Modell ' + Math.round(e.modellKwh / kap * 100) + ' %, Wert ' + Math.round(e.real / kap * 100) + ' %)';
+    else if (e.verwenden) e.status = 'verwendet (Gewicht ' + String(e.gewicht).replace('.', ',') + ')';
+  });
+
+  const verwendet = erg.filter(function (e) { return e.verwenden; });
+  modell.kalibrierung = {
+    fahrten: verwendet.length, abweichung_prozent: kal.abweichung, stand: modell.erzeugt, methode: kal.methode,
+    quellen: quellenStatistik_(verwendet.map(function (e) { return { quelle: e.quelle, diff: e.abweichung }; })),
+  };
+
+  const k = kal.korrektur;
+  let text = 'Verbrauchsmodell: ' + kal.methode + '.';
+  if (verwendet.length) {
+    text += '\nKorrektur: gesamt ' + runde_(k.gesamt, 2) + ', Fahrt ' + runde_(k.fahrt, 2) + ', Höhe ' + runde_(k.hoehe, 2) + ', Heizung ' + runde_(k.heizung, 2) +
+      '\nØ Abweichung: ' + String(kal.abweichung).replace('.', ',') + ' % Akku je Wert.';
+  }
+  const ausreisser = erg.filter(function (e) { return e.ausreisser; });
+  if (ausreisser.length) text += '\nNicht verwendet (Ausreißer): ' + ausreisser.map(function (e) { return e.notiz || '–'; }).join('; ');
+  const q = modell.kalibrierung.quellen;
+  Object.keys(q).forEach(function (name) {
+    text += '\n' + name + ': ' + q[name].n + ' × Ø ' + String(q[name].abweichung).replace('.', ',') + ' % Abweichung (Modell im Schnitt ' +
+      (q[name].tendenz >= 0 ? '+' : '') + String(q[name].tendenz).replace('.', ',') + ' %)';
+  });
+  return { modell: modell, zeilen: erg, text: text };
 }
 
 /** Wird vom Kalibrierungsformular aufgerufen: Fahrt speichern, Temperaturen holen, neu kalibrieren. */
@@ -612,7 +710,9 @@ function fahrtenBlatt_() {
 
 /** Gewicht einer Zeile in der Kalibrierung. */
 function gewichtFuer_(quelle, hatBordcomputer, hatDauer) {
-  if (QUELLEN_VERGLEICH.indexOf(quelle) !== -1) return hatDauer ? 0.3 : 0.15;
+  // Vergleichswerte ohne Fahrzeit zählen nicht: das angenommene Tempo verfälscht sie stärker, als sie nützen
+  // (15.09.2026: drei ABRP-Werte mit angenommenen 120 km/h drückten den Faktor auf 0,80 statt 0,92).
+  if (QUELLEN_VERGLEICH.indexOf(quelle) !== -1) return hatDauer ? 0.3 : 0;
   return hatBordcomputer ? 1 : 0.5;
 }
 
@@ -704,7 +804,8 @@ function pruefeVergleich_(d) {
   if (!soc(d.ende_soc)) return 'Akku Ankunft bitte als Zahl von 0 bis 100.';
   if (Number(d.ende_soc) >= Number(d.start_soc)) return 'Akku Ankunft muss kleiner sein als Akku Start.';
   const minuten = parseFahrzeit_(d.fahrzeit);
-  if (minuten !== null && !(minuten > 0)) return 'Fahrzeit bitte als 2:10 oder in Minuten.';
+  if (minuten === null) return 'Bitte die Fahrzeit laut App eintragen (z. B. 2:10) – ohne sie ist der Vergleich zu ungenau.';
+  if (!(minuten > 0)) return 'Fahrzeit bitte als 2:10 oder in Minuten.';
   const t = String(d.temperatur === undefined || d.temperatur === null ? '' : d.temperatur).trim();
   if (t !== '' && !(Number(t) >= -30 && Number(t) <= 45)) return 'Temperatur bitte zwischen −30 und 45 °C.';
   return '';
@@ -806,63 +907,38 @@ function temperaturBei_(lat, lon, iso) {
   }
 }
 
-/** Rechnet alle Fahrten mit den Physik-Startwerten nach, kalibriert, trägt Ergebnisse ein und veröffentlicht modell.json. */
+/** Liest das Blatt „Fahrten", kalibriert (kalibriereZeilen_), trägt Ergebnisse und Status ein und veröffentlicht modell.json. */
 function kalibriereUndVeroeffentliche_() {
   const blatt = fahrtenBlatt_();
   const sp = spaltenIndex_(blatt);
-  const kap = MODELL_STANDARD.fahrzeug.kapazitaet_kwh;
   const werte = blatt.getLastRow() >= 2 ? blatt.getRange(2, 1, blatt.getLastRow() - 1, SPALTEN_FAHRTEN.length).getValues() : [];
+  const feld = function (z, name) { return sp[name] ? z[sp[name] - 1] : ''; };
 
-  const fahrten = [], berechnet = [];
-  werte.forEach(function (z) {
-    const f = function (name) { return sp[name] ? z[sp[name] - 1] : ''; };
-    const quelle = String(f('Quelle') || '').trim() || 'gemessen';
-    const temp = f('Temp Ø') === '' ? TEMPERATUR_ERSATZ_C : Number(f('Temp Ø'));
-    const a = energieAnteile_(MODELL_STANDARD, Number(f('km')), Number(f('hm auf')), Number(f('hm ab')), Number(f('km/h verwendet')) || 120, temp, Number(f('Zusatzgewicht kg')) || 0);
-    const real = (Number(f('Akku Start %')) - Number(f('Akku Ende %'))) / 100 * kap;
-    const gueltig = isFinite(a.fahrt) && isFinite(real) && real > 0.5 && Number(f('km')) >= 10;
-    const verwenden = gueltig && String(f('verwenden')).trim().toLowerCase() !== 'nein';
-    if (verwenden) {
-      fahrten.push({ w: gewichtFuer_(quelle, f('Ø km/h Bordcomputer') !== '', f('Dauer h') !== ''), real: real, a: [a.fahrt, a.hoehe, a.heiz] });
-    }
-    berechnet.push({ a: a, real: real, gueltig: gueltig, verwenden: verwenden, quelle: quelle });
-  });
-
-  const kal = kalibriere_(fahrten, kap);
-  const modell = JSON.parse(JSON.stringify(MODELL_STANDARD));
-  modell.erzeugt = new Date().toISOString();
-  modell.korrektur = kal.korrektur;
-  modell.kalibrierung = { fahrten: fahrten.length, abweichung_prozent: kal.abweichung, stand: modell.erzeugt, methode: kal.methode };
-  modell.kalibrierung.quellen = quellenStatistik_(berechnet.filter(function (b) { return b.verwenden; }).map(function (b) {
-    return { quelle: b.quelle, diff: (energieKwh_(modell, b.a) - b.real) / kap * 100 };
+  const erg = kalibriereZeilen_(werte.map(function (z) {
+    return {
+      km: feld(z, 'km'), hmAuf: feld(z, 'hm auf'), hmAb: feld(z, 'hm ab'), kmh: feld(z, 'km/h verwendet'),
+      temp: feld(z, 'Temp Ø') === '' ? null : Number(feld(z, 'Temp Ø')), zusatzKg: feld(z, 'Zusatzgewicht kg'),
+      start: feld(z, 'Akku Start %'), ende: feld(z, 'Akku Ende %'), quelle: feld(z, 'Quelle'),
+      bordcomputer: feld(z, 'Ø km/h Bordcomputer') !== '', dauer: feld(z, 'Dauer h') !== '',
+      verwenden: feld(z, 'verwenden'), notiz: feld(z, 'Notiz'),
+    };
   }));
 
-  if (berechnet.length > 0) {
-    const ab = sp['Verbrauch kWh'];
-    const zeilen = berechnet.map(function (b) {
-      if (!b.gueltig) return ['', '', '', '', '', ''];
-      const modellKwh = energieKwh_(modell, b.a);
-      return [runde_(b.real, 2), runde_(b.a.fahrt, 2), runde_(b.a.hoehe, 2), runde_(b.a.heiz, 2), runde_(modellKwh, 2), runde_((modellKwh - b.real) / kap * 100, 1)];
-    });
-    blatt.getRange(2, ab, zeilen.length, 6).setValues(zeilen);
+  if (werte.length > 0) {
+    blatt.getRange(2, sp['Verbrauch kWh'], erg.zeilen.length, 6).setValues(erg.zeilen.map(function (e) {
+      if (!e.gueltig) return ['', '', '', '', '', ''];
+      return [runde_(e.real, 2), runde_(e.a.fahrt, 2), runde_(e.a.hoehe, 2), runde_(e.a.heiz, 2), runde_(e.modellKwh, 2), runde_(e.abweichung, 1)];
+    }));
+    blatt.getRange(2, sp['Kalibrierung'], erg.zeilen.length, 1).setValues(erg.zeilen.map(function (e) { return [e.status]; }));
   }
 
   let fehler = '';
   try {
-    githubSchreibe_('modell.json', JSON.stringify(modell, null, 1), 'modell.json kalibriert: ' + kal.methode + ' (Apps Script v' + VERSION + ')');
+    githubSchreibe_('modell.json', JSON.stringify(erg.modell, null, 1), 'modell.json kalibriert: ' + erg.modell.kalibrierung.methode + ' (Apps Script v' + VERSION + ')');
   } catch (e) {
     fehler = 'Modell konnte nicht veröffentlicht werden: ' + e.message;
   }
-  const k = kal.korrektur;
-  const text = 'Verbrauchsmodell: ' + kal.methode + '.' +
-    (fahrten.length ? '\nKorrektur: gesamt ' + runde_(k.gesamt, 2) + ', Fahrt ' + runde_(k.fahrt, 2) + ', Höhe ' + runde_(k.hoehe, 2) + ', Heizung ' + runde_(k.heizung, 2) +
-      '\nØ Abweichung: ' + String(kal.abweichung).replace('.', ',') + ' % Akku je Fahrt.' : '');
-  const q = modell.kalibrierung.quellen;
-  const quellenText = Object.keys(q).map(function (name) {
-    return name + ': ' + q[name].n + ' × Ø ' + String(q[name].abweichung).replace('.', ',') + ' % Abweichung (Modell im Schnitt ' +
-      (q[name].tendenz >= 0 ? '+' : '') + String(q[name].tendenz).replace('.', ',') + ' %)';
-  }).join('\n');
-  return { modell: modell, text: text + (quellenText ? '\n' + quellenText : ''), fehler: fehler };
+  return { modell: erg.modell, text: erg.text, fehler: fehler };
 }
 
 function punkteBlattMitIndex_() {
@@ -1151,7 +1227,7 @@ const BETREIBER_MUSTER = [
   ['fastned', 'Fastned'], ['allego', 'Allego'], ['aral', 'Aral pulse'], ['shell', 'Shell Recharge'],
   ['gofast', 'GOFAST'], ['swisscharge', 'Swisscharge'], ['electra', 'Electra'], ['atlante', 'Atlante'],
   ['free to x', 'Free To X'], ['ewiva', 'Ewiva'], ['be charge', 'Be Charge'], ['e.on', 'E.ON'],
-  ['totalenergies', 'TotalEnergies'], ['lidl', 'Lidl'], ['kaufland', 'Kaufland'],
+  ['totalenergies', 'TotalEnergies'], ['lidl', 'Lidl'], ['kaufland', 'Kaufland'], ['ewe go', 'EWE Go'],
 ];
 
 const STATUS_FEHLER_PRAEFIX = 'nicht auflösbar';
@@ -1754,6 +1830,11 @@ function duenneAus_(voll) {
 // Der Querabstand wird mit exportiert und angezeigt.
 const ZUORDNUNG_MAX_KM = 10;
 const STATUS_OHNE_ROUTE = 'keiner Route zugeordnet (> ' + ZUORDNUNG_MAX_KM + ' km)';
+
+/** Erkennt den Status auch in älteren Fassungen („… (> 2 km)"), damit er beim Export verschwindet. */
+function istOhneRouteStatus_(status) {
+  return String(status || '').indexOf('keiner Route zugeordnet') === 0;
+}
 const RASTSTAETTE_MAX_KM = 0.5;
 const RASTSTAETTE_MUSTER = /rastst[äa]tte|rasthof|rastanlage|rastplatz|autobahn|autogrill|aire de service|area di servizio/i;
 
@@ -1803,7 +1884,7 @@ function exportJson() {
           adresse: String(feld('Adresse')).trim(),
           lat: Number(feld('Lat')),
           lon: Number(feld('Lon')),
-          betreiber: String(feld('Betreiber')).trim(),
+          betreiber: String(feld('Betreiber')).trim() || betreiberAusName_(String(feld('Name'))),
           kw: zahlOderNull_(feld('kW')),
           anzahl: zahlOderNull_(feld('Anzahl')),
           richtung: RICHTUNGEN.indexOf(String(feld('Richtung')).trim()) !== -1 ? String(feld('Richtung')).trim() : 'beide',
@@ -1824,8 +1905,10 @@ function exportJson() {
       const s = statusZeilen[k];
       if (p.zuordnung.length === 0) {
         ohne.push(p.id);
-        if (s.status === '') punkteBlatt.getRange(s.zeile, spP.Status).setValue(STATUS_OHNE_ROUTE);
-      } else if (s.status === STATUS_OHNE_ROUTE) {
+        if (s.status === '' || (istOhneRouteStatus_(s.status) && s.status !== STATUS_OHNE_ROUTE)) {
+          punkteBlatt.getRange(s.zeile, spP.Status).setValue(STATUS_OHNE_ROUTE);
+        }
+      } else if (istOhneRouteStatus_(s.status)) {
         punkteBlatt.getRange(s.zeile, spP.Status).setValue('');
       }
     });

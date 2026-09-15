@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung — Vergleichswert aus ABRP oder My CUPRA eintragen (Strecke Station X → Y, Akku Start/Ankunft).
-  Wird von doGet() mit ?seite=vergleich[&route=…&richtung=…&nach=p023] ausgeliefert. Version 0.14.0
+  Wird von doGet() mit ?seite=vergleich[&route=…&richtung=…&nach=p023] ausgeliefert.
+  Version 0.14.1 — Fahrzeit ist Pflicht. Version 0.14.0 — erste Fassung.
 -->
 <html lang="de">
 <head>
@@ -54,7 +55,7 @@
 <body>
   <main>
     <h1>Vergleichswert eintragen</h1>
-    <p class="leise">Strecke in ABRP oder My CUPRA von einer Station zur nächsten planen und die beiden Akkuwerte abschreiben. Kilometer und Höhenmeter rechnet das Script selbst.</p>
+    <p class="leise">Strecke in ABRP oder My CUPRA von einer Station zur nächsten planen und die beiden Akkuwerte sowie die Fahrzeit abschreiben. Kilometer und Höhenmeter rechnet das Script selbst.</p>
 
     <div class="quelle" role="group" aria-label="Quelle">
       <button type="button" data-quelle="ABRP" aria-pressed="false">ABRP</button>
@@ -73,7 +74,7 @@
         <label>Akku Ankunft (%) <input name="ende_soc" type="number" inputmode="numeric" min="0" max="100"></label>
       </div>
       <div class="zwei">
-        <label>Fahrzeit laut App <small>optional, z. B. 2:10</small><input name="fahrzeit" inputmode="numeric" autocomplete="off" placeholder="h:mm"></label>
+        <label>Fahrzeit laut App <small>nötig, z. B. 2:10 – ergibt das Tempo</small><input name="fahrzeit" inputmode="numeric" autocomplete="off" placeholder="h:mm"></label>
         <label>Temperatur (°C) <small>optional, sonst Wetter heute</small><input name="temperatur" type="number" inputmode="decimal" min="-30" max="45"></label>
       </div>
       <div id="hinweis" class="hinweis" hidden></div>
@@ -160,6 +161,7 @@
       if (!quelle) { hinweis('Bitte oben die Quelle wählen: ABRP oder My CUPRA.'); return; }
       if (form.von.selectedIndex >= form.nach.selectedIndex) { hinweis('„Nach" muss in Fahrtrichtung hinter „Von" liegen.'); return; }
       if (form.start_soc.value.trim() === '' || form.ende_soc.value.trim() === '') { hinweis('Bitte Akku Start und Akku Ankunft eintragen.'); return; }
+      if (form.fahrzeit.value.trim() === '') { hinweis('Bitte die Fahrzeit laut App eintragen (z. B. 2:10) – ohne sie ist der Vergleich zu ungenau, weil das Tempo den Verbrauch am stärksten bestimmt.'); form.fahrzeit.focus(); return; }
 
       const daten = {
         quelle, route: form.route.value, richtung: form.richtung.value, von: form.von.value, nach: form.nach.value,
