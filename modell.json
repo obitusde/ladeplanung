@@ -17,21 +17,21 @@
  },
  "korrektur": {
   "gesamt": 1,
-  "fahrt": 0.6402805749717152,
-  "hoehe": 1.4246336459088746,
+  "fahrt": 0.6548546564324957,
+  "hoehe": 1.1465514724813297,
   "heizung": 2.5
  },
- "erzeugt": "2026-09-15T12:17:46.265Z",
+ "erzeugt": "2026-09-15T12:20:48.262Z",
  "kalibrierung": {
-  "fahrten": 5,
-  "abweichung_prozent": 13.6,
-  "stand": "2026-09-15T12:17:46.265Z",
-  "methode": "Einzelfaktoren aus 5 Fahrten",
+  "fahrten": 6,
+  "abweichung_prozent": 15.1,
+  "stand": "2026-09-15T12:20:48.262Z",
+  "methode": "Einzelfaktoren aus 6 Fahrten",
   "quellen": {
    "ABRP": {
-    "n": 5,
-    "abweichung": 13.6,
-    "tendenz": -13.6
+    "n": 6,
+    "abweichung": 15.1,
+    "tendenz": -15.1
    }
   }
  }
