@@ -1,13 +1,14 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.4.0 — Etappe 4/5: berechneRouten() mit Kumulierung, Ausdünnung, Rundung.
  * Version 0.3.0 — Etappe 3: aufloeseLinks().
  * Version 0.2.0 — Etappe 2: setup() und Menü.
  *
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.3.0';
+const VERSION = '0.4.0';
 
 const BLATT_PUNKTE = 'Ladepunkte';
 const BLATT_ROUTEN = 'Routen';
@@ -37,6 +38,8 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Ladeplanung')
     .addItem('Links auflösen', 'aufloeseLinks')
+    .addItem('Routen berechnen (geänderte)', 'berechneRouten')
+    .addItem('Routen neu berechnen (alle)', 'berechneRoutenNeu')
     .addSeparator()
     .addSubMenu(SpreadsheetApp.getUi().createMenu('Zugänge')
       .addItem('ORS-Schlüssel hinterlegen', 'orsSchluesselHinterlegen')
@@ -364,6 +367,307 @@ function betreiberAusName_(name) {
 function runde_(zahl, stellen) {
   const f = Math.pow(10, stellen);
   return Math.round(zahl * f) / f;
+}
+
+// ---------------------------------------------------------------------------
+// berechneRouten() — holt jede Route samt Höhen von OpenRouteService, rechnet
+// kumulierte Kilometer und Höhenmeter, dünnt aus und legt die Linie als
+// linien/<id>.json im Repo ab, aus dem exportJson() später liest.
+// ---------------------------------------------------------------------------
+
+const ORS_URL = 'https://api.openrouteservice.org/v2/directions/driving-car/geojson';
+const ERDRADIUS_KM = 6371.0088;
+const AUSDUENNUNG_KM = 0.25;
+const AUSDUENNUNG_HM = 10;
+const FANGRADIUS_M = 2000; // so weit darf ORS einen Punkt zur nächsten Straße verschieben
+const MAX_START_NEUE_ROUTE_MS = 4 * 60 * 1000; // danach keine neue Route mehr beginnen
+
+const GITHUB_REPO = 'obitusde/ladeplanung';
+const GITHUB_BRANCH = 'main';
+const LINIEN_ORDNER = 'linien';
+
+/** Berechnet nur Routen, deren Start/Via/Ziel sich geändert haben oder die noch fehlen. */
+function berechneRouten() { berechneRoutenIntern_(false); }
+
+/** Berechnet alle Routen neu. */
+function berechneRoutenNeu() { berechneRoutenIntern_(true); }
+
+function berechneRoutenIntern_(erzwingen) {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActive();
+  const props = PropertiesService.getScriptProperties();
+  const schluessel = props.getProperty('ORS_API_KEY');
+  if (!schluessel || !props.getProperty('GITHUB_TOKEN')) {
+    ui.alert('Routen berechnen', 'Es fehlen Zugänge: ORS_API_KEY und GITHUB_TOKEN müssen in den Skripteigenschaften stehen.', ui.ButtonSet.OK);
+    return;
+  }
+  const blatt = ss.getSheetByName(BLATT_ROUTEN);
+  if (!blatt || blatt.getLastRow() < 2) {
+    ui.alert('Routen berechnen', 'Blatt „' + BLATT_ROUTEN + '" fehlt oder ist leer — zuerst Setup ausführen.', ui.ButtonSet.OK);
+    return;
+  }
+
+  const sp = spaltenIndex_(blatt);
+  const werte = blatt.getRange(2, 1, blatt.getLastRow() - 1, blatt.getLastColumn()).getValues();
+  const start = Date.now();
+  const meldungen = [];
+  let abgebrochen = false;
+
+  for (let i = 0; i < werte.length; i++) {
+    const z = werte[i];
+    const zeile = i + 2;
+    const feld = function (name) { return String(z[sp[name] - 1]).trim(); };
+    const setze = function (name, wert) { blatt.getRange(zeile, sp[name]).setValue(wert); };
+
+    const id = feld('id');
+    if (!id) continue;
+
+    const eingabe = [feld('Start'), feld('Via'), feld('Ziel')].join('|');
+    const stand = feld('Stand');
+    const aktuell = stand !== '' && stand.indexOf('Fehler') !== 0 && props.getProperty('EINGABE_' + id) === eingabe;
+    if (aktuell && !erzwingen) { meldungen.push(id + ': unverändert, übersprungen'); continue; }
+
+    if (Date.now() - start > MAX_START_NEUE_ROUTE_MS) { abgebrochen = true; break; }
+
+    try {
+      if (!feld('Start') || !feld('Ziel')) throw new Error('Start oder Ziel fehlt');
+      const eintraege = [feld('Start')]
+        .concat(feld('Via').split(';'))
+        .concat([feld('Ziel')])
+        .map(function (s) { return s.trim(); })
+        .filter(function (s) { return s !== ''; });
+      const punkte = eintraege.map(koordinateAusEingabe_);
+
+      const route = holeRoute_(punkte, schluessel);
+      const voll = kumuliere_(route.koordinaten);
+      const linie = duenneAus_(voll);
+      const letzter = linie[linie.length - 1];
+
+      const datei = {
+        version: VERSION,
+        id: id,
+        name: feld('Name'),
+        eingabe: eingabe,
+        erzeugt: new Date().toISOString(),
+        ors_distanz_km: runde_(route.distanz_m / 1000, 2),
+        ors_dauer_s: Math.round(route.dauer_s),
+        laenge_km: letzter[2],
+        hm_hin: letzter[3],
+        hm_rueck: letzter[4],
+        stuetzpunkte_voll: voll.length,
+        linie: linie,
+      };
+      githubSchreibe_(LINIEN_ORDNER + '/' + id + '.json', JSON.stringify(datei), 'Linie ' + id + ' berechnet (Apps Script v' + VERSION + ')');
+
+      setze('Länge km', runde_(route.distanz_m / 1000, 1));
+      setze('Fahrzeit', formatiereDauer_(route.dauer_s));
+      setze('Stand', Utilities.formatDate(new Date(), 'Europe/Zurich', 'dd.MM.yyyy HH:mm'));
+      props.setProperty('EINGABE_' + id, eingabe);
+
+      meldungen.push(id + ': ' + letzter[2] + ' km, Anstieg ' + letzter[3] + ' m hin / ' + letzter[4] +
+        ' m rück, ' + voll.length + ' → ' + linie.length + ' Stützpunkte');
+    } catch (e) {
+      setze('Stand', 'Fehler: ' + e.message);
+      meldungen.push(id + ': Fehler — ' + e.message);
+    }
+  }
+
+  if (abgebrochen) meldungen.push('\nZeitlimit erreicht — bitte „Routen berechnen" noch einmal starten.');
+  ui.alert('Routen berechnen v' + VERSION, meldungen.join('\n'), ui.ButtonSet.OK);
+}
+
+/** „lat,lon" oder Maps-Link → [lon, lat] für ORS. */
+function koordinateAusEingabe_(text) {
+  const m = String(text).match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+  if (m) return [Number(m[2]), Number(m[1])];
+  if (istMapsLink_(text)) {
+    const info = werteMapsUrlAus_(folgeWeiterleitungen_(text));
+    if (info.lat === null) throw new Error('Link ohne Koordinaten: ' + text);
+    return [info.lon, info.lat];
+  }
+  throw new Error('weder Koordinate noch Maps-Link: ' + text);
+}
+
+function holeRoute_(punkte, schluessel) {
+  const antwort = UrlFetchApp.fetch(ORS_URL, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { Authorization: schluessel, Accept: 'application/geo+json' },
+    payload: JSON.stringify({
+      coordinates: punkte,
+      elevation: true,
+      instructions: false,
+      radiuses: punkte.map(function () { return FANGRADIUS_M; }),
+    }),
+    muteHttpExceptions: true,
+  });
+
+  const code = antwort.getResponseCode();
+  const text = antwort.getContentText();
+  if (code !== 200) {
+    let meldung = text.slice(0, 200);
+    try {
+      const j = JSON.parse(text);
+      if (j.error) meldung = typeof j.error === 'string' ? j.error : (j.error.message || JSON.stringify(j.error));
+    } catch (e) { /* Rohtext behalten */ }
+    throw new Error('ORS HTTP ' + code + ': ' + meldung);
+  }
+
+  const json = JSON.parse(text);
+  const f = json.features && json.features[0];
+  if (!f || !f.geometry || !f.geometry.coordinates || f.geometry.coordinates.length < 2) throw new Error('ORS lieferte keine Geometrie');
+  if (f.geometry.coordinates[0].length < 3) throw new Error('ORS lieferte keine Höhenwerte');
+  const summe = (f.properties && f.properties.summary) || {};
+  return { koordinaten: f.geometry.coordinates, distanz_m: summe.distance || 0, dauer_s: summe.duration || 0 };
+}
+
+/**
+ * [lon, lat, höhe] in voller Auflösung → [lat, lon, km, anstieg_hin, anstieg_rueck, höhe].
+ * Der Anstieg in Rückrichtung ist das kumulierte Gefälle in Hinrichtung.
+ */
+function kumuliere_(koordinaten) {
+  const erg = [];
+  let km = 0, auf = 0, ab = 0;
+  for (let i = 0; i < koordinaten.length; i++) {
+    const p = koordinaten[i];
+    if (i > 0) {
+      const v = koordinaten[i - 1];
+      km += haversine_(v[1], v[0], p[1], p[0]);
+      const d = p[2] - v[2];
+      if (d > 0) auf += d; else ab -= d;
+    }
+    erg.push([p[1], p[0], km, auf, ab, p[2]]);
+  }
+  return erg;
+}
+
+/**
+ * Behält einen Stützpunkt, wenn seit dem letzten behaltenen mehr als 250 m zurückgelegt
+ * wurden oder sich die Höhe um mehr als 10 m geändert hat; erster und letzter immer.
+ * Rundet auf [lat, lon] 5 Stellen, km 2 Stellen, Höhenmeter ganzzahlig.
+ */
+function duenneAus_(voll) {
+  if (voll.length === 0) return [];
+  const behalten = [voll[0]];
+  let letzter = voll[0];
+  for (let i = 1; i < voll.length - 1; i++) {
+    const p = voll[i];
+    if (p[2] - letzter[2] > AUSDUENNUNG_KM || Math.abs(p[5] - letzter[5]) > AUSDUENNUNG_HM) {
+      behalten.push(p);
+      letzter = p;
+    }
+  }
+  if (voll.length > 1) behalten.push(voll[voll.length - 1]);
+  return behalten.map(function (p) {
+    return [runde_(p[0], 5), runde_(p[1], 5), runde_(p[2], 2), Math.round(p[3]), Math.round(p[4])];
+  });
+}
+
+// ---------------------------------------------------------------------------
+// GitHub — Lesen und Schreiben von Dateien im Repo über die Contents-API.
+// ---------------------------------------------------------------------------
+
+function githubKopf_() {
+  const token = PropertiesService.getScriptProperties().getProperty('GITHUB_TOKEN');
+  if (!token) throw new Error('GITHUB_TOKEN fehlt in den Skripteigenschaften');
+  return { Authorization: 'Bearer ' + token, 'X-GitHub-Api-Version': '2022-11-28' };
+}
+
+function githubUrl_(pfad) {
+  return 'https://api.github.com/repos/' + GITHUB_REPO + '/contents/' + pfad;
+}
+
+/** Legt eine Datei an oder ersetzt sie. Der sha der bestehenden Datei wird vorher geholt. */
+function githubSchreibe_(pfad, inhalt, nachricht) {
+  const kopf = githubKopf_();
+  kopf.Accept = 'application/vnd.github+json';
+
+  const alt = UrlFetchApp.fetch(githubUrl_(pfad) + '?ref=' + GITHUB_BRANCH, { headers: kopf, muteHttpExceptions: true });
+  let sha = null;
+  if (alt.getResponseCode() === 200) {
+    sha = JSON.parse(alt.getContentText()).sha;
+  } else if (alt.getResponseCode() !== 404) {
+    throw new Error('GitHub GET ' + pfad + ' HTTP ' + alt.getResponseCode() + ': ' + alt.getContentText().slice(0, 200));
+  }
+
+  const body = { message: nachricht, content: Utilities.base64Encode(inhalt, Utilities.Charset.UTF_8), branch: GITHUB_BRANCH };
+  if (sha) body.sha = sha;
+  const antwort = UrlFetchApp.fetch(githubUrl_(pfad), {
+    method: 'put', contentType: 'application/json', headers: kopf, payload: JSON.stringify(body), muteHttpExceptions: true,
+  });
+  const code = antwort.getResponseCode();
+  if (code !== 200 && code !== 201) {
+    throw new Error('GitHub PUT ' + pfad + ' HTTP ' + code + ': ' + antwort.getContentText().slice(0, 200));
+  }
+}
+
+/** Liest eine Datei als Text; null, wenn sie nicht existiert. */
+function githubLies_(pfad) {
+  const kopf = githubKopf_();
+  kopf.Accept = 'application/vnd.github.raw+json';
+  const antwort = UrlFetchApp.fetch(githubUrl_(pfad) + '?ref=' + GITHUB_BRANCH, { headers: kopf, muteHttpExceptions: true });
+  if (antwort.getResponseCode() === 404) return null;
+  if (antwort.getResponseCode() !== 200) {
+    throw new Error('GitHub GET ' + pfad + ' HTTP ' + antwort.getResponseCode() + ': ' + antwort.getContentText().slice(0, 200));
+  }
+  return antwort.getContentText('UTF-8');
+}
+
+// ---------------------------------------------------------------------------
+// Projektion — Kernalgorithmus des Streckenkilometer-Modells (Brief, Abschnitt 2).
+// Dieselbe Rechnung steckt später im Frontend.
+// ---------------------------------------------------------------------------
+
+/**
+ * Projiziert (lat, lon) auf die Linie [[lat, lon, km, hm_hin, hm_rueck], …].
+ * Lokale äquirektanguläre Projektion um lat0 = Mittel der Routenbreiten.
+ * Gibt { q: Querabstand km, km, hm_hin, hm_rueck } zurück, interpoliert im nächsten Segment.
+ */
+function projiziere_(linie, lat, lon, lat0) {
+  if (lat0 === undefined) {
+    let summe = 0;
+    for (let i = 0; i < linie.length; i++) summe += linie[i][0];
+    lat0 = summe / linie.length;
+  }
+  const fx = 111.320 * Math.cos(lat0 * Math.PI / 180);
+  const fy = 110.574;
+  const px = lon * fx, py = lat * fy;
+
+  let bester = { q: Infinity, km: 0, hm_hin: 0, hm_rueck: 0 };
+  for (let i = 0; i < linie.length - 1; i++) {
+    const a = linie[i], b = linie[i + 1];
+    const ax = a[1] * fx, ay = a[0] * fy;
+    const dx = b[1] * fx - ax, dy = b[0] * fy - ay;
+    const l2 = dx * dx + dy * dy;
+    let t = l2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    const cx = ax + t * dx, cy = ay + t * dy;
+    const q = Math.sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy));
+    if (q < bester.q) {
+      bester = {
+        q: q,
+        km: a[2] + t * (b[2] - a[2]),
+        hm_hin: a[3] + t * (b[3] - a[3]),
+        hm_rueck: a[4] + t * (b[4] - a[4]),
+      };
+    }
+  }
+  return bester;
+}
+
+function haversine_(lat1, lon1, lat2, lon2) {
+  const rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad;
+  const dLon = (lon2 - lon1) * rad;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return 2 * ERDRADIUS_KM * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+function formatiereDauer_(sekunden) {
+  const h = Math.floor(sekunden / 3600);
+  const min = Math.round((sekunden - h * 3600) / 60);
+  return h + ' h ' + ('0' + min).slice(-2) + ' min';
 }
 
 function setzeValidierungen_(punkte) {
