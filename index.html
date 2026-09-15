@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.11.0 — Knopf „＋" (Ladepunkt hinzufügen) und „Bearbeiten" öffnen das Formular; Daten laden bei Rückkehr neu.
   Version 0.10.0 — Ein Richtungsknopf, Namen ohne „Ladestation", Betreiber nicht doppelt, Korridor 10 km.
   Version 0.9.1 — Straße im Titel; ABRP-Link mit aktueller Position als Start.
   Version 0.9.0 — Lage je Station: Raststätte, Straße, Querabstand („3,2 km abseits · A 5").
@@ -73,6 +74,7 @@
       font-weight: 600; cursor: pointer;
     }
     .knopf.haupt { background: var(--akzent); color: var(--akzent-text); border-color: var(--akzent); }
+    a.knopf { display: flex; align-items: center; justify-content: center; text-decoration: none; color: var(--text); font-size: 24px; }
     .richtung {
       flex: 1; min-width: 0; min-height: 52px; padding: 0 12px;
       background: var(--text); color: var(--grund); border: 0; border-radius: 10px;
@@ -149,6 +151,7 @@
   <header>
     <div class="zeile">
       <select id="route" aria-label="Route"></select>
+      <a id="neu" class="knopf" href="#" target="_blank" rel="noopener" aria-label="Ladepunkt hinzufügen">＋</a>
       <button id="einstellungen" class="knopf" aria-label="Einstellungen">⚙</button>
     </div>
     <div class="zeile">
@@ -170,6 +173,7 @@
       <button id="d-kopieren" class="knopf haupt" type="button">Adresse kopieren</button>
       <a id="d-maps" class="knopf" target="_blank" rel="noopener">Google Maps</a>
       <a id="d-abrp" class="knopf" target="_blank" rel="noopener">ABRP</a>
+      <a id="d-bearbeiten" class="knopf" target="_blank" rel="noopener">Bearbeiten</a>
       <button id="d-sim" class="knopf" type="button" hidden>Simulierte Position hierher</button>
     </div>
   </section>
@@ -194,11 +198,13 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.10.0';
+    const APP_VERSION = '0.11.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
     const SPEICHER = 'ladeplanung.v1';
+    // Formular (Apps-Script-Web-App, nur mit Christofs Google-Konto nutzbar)
+    const FORMULAR_URL = 'https://script.google.com/macros/s/AKfycbzTwwwZcQBuUdfmyoniHH5-gALKnrMlvl50VWtuM_JjZ7tBn7nk-AUwPO37bpPNBjsmuw/exec';
     const ABSEITS = { label: 'Weit abseits (Annecy)', lat: 45.8992, lon: 6.1294 };
 
     // -----------------------------------------------------------------------
@@ -473,6 +479,7 @@
       for (const [k, v] of felder) dl.append(el('dt', '', k), el('dd', '', v));
 
       $('d-maps').href = mapsUrl(p);
+      $('d-bearbeiten').href = FORMULAR_URL + '?id=' + encodeURIComponent(p.id);
       $('d-abrp').href = abrpUrl(p, aktuellePosition());
       $('d-sim').hidden = !zustand.sim.aktiv;
 
@@ -633,24 +640,43 @@
       });
     }
 
+    let geladenUm = 0;
+
+    /**
+     * Lädt routes.json. Der Zeitstempel im Aufruf umgeht Zwischenspeicher, damit Änderungen aus dem
+     * Formular nach dem GitHub-Pages-Deploy ankommen. still = bei Fehler alte Daten behalten.
+     */
+    async function ladeDaten(still) {
+      try {
+        const url = datenUrl();
+        const antwort = await fetch(url + (url.includes('?') ? '&' : '?') + 't=' + Date.now(), { cache: 'no-store' });
+        if (!antwort.ok) throw new Error('HTTP ' + antwort.status);
+        const neu = await antwort.json();
+        if (!neu.routen || neu.routen.length === 0) throw new Error('keine Routen in den Daten');
+        daten = neu;
+        geladenUm = Date.now();
+      } catch (e) {
+        if (!still || !daten) $('liste').replaceChildren(el('p', 'leer', 'Daten konnten nicht geladen werden: ' + e.message));
+        return false;
+      }
+      const sel = $('route');
+      sel.replaceChildren();
+      for (const r of daten.routen) { const o = el('option', '', r.name); o.value = r.id; sel.append(o); }
+      return true;
+    }
+
     async function start() {
       bindeEreignisse();
-      try {
-        const antwort = await fetch(datenUrl(), { cache: 'no-store' });
-        if (!antwort.ok) throw new Error('HTTP ' + antwort.status);
-        daten = await antwort.json();
-        if (!daten.routen || daten.routen.length === 0) throw new Error('keine Routen in den Daten');
-      } catch (e) {
-        $('liste').replaceChildren(el('p', 'leer', 'Daten konnten nicht geladen werden: ' + e.message));
-        return;
-      }
-
-      const sel = $('route');
-      for (const r of daten.routen) { const o = el('option', '', r.name); o.value = r.id; sel.append(o); }
+      $('neu').href = FORMULAR_URL + '?neu=1';
       if (zustand.richtung !== 'hin' && zustand.richtung !== 'rueck') zustand.richtung = 'hin';
-
+      if (!await ladeDaten(false)) return;
       render();
       if (!zustand.sim.aktiv) holeStandort();
+
+      // Zurück aus dem Formular (oder App wieder geöffnet): Daten still neu laden
+      document.addEventListener('visibilitychange', async () => {
+        if (document.visibilityState === 'visible' && Date.now() - geladenUm > 30000 && await ladeDaten(true)) render();
+      });
     }
 
     // Für automatisierte Tests zugänglich machen

@@ -35,7 +35,7 @@ const blatt = bauBlatt([
 
 const meldungen = [];
 const SpreadsheetApp = {
-  getActive: () => ({ getSheetByName: n => n === 'Routen' ? blatt : null }),
+  getActiveSpreadsheet: () => ({ getSheetByName: n => n === 'Routen' ? blatt : null }),
   getUi: () => { throw new Error('kein UI im Test'); },
 };
 const consoleStumm = { log: t => meldungen.push(t) };

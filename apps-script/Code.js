@@ -1,6 +1,7 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.11.0 — Web-App-Formular zum Bearbeiten und Hinzufügen von Ladepunkten (nur eigenes Google-Konto).
  * Version 0.10.0 — Höhenprofil über 2 km geglättet (gleitender Median) vor dem 10-m-Filter; Straßennamen gekürzt.
  * Version 0.9.1 — Zuordnungskorridor 10 km.
  * Version 0.9.0 — Zuordnung bis 5 km mit Querabstand, Straße und Raststätten-Kennung; Höhenfilter 10 m.
@@ -15,7 +16,14 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.10.0';
+const VERSION = '0.11.0';
+
+// Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
+const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
+
+function tabelle_() {
+  return SpreadsheetApp.getActiveSpreadsheet() || SpreadsheetApp.openById(SHEET_ID);
+}
 
 const BLATT_PUNKTE = 'Ladepunkte';
 const BLATT_ROUTEN = 'Routen';
@@ -99,6 +107,219 @@ function meldungsUi_() {
 }
 
 // ---------------------------------------------------------------------------
+// Web-App: Formular zum Bearbeiten und Hinzufügen (Christof, 15.09.2026).
+// Nur mit dem eigenen Google-Konto nutzbar (appsscript.json: webapp.access = MYSELF),
+// daher steht kein Kennwort in der öffentlichen App. Aufruf: …/exec?id=p023 oder …/exec?neu=1
+// ---------------------------------------------------------------------------
+
+const APP_URL = 'https://obitusde.github.io/ladeplanung/';
+const FORMULAR_FELDER = ['Name', 'Betreiber', 'kW', 'Anzahl', 'Richtung', 'Favorit', 'Notiz'];
+
+function doGet(e) {
+  const p = (e && e.parameter) || {};
+  const modell = { appUrl: APP_URL, formularUrl: ScriptApp.getService().getUrl(), version: VERSION };
+  if (p.id) {
+    const punkt = /^p\d{1,5}$/.test(p.id) ? liesPunkt_(p.id) : null;
+    if (!punkt) return einfacheSeite_('Ladepunkt „' + p.id + '" nicht gefunden.');
+    modell.modus = 'bearbeiten';
+    modell.punkt = punkt;
+  } else {
+    modell.modus = 'neu';
+    modell.punkt = { link: p.link || '', Richtung: 'beide' };
+  }
+  const vorlage = HtmlService.createTemplateFromFile('Formular');
+  vorlage.modellJson = JSON.stringify(modell).replace(/</g, '\\u003c');
+  return vorlage.evaluate()
+    .setTitle(modell.modus === 'neu' ? 'Ladepunkt hinzufügen' : 'Ladepunkt bearbeiten')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+function einfacheSeite_(text) {
+  const sicher = String(text).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; });
+  return HtmlService.createHtmlOutput('<p style="font:18px system-ui;padding:16px">' + sicher +
+    '</p><p style="font:18px system-ui;padding:0 16px"><a href="' + APP_URL + '" target="_top">Zurück zur App</a></p>')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+/** Wird vom Formular aufgerufen (google.script.run): ändert nur die Formularfelder, danach Export. */
+function speicherePunkt(daten) {
+  const sperre = LockService.getScriptLock();
+  sperre.waitLock(30000);
+  try {
+    const fehler = pruefeFormular_(daten, false);
+    if (fehler) return { ok: false, fehler: fehler };
+    const t = punkteBlattMitIndex_();
+    const zeile = findeZeile_(t.blatt, t.sp, daten.id);
+    if (!zeile) return { ok: false, fehler: 'Ladepunkt ' + daten.id + ' nicht gefunden.' };
+
+    const neu = normalisiereFormular_(daten);
+    const alt = t.blatt.getRange(zeile, 1, 1, t.blatt.getLastColumn()).getValues()[0];
+    const geaendert = FORMULAR_FELDER.filter(function (f) { return String(alt[t.sp[f] - 1]) !== String(neu[f]); });
+    if (geaendert.length === 0) return { ok: true, meldung: 'Keine Änderungen — nichts gespeichert.' };
+    geaendert.forEach(function (f) { t.blatt.getRange(zeile, t.sp[f]).setValue(neu[f]); });
+    SpreadsheetApp.flush();
+
+    // Name oder Betreiber geleert → wieder aus dem Link ergänzen
+    if (neu.Name === '' || neu.Betreiber === '') aufloeseLinks();
+    const exp = exportJson();
+    return {
+      ok: true,
+      meldung: 'Gespeichert: ' + geaendert.join(', ') + '.',
+      warnung: exp.fehler ? 'Export fehlgeschlagen:\n' + exp.meldungen.join('\n') : '',
+      punkt: punktAusExport_(exp.json, daten.id),
+    };
+  } finally {
+    sperre.releaseLock();
+  }
+}
+
+/** Wird vom Formular aufgerufen: prüft den Link, warnt vor Dubletten, legt die Zeile an, ergänzt und exportiert. */
+function legePunktAn(daten) {
+  const sperre = LockService.getScriptLock();
+  sperre.waitLock(30000);
+  try {
+    const fehler = pruefeFormular_(daten, true);
+    if (fehler) return { ok: false, fehler: fehler };
+    const link = String(daten.link).trim();
+
+    let info;
+    try {
+      info = werteMapsUrlAus_(folgeWeiterleitungen_(link));
+    } catch (e) {
+      return { ok: false, fehler: 'Link nicht auflösbar: ' + e.message };
+    }
+    if (info.lat === null) {
+      return { ok: false, fehler: 'Im Link stehen keine Koordinaten. In Google Maps den Ort antippen, „Teilen" → „Link kopieren" und diesen Link einfügen.' };
+    }
+
+    const t = punkteBlattMitIndex_();
+    const werte = t.blatt.getLastRow() >= 2 ? t.blatt.getRange(2, 1, t.blatt.getLastRow() - 1, t.blatt.getLastColumn()).getValues() : [];
+    const bestehende = werte.map(function (z) {
+      return { id: String(z[t.sp.id - 1]).trim(), name: String(z[t.sp.Name - 1]), lat: z[t.sp.Lat - 1], lon: z[t.sp.Lon - 1] };
+    });
+    if (!daten.trotzdem) {
+      const dublette = findeDublette_(bestehende, info.lat, info.lon);
+      if (dublette) return { ok: false, dublette: dublette };
+    }
+
+    const id = naechsteId_(bestehende.map(function (b) { return b.id; }));
+    const neu = normalisiereFormular_(daten);
+    const zeile = new Array(t.blatt.getLastColumn()).fill('');
+    zeile[t.sp.id - 1] = id;
+    zeile[t.sp['Maps-Link'] - 1] = link;
+    zeile[t.sp.Lat - 1] = runde_(info.lat, 6);
+    zeile[t.sp.Lon - 1] = runde_(info.lon, 6);
+    FORMULAR_FELDER.forEach(function (f) { zeile[t.sp[f] - 1] = neu[f]; });
+    t.blatt.appendRow(zeile);
+    SpreadsheetApp.flush();
+
+    aufloeseLinks(); // ergänzt nur leere Felder: Name mit Ort, Adresse, Betreiber
+    const exp = exportJson();
+    const punkt = punktAusExport_(exp.json, id);
+    return {
+      ok: true,
+      meldung: 'Angelegt als ' + id + (punkt && punkt.name ? ': ' + punkt.name : '') + '.',
+      warnung: exp.fehler ? 'Export fehlgeschlagen:\n' + exp.meldungen.join('\n') : '',
+      punkt: punkt,
+    };
+  } finally {
+    sperre.releaseLock();
+  }
+}
+
+function punkteBlattMitIndex_() {
+  const blatt = tabelle_().getSheetByName(BLATT_PUNKTE);
+  if (!blatt) throw new Error('Blatt „' + BLATT_PUNKTE + '" fehlt');
+  return { blatt: blatt, sp: spaltenIndex_(blatt) };
+}
+
+function findeZeile_(blatt, sp, id) {
+  if (blatt.getLastRow() < 2) return 0;
+  const ids = blatt.getRange(2, sp.id, blatt.getLastRow() - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) if (String(ids[i][0]).trim() === id) return i + 2;
+  return 0;
+}
+
+function liesPunkt_(id) {
+  const t = punkteBlattMitIndex_();
+  const zeile = findeZeile_(t.blatt, t.sp, id);
+  if (!zeile) return null;
+  const z = t.blatt.getRange(zeile, 1, 1, t.blatt.getLastColumn()).getValues()[0];
+  const f = function (name) { const v = z[t.sp[name] - 1]; return v === null || v === undefined ? '' : v; };
+  return {
+    id: id, link: String(f('Maps-Link')), Adresse: String(f('Adresse')), Name: String(f('Name')),
+    Betreiber: String(f('Betreiber')), kW: f('kW') === '' ? '' : Number(f('kW')), Anzahl: f('Anzahl') === '' ? '' : Number(f('Anzahl')),
+    Richtung: String(f('Richtung')) || 'beide', Favorit: String(f('Favorit')) === 'ja', Notiz: String(f('Notiz')),
+  };
+}
+
+/** Prüft die Formulareingaben; gibt einen Fehlertext oder '' zurück. */
+function pruefeFormular_(d, neu) {
+  if (!d || typeof d !== 'object') return 'Keine Daten übermittelt.';
+  if (neu && !istMapsLink_(String(d.link || '').trim())) {
+    return 'Bitte einen Google-Maps-Link einfügen (https://maps.app.goo.gl/… oder https://www.google.com/maps/…).';
+  }
+  if (!neu && !/^p\d{1,5}$/.test(String(d.id || ''))) return 'Ungültige id.';
+  const kw = String(d.kW === undefined || d.kW === null ? '' : d.kW).trim();
+  if (kw !== '' && !(Number(kw) > 0 && Number(kw) <= 1000)) return 'Leistung bitte als Zahl zwischen 1 und 1000 kW.';
+  const anzahl = String(d.Anzahl === undefined || d.Anzahl === null ? '' : d.Anzahl).trim();
+  if (anzahl !== '' && !(Number.isInteger(Number(anzahl)) && Number(anzahl) >= 1 && Number(anzahl) <= 99)) {
+    return 'Ladepunkte bitte als ganze Zahl zwischen 1 und 99.';
+  }
+  if (d.Richtung && RICHTUNGEN.indexOf(d.Richtung) === -1) return 'Unbekannte Richtung.';
+  return '';
+}
+
+/** Formularwerte → Zellwerte. Text, der mit = + - @ beginnt, wird als Text markiert (keine Formel). */
+function normalisiereFormular_(d) {
+  const text = function (v, max) {
+    let s = String(v === undefined || v === null ? '' : v).trim().slice(0, max);
+    if (/^[=+\-@]/.test(s)) s = "'" + s;
+    return s;
+  };
+  const zahl = function (v) { const s = String(v === undefined || v === null ? '' : v).trim(); return s === '' ? '' : Number(s); };
+  return {
+    Name: text(d.Name, 120), Betreiber: text(d.Betreiber, 60), kW: zahl(d.kW), Anzahl: zahl(d.Anzahl),
+    Richtung: RICHTUNGEN.indexOf(d.Richtung) !== -1 ? d.Richtung : 'beide',
+    Favorit: d.Favorit === true || d.Favorit === 'ja' ? 'ja' : '',
+    Notiz: text(d.Notiz, 500),
+  };
+}
+
+/** Nächste freie id nach der höchsten vorhandenen: p047 → p048. Lücken werden nicht neu vergeben. */
+function naechsteId_(ids) {
+  let max = 0;
+  ids.forEach(function (id) { const m = String(id).match(/^p(\d+)$/); if (m) max = Math.max(max, Number(m[1])); });
+  return 'p' + ('00' + (max + 1)).slice(-Math.max(3, String(max + 1).length));
+}
+
+/** Bestehender Punkt innerhalb von DUBLETTE_MAX_M, sonst null. */
+function findeDublette_(bestehende, lat, lon) {
+  let beste = null;
+  bestehende.forEach(function (b) {
+    if (b.lat === '' || b.lon === '' || b.lat === null) return;
+    const m = haversine_(Number(b.lat), Number(b.lon), lat, lon) * 1000;
+    if (m <= DUBLETTE_MAX_M && (!beste || m < beste.abstand_m)) beste = { id: b.id, name: b.name, abstand_m: Math.round(m) };
+  });
+  return beste;
+}
+
+/** Kurzfassung eines exportierten Punktes für die Rückmeldung im Formular. */
+function punktAusExport_(json, id) {
+  if (!json) return null;
+  const p = json.punkte.filter(function (x) { return x.id === id; })[0];
+  if (!p) return null;
+  const namen = {};
+  json.routen.forEach(function (r) { namen[r.id] = r.name; });
+  return {
+    id: p.id, name: p.name, adresse: p.adresse, betreiber: p.betreiber,
+    zuordnung: p.zuordnung.map(function (z) {
+      return { route: namen[z.route] || z.route, km: Math.round(z.km), quer_km: z.quer_km, strasse: z.strasse, raststaette: z.raststaette };
+    }),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Zugänge — Geheimnisse per Eingabedialog in die Script Properties, nie ins Sheet.
 // ---------------------------------------------------------------------------
 
@@ -125,7 +346,7 @@ function hinterlegeGeheimnis_(schluessel, bezeichnung) {
 // ---------------------------------------------------------------------------
 
 function setup() {
-  const ss = SpreadsheetApp.getActive();
+  const ss = tabelle_();
   const meldungen = [];
 
   const punkte = blattMitKoepfen_(ss, BLATT_PUNKTE, SPALTEN_PUNKTE, meldungen);
@@ -162,7 +383,7 @@ function setup() {
  */
 function routenVorgabenUebernehmen() {
   const ui = meldungsUi_();
-  const blatt = SpreadsheetApp.getActive().getSheetByName(BLATT_ROUTEN);
+  const blatt = tabelle_().getSheetByName(BLATT_ROUTEN);
   if (!blatt) { ui.alert('Routen-Vorgaben', 'Blatt „' + BLATT_ROUTEN + '" fehlt — zuerst Setup ausführen.', ui.ButtonSet.OK); return; }
   const sp = spaltenIndex_(blatt);
   const meldungen = [];
@@ -294,7 +515,7 @@ const MAX_LAUFZEIT_MS = 5 * 60 * 1000; // Reserve zur Sechs-Minuten-Grenze
 
 function aufloeseLinks() {
   const ui = meldungsUi_();
-  const blatt = SpreadsheetApp.getActive().getSheetByName(BLATT_PUNKTE);
+  const blatt = tabelle_().getSheetByName(BLATT_PUNKTE);
   if (!blatt || blatt.getLastRow() < 2) {
     ui.alert('Links auflösen', 'Blatt „' + BLATT_PUNKTE + '" fehlt oder ist leer — zuerst Setup ausführen.', ui.ButtonSet.OK);
     return;
@@ -480,7 +701,7 @@ function bereinigePunkte() { bereinigeIntern_('menue'); }
 /** modus: 'menue' (mit Rückfrage), 'vorschau' (nur anzeigen), 'ausfuehren' (ohne Rückfrage, für den Editor). */
 function bereinigeIntern_(modus) {
   const ui = meldungsUi_();
-  const blatt = SpreadsheetApp.getActive().getSheetByName(BLATT_PUNKTE);
+  const blatt = tabelle_().getSheetByName(BLATT_PUNKTE);
   if (!blatt || blatt.getLastRow() < 2) {
     ui.alert('Punkte bereinigen', 'Blatt „' + BLATT_PUNKTE + '" fehlt oder ist leer.', ui.ButtonSet.OK);
     return;
@@ -606,7 +827,7 @@ function berechneRoutenNeu() { berechneRoutenIntern_(true); }
 
 function berechneRoutenIntern_(erzwingen) {
   const ui = meldungsUi_();
-  const ss = SpreadsheetApp.getActive();
+  const ss = tabelle_();
   const props = PropertiesService.getScriptProperties();
   const schluessel = props.getProperty('ORS_API_KEY');
   if (!schluessel || !props.getProperty('GITHUB_TOKEN')) {
@@ -892,9 +1113,11 @@ const STATUS_OHNE_ROUTE = 'keiner Route zugeordnet (> ' + ZUORDNUNG_MAX_KM + ' k
 const RASTSTAETTE_MAX_KM = 0.5;
 const RASTSTAETTE_MUSTER = /rastst[äa]tte|rasthof|rastanlage|rastplatz|autobahn|autogrill|aire de service|area di servizio/i;
 
+/** Gibt { meldungen, json, fehler } zurück — das Formular zeigt daraus die Zuordnung an. */
 function exportJson() {
   const ui = meldungsUi_();
-  const ss = SpreadsheetApp.getActive();
+  let json = null;
+  const ss = tabelle_();
   const routenBlatt = ss.getSheetByName(BLATT_ROUTEN);
   const punkteBlatt = ss.getSheetByName(BLATT_PUNKTE);
   if (!routenBlatt || !punkteBlatt) {
@@ -947,7 +1170,7 @@ function exportJson() {
       });
     }
 
-    const json = baueExport_(routen, punkte, new Date().toISOString());
+    json = baueExport_(routen, punkte, new Date().toISOString());
     githubSchreibe_('routes.json', JSON.stringify(json), 'routes.json exportiert (Apps Script v' + VERSION + ')');
 
     // Status-Spalte: nicht zugeordnete Punkte kennzeichnen, erledigte Kennzeichnung entfernen.
@@ -972,6 +1195,7 @@ function exportJson() {
   }
 
   ui.alert('Export v' + VERSION, meldungen.join('\n'), ui.ButtonSet.OK);
+  return { meldungen: meldungen, json: json, fehler: meldungen.some(function (m) { return m.indexOf('Fehler:') === 0; }) };
 }
 
 /**
