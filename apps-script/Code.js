@@ -1,6 +1,7 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.8.0 — Savona als zwei Varianten (Simplon, Gr. St. Bernhard), Mont Blanc gestrichen; routenVorgabenUebernehmen().
  * Version 0.7.0 — Alle Schritte auch direkt im Editor ausführbar (schritt1_… bis schritt5_…).
  * Version 0.6.0 — bereinigePunkte(): Porsche Destination entfernen, Dubletten zusammenführen.
  * Version 0.5.0 — Etappe 6: exportJson() mit Zuordnung und GitHub-Upload.
@@ -11,7 +12,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.7.0';
+const VERSION = '0.8.0';
 
 const BLATT_PUNKTE = 'Ladepunkte';
 const BLATT_ROUTEN = 'Routen';
@@ -25,13 +26,24 @@ const RICHTUNGEN = ['hin', 'rueck', 'beide'];
 // Start aller Stammstrecken: Koordinate aus Christofs geteiltem Routenlink (Brief, Stufe 2).
 const START_MORGES = '46.5043239,6.4912739';
 
+// Via-Punkte, geprüft am 15.09.2026 gegen das Straßennetz (OSRM nearest/route):
+// Simplon aus Christofs Maps-Link, 8 m neben der Simplonstrasse.
+const VIA_SIMPLON = '46.245838,8.02474';
+// Mitten im Straßentunnel Grosser St. Bernhard, weit genug von der Passstraße entfernt,
+// damit der Router weder den Pass noch den Mont-Blanc-Tunnel wählt.
+const VIA_GR_ST_BERNHARD = '45.85658,7.16605';
+const ZIEL_SAVONA = '44.3090500,8.4771500';
+
 // Zeilen für das Blatt „Routen": id, Name, Start, Via, Ziel.
-// Via-Punkte werden in Etappe 4 anhand der aufgelösten Ladepunkte gesetzt.
+// Zwei Savona-Varianten auf Christofs Wunsch (15.09.2026) — bewusste Abweichung vom Brief
+// („eine Route pro Strecke"); die Mont-Blanc-Route ist gestrichen.
 const STAMMSTRECKEN = [
   ['neuenrade', 'Morges – Neuenrade', START_MORGES, '', '51.2847342,7.7950369'],
   ['ingolstadt', 'Morges – Ingolstadt', START_MORGES, '', '48.7650800,11.4237200'],
-  ['savona', 'Morges – Savona', START_MORGES, '', '44.3090500,8.4771500'],
+  ['savona_simplon', 'Morges – Savona (Simplon)', START_MORGES, VIA_SIMPLON, ZIEL_SAVONA],
+  ['savona_bernhard', 'Morges – Savona (Gr. St. Bernhard)', START_MORGES, VIA_GR_ST_BERNHARD, ZIEL_SAVONA],
 ];
+const ROUTEN_ENTFERNT = ['savona']; // Mont-Blanc-Variante
 
 // ---------------------------------------------------------------------------
 // Menü
@@ -58,6 +70,7 @@ function onOpen() {
 // Die Ergebnisse stehen dann im Ausführungsprotokoll unten statt in einem Dialog.
 // ---------------------------------------------------------------------------
 
+function schritt0_RoutenVorgabenUebernehmen() { routenVorgabenUebernehmen(); }
 function schritt1_PunkteBereinigenVorschau() { bereinigeIntern_('vorschau'); }
 function schritt2_PunkteBereinigen() { bereinigeIntern_('ausfuehren'); }
 function schritt3_LinksAufloesen() { aufloeseLinks(); }
@@ -137,6 +150,49 @@ function setup() {
   if (meldungen.length === 0) meldungen.push('Alles war schon eingerichtet — nichts geändert.');
   const ui = meldungsUi_();
   ui.alert('Setup v' + VERSION, meldungen.join('\n'), ui.ButtonSet.OK);
+}
+
+/**
+ * Gleicht das Blatt „Routen" mit STAMMSTRECKEN ab: fehlende Zeilen anhängen, abweichende
+ * Name/Start/Via/Ziel überschreiben, Routen aus ROUTEN_ENTFERNT löschen. Idempotent.
+ * Länge, Fahrzeit und Stand bleiben unberührt — berechneRouten() erkennt die geänderte Eingabe.
+ */
+function routenVorgabenUebernehmen() {
+  const ui = meldungsUi_();
+  const blatt = SpreadsheetApp.getActive().getSheetByName(BLATT_ROUTEN);
+  if (!blatt) { ui.alert('Routen-Vorgaben', 'Blatt „' + BLATT_ROUTEN + '" fehlt — zuerst Setup ausführen.', ui.ButtonSet.OK); return; }
+  const sp = spaltenIndex_(blatt);
+  const meldungen = [];
+
+  for (let z = blatt.getLastRow(); z >= 2; z--) {
+    const id = String(blatt.getRange(z, sp.id).getValue()).trim();
+    if (ROUTEN_ENTFERNT.indexOf(id) !== -1) { blatt.deleteRow(z); meldungen.push('entfernt: ' + id); }
+  }
+
+  const werte = blatt.getLastRow() >= 2 ? blatt.getRange(2, 1, blatt.getLastRow() - 1, blatt.getLastColumn()).getValues() : [];
+  STAMMSTRECKEN.forEach(function (s) {
+    const soll = { id: s[0], Name: s[1], Start: s[2], Via: s[3], Ziel: s[4] };
+    let index = -1;
+    werte.forEach(function (z, i) { if (String(z[sp.id - 1]).trim() === s[0]) index = i; });
+
+    if (index === -1) {
+      const zeile = blatt.getLastRow() + 1;
+      Object.keys(soll).forEach(function (k) { schreibeText_(blatt, zeile, sp[k], soll[k]); });
+      meldungen.push('neu: ' + s[0]);
+      return;
+    }
+    const geaendert = Object.keys(soll).filter(function (k) { return String(werte[index][sp[k] - 1]).trim() !== soll[k]; });
+    geaendert.forEach(function (k) { schreibeText_(blatt, index + 2, sp[k], soll[k]); });
+    if (geaendert.length > 0) meldungen.push(s[0] + ': ' + geaendert.join(', ') + ' aktualisiert');
+  });
+
+  if (meldungen.length === 0) meldungen.push('Alles entsprach schon den Vorgaben — nichts geändert.');
+  ui.alert('Routen-Vorgaben v' + VERSION, meldungen.join('\n'), ui.ButtonSet.OK);
+}
+
+/** Schreibt als reinen Text, damit „46.2,8.0" im deutschen Gebietsschema nicht als Zahl gelesen wird. */
+function schreibeText_(blatt, zeile, spalte, wert) {
+  blatt.getRange(zeile, spalte).setNumberFormat('@').setValue(wert);
 }
 
 /**
