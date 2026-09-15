@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <!--
-  Ladeplanung — Formular zum Bearbeiten und Hinzufügen eines Ladepunkts.
+  Ladeplanung — Formular zum Bearbeiten, Löschen und Hinzufügen eines Ladepunkts.
   Wird von doGet() in Code.js ausgeliefert; MODELL kommt aus dem Template.
-  Version 0.11.0
+  Version 0.12.0 — Löschen, Nähe-Warnung bis 300 m.
+  Version 0.11.0 — Bearbeiten und Hinzufügen.
 -->
 <html lang="de">
 <head>
@@ -39,10 +40,13 @@
       font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; text-align: center; padding: 0 12px;
     }
     .knopf.haupt { background: var(--akzent); border-color: var(--akzent); color: var(--akzent-text); }
+    .knopf.gefahr { border-color: var(--fehler); color: var(--fehler); background: transparent; }
     .knopf:disabled { opacity: .6; }
     .hinweis { padding: 12px; border-radius: 10px; margin: 12px 0; white-space: pre-line; overflow-wrap: anywhere; }
     .hinweis.fehler { background: var(--fehler-grund); color: var(--fehler); font-weight: 600; }
+    .hinweis.warnung { background: var(--flaeche); border: 2px dashed var(--akzent); font-weight: 600; }
     .hinweis.ok { background: var(--ok-grund); }
+    #loeschen-bereich { margin-top: 28px; padding-top: 12px; border-top: 2px solid var(--linie); }
   </style>
 </head>
 <body>
@@ -75,6 +79,15 @@
       <button id="trotzdem" class="knopf" type="button" hidden>Trotzdem als neue Station anlegen</button>
       <a id="bestehende" class="knopf" href="#" hidden>Bestehende Station bearbeiten</a>
       <a id="abbrechen" class="knopf" href="#">Abbrechen – zur App</a>
+
+      <div id="loeschen-bereich" hidden>
+        <button id="loeschen" class="knopf gefahr" type="button">Station löschen</button>
+        <div id="loeschen-frage" hidden>
+          <p class="hinweis fehler">Wirklich löschen? Die Station verschwindet aus der App. Die Zeile wird ins Blatt „Gelöscht" verschoben und lässt sich von dort zurückholen.</p>
+          <button id="loeschen-ja" class="knopf gefahr" type="button">Ja, löschen</button>
+          <button id="loeschen-nein" class="knopf" type="button">Nein, behalten</button>
+        </div>
+      </div>
     </form>
 
     <section id="fertig" hidden>
@@ -99,9 +112,10 @@
 
     $('titel').textContent = neu ? 'Ladepunkt hinzufügen' : 'Ladepunkt bearbeiten';
     $('unter').textContent = neu
-      ? 'Link aus Google Maps einfügen (Ort antippen → „Teilen" → „Link kopieren"). Alles andere ist optional – Name, Adresse und Betreiber ergänzt das Script.'
+      ? 'Link aus Google Maps einfügen (Ort antippen → „Teilen" → „Link kopieren"). Alles andere ist optional – Name, Adresse und Betreiber ergänzt das Script. Gibt es die Station schon, wirst du gewarnt.'
       : [punkt.id, punkt.Adresse].filter(Boolean).join(' · ');
     $('feld-link').hidden = !neu;
+    $('loeschen-bereich').hidden = neu;
     $('senden').textContent = knopfText;
     $('abbrechen').href = MODELL.appUrl;
     $('zur-app').href = MODELL.appUrl;
@@ -126,10 +140,9 @@
       if (text) h.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
-    function beschaeftigt(an) {
-      $('senden').disabled = an;
-      $('trotzdem').disabled = an;
-      $('senden').textContent = an ? 'Speichere … (ca. 15 Sekunden)' : knopfText;
+    function beschaeftigt(an, text) {
+      for (const id of ['senden', 'trotzdem', 'loeschen', 'loeschen-ja', 'loeschen-nein']) $(id).disabled = an;
+      $('senden').textContent = an && text ? text : knopfText;
     }
 
     function formularDaten(trotzdem) {
@@ -152,11 +165,19 @@
 
     function ergebnis(erg) {
       beschaeftigt(false);
-      if (erg && erg.dublette) {
-        hinweis('Diese Station gibt es schon: ' + erg.dublette.id + ' ' + erg.dublette.name +
-          ' (' + erg.dublette.abstand_m + ' m entfernt).', 'fehler');
+      const nahe = erg && (erg.dublette || erg.naehe);
+      if (nahe) {
+        if (erg.dublette) {
+          hinweis('Diese Station gibt es schon: ' + nahe.id + ' ' + nahe.name + ' (' + nahe.abstand_m + ' m entfernt).', 'fehler');
+          $('trotzdem').textContent = 'Trotzdem als neue Station anlegen';
+        } else {
+          hinweis('In ' + nahe.abstand_m + ' m Entfernung gibt es schon ' + nahe.id + ' ' + nahe.name +
+            '.\nIst das dieselbe Station – oder eine andere, z. B. die Raststätte auf der Gegenseite?', 'warnung');
+          $('trotzdem').textContent = 'Ist eine andere Station – anlegen';
+        }
         $('trotzdem').hidden = false;
-        $('bestehende').href = MODELL.formularUrl + '?id=' + encodeURIComponent(erg.dublette.id);
+        $('bestehende').href = MODELL.formularUrl + '?id=' + encodeURIComponent(nahe.id);
+        $('bestehende').textContent = 'Nein, ' + nahe.id + ' bearbeiten';
         $('bestehende').hidden = false;
         return;
       }
@@ -177,6 +198,11 @@
       window.scrollTo(0, 0);
     }
 
+    function fehlschlag(f) {
+      beschaeftigt(false);
+      hinweis('Fehler: ' + ((f && f.message) || f), 'fehler');
+    }
+
     function senden(trotzdem) {
       hinweis('');
       if (neu && !form.link.value.trim()) {
@@ -184,10 +210,8 @@
         form.link.focus();
         return;
       }
-      beschaeftigt(true);
-      const lauf = google.script.run
-        .withSuccessHandler(ergebnis)
-        .withFailureHandler(f => { beschaeftigt(false); hinweis('Fehler: ' + ((f && f.message) || f), 'fehler'); });
+      beschaeftigt(true, 'Speichere … (ca. 15 Sekunden)');
+      const lauf = google.script.run.withSuccessHandler(ergebnis).withFailureHandler(fehlschlag);
       if (neu) lauf.legePunktAn(formularDaten(trotzdem));
       else lauf.speicherePunkt(formularDaten(false));
     }
@@ -197,6 +221,21 @@
       $('trotzdem').hidden = true;
       $('bestehende').hidden = true;
       senden(true);
+    });
+
+    $('loeschen').addEventListener('click', () => {
+      $('loeschen').hidden = true;
+      $('loeschen-frage').hidden = false;
+      $('loeschen-ja').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    $('loeschen-nein').addEventListener('click', () => {
+      $('loeschen-frage').hidden = true;
+      $('loeschen').hidden = false;
+    });
+    $('loeschen-ja').addEventListener('click', () => {
+      beschaeftigt(true);
+      $('loeschen-ja').textContent = 'Lösche … (ca. 15 Sekunden)';
+      google.script.run.withSuccessHandler(ergebnis).withFailureHandler(fehlschlag).loeschePunkt(punkt.id);
     });
   </script>
 </body>

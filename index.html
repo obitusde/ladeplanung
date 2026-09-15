@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.12.0 — Info-Seite (ⓘ) mit Erklärung und Link zu „Wartung & Status"; Hinweis zu My CUPRA.
   Version 0.11.0 — Knopf „＋" (Ladepunkt hinzufügen) und „Bearbeiten" öffnen das Formular; Daten laden bei Rückkehr neu.
   Version 0.10.0 — Ein Richtungsknopf, Namen ohne „Ladestation", Betreiber nicht doppelt, Korridor 10 km.
   Version 0.9.1 — Straße im Titel; ABRP-Link mit aktueller Position als Start.
@@ -113,7 +114,12 @@
     }
     footer b { color: var(--text); }
 
-    #detail {
+    .klein-hinweis { margin: -4px 0 6px; font-size: 15px; color: var(--leise); }
+    #info-seite h2 { margin: 12px 0 6px; font-size: 26px; }
+    #info-seite h3 { margin: 22px 0 6px; font-size: 20px; }
+    #info-seite p, #info-seite li { margin: 0 0 8px; }
+    #info-seite ol, #info-seite ul { padding-left: 22px; margin: 0 0 8px; }
+    #detail, #info-seite {
       position: fixed; inset: 0; z-index: 5; overflow-y: auto;
       background: var(--grund); padding: calc(env(safe-area-inset-top) + 10px) 14px 24px;
     }
@@ -153,6 +159,7 @@
       <select id="route" aria-label="Route"></select>
       <a id="neu" class="knopf" href="#" target="_blank" rel="noopener" aria-label="Ladepunkt hinzufügen">＋</a>
       <button id="einstellungen" class="knopf" aria-label="Einstellungen">⚙</button>
+      <button id="info" class="knopf" aria-label="Info: was die App macht">ⓘ</button>
     </div>
     <div class="zeile">
       <button id="richtung" class="richtung" type="button" aria-label="Fahrtrichtung wechseln">nach …</button>
@@ -171,11 +178,63 @@
     <dl id="d-felder"></dl>
     <div class="aktionen">
       <button id="d-kopieren" class="knopf haupt" type="button">Adresse kopieren</button>
+      <p class="klein-hinweis">Danach in My CUPRA ins Zielfeld einfügen – Teilen an My CUPRA geht nicht.</p>
       <a id="d-maps" class="knopf" target="_blank" rel="noopener">Google Maps</a>
       <a id="d-abrp" class="knopf" target="_blank" rel="noopener">ABRP</a>
       <a id="d-bearbeiten" class="knopf" target="_blank" rel="noopener">Bearbeiten</a>
       <button id="d-sim" class="knopf" type="button" hidden>Simulierte Position hierher</button>
     </div>
+  </section>
+
+  <section id="info-seite" hidden>
+    <button id="info-zurueck" class="knopf" type="button">← Zurück</button>
+    <h2>So funktioniert die App</h2>
+
+    <h3>Was sie macht</h3>
+    <p>Während der Fahrt zeigt sie die Ladepunkte, die <b>vor dir</b> auf der gewählten Stammstrecke liegen – mit Entfernung entlang der Straße, Anstieg bis dorthin, Leistung, Lage und deiner Notiz. Entscheiden tust du; navigiert wird mit Google Maps, ABRP oder dem Auto.</p>
+
+    <h3>So entsteht die Liste</h3>
+    <ol>
+      <li>Jede Route ist vorab einmal berechnet: eine Linie, die an jedem Punkt ihren Kilometerstand und die bis dahin gesammelten Höhenmeter kennt.</li>
+      <li>Jeder Ladepunkt bis 10 km neben der Linie bekommt seinen Kilometerstand auf dieser Route.</li>
+      <li>Deine Position (GPS oder Simulation) wird auf die Linie gelegt – das ergibt deinen eigenen Kilometerstand.</li>
+      <li>Entfernung = Kilometerstand des Ladepunkts minus deiner (auf der Rückfahrt umgekehrt). Bereits passierte Punkte und alles bis 1 km voraus werden ausgeblendet.</li>
+    </ol>
+    <p>Gerechnet wird im Handy. Neue Daten holt die App beim Öffnen.</p>
+
+    <h3>Was die Angaben bedeuten</h3>
+    <ul>
+      <li><b>Große Zahl:</b> Kilometer entlang der Route bis auf Höhe des Ladepunkts. Liegt er abseits, kommt der Weg von der Ausfahrt noch dazu („3,2 km abseits").</li>
+      <li><b>+ hm:</b> Summe der Anstiege bis dorthin, geglättet. Ein Näherungswert, um die Restreichweite einzuschätzen – keine Verbrauchsrechnung.</li>
+      <li><b>(A 5):</b> Straße, an der der Punkt liegt. <b>Raststätte:</b> direkt an der Autobahn, oft nur in einer Fahrtrichtung erreichbar.</li>
+      <li><b>★</b> Favorit.</li>
+    </ul>
+
+    <h3>Richtung</h3>
+    <p>„nach Neuenrade ⇄" wechselt beim Antippen. Punkte, die nur in einer Richtung erreichbar sind, erscheinen nur dort.</p>
+
+    <h3>Abseits der Route</h3>
+    <p>Bist du mehr als 10 km von der Linie entfernt, zeigt die App Luftlinie ohne Höhenmeter – ein Notbehelf, bis du wieder auf der Route bist. Die GPS-Genauigkeit steht unten; bei mehreren hundert Metern ist die Position unzuverlässig.</p>
+
+    <h3>Details</h3>
+    <p>Eine Station antippen: <b>Adresse kopieren</b> (in My CUPRA einfügen), <b>Google Maps</b>, <b>ABRP</b> (Plan von deinem Standort) und <b>Bearbeiten</b>.</p>
+
+    <h3>Daten pflegen</h3>
+    <ul>
+      <li><b>＋</b> neue Station per Google-Maps-Link. Gibt es sie schon (oder eine in der Nähe), wirst du gewarnt.</li>
+      <li><b>Bearbeiten</b> in den Details – dort auch <b>Löschen</b>.</li>
+      <li>Beides veröffentlicht automatisch; die App zeigt es nach 1–2 Minuten.</li>
+      <li>Alles andere – Routen ändern, direkt im Sheet bearbeiten – unter <b>Wartung &amp; Status</b>. Dort steht auch, wann was zu tun ist.</li>
+    </ul>
+    <a id="info-wartung" class="knopf haupt" href="#" target="_blank" rel="noopener" style="font-size:20px">Wartung &amp; Status öffnen</a>
+
+    <h3>Was sie nicht macht</h3>
+    <p>Keine Navigation, kein Belegt-Status, keine Preise, keine Reichweitenprüfung.</p>
+
+    <h3>Testen ohne Fahrt</h3>
+    <p>⚙ → Simulationsmodus: Position von Hand setzen, z. B. „Mitte der Route".</p>
+
+    <p id="info-stand" class="klein-hinweis" style="margin-top:20px"></p>
   </section>
 
   <dialog id="dlg">
@@ -198,7 +257,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.11.0';
+    const APP_VERSION = '0.12.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -629,7 +688,18 @@
       $('dlg').querySelector('form').addEventListener('submit', schliesseEinstellungen);
       $('dlg').addEventListener('close', schliesseEinstellungen);
       $('zurueck').addEventListener('click', () => history.back());
-      window.addEventListener('popstate', () => { if (!$('detail').hidden) schliesseDetail(); });
+      window.addEventListener('popstate', () => {
+        if (!$('detail').hidden) schliesseDetail();
+        $('info-seite').hidden = true;
+      });
+      $('info').addEventListener('click', () => {
+        const d = daten && new Date(daten.erzeugt);
+        $('info-stand').textContent = 'App v' + APP_VERSION + (d && !isNaN(d) ? ' · Daten vom ' + d.toLocaleString('de-CH') : '');
+        $('info-seite').hidden = false;
+        $('info-seite').scrollTop = 0;
+        history.pushState({ info: true }, '');
+      });
+      $('info-zurueck').addEventListener('click', () => history.back());
       $('d-kopieren').addEventListener('click', kopiereAdresse);
       $('d-sim').addEventListener('click', () => {
         if (!detailPunkt) return;
@@ -668,6 +738,7 @@
     async function start() {
       bindeEreignisse();
       $('neu').href = FORMULAR_URL + '?neu=1';
+      $('info-wartung').href = FORMULAR_URL + '?seite=wartung';
       if (zustand.richtung !== 'hin' && zustand.richtung !== 'rueck') zustand.richtung = 'hin';
       if (!await ladeDaten(false)) return;
       render();

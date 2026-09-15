@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const quelle = fs.readFileSync(path.join(__dirname, '..', 'apps-script', 'Code.js'), 'utf8');
-const gs = new Function(quelle + '; return { pruefeFormular_, normalisiereFormular_, naechsteId_, findeDublette_, punktAusExport_ };')();
+const gs = new Function(quelle + '; return { pruefeFormular_, normalisiereFormular_, naechsteId_, naechsteStation_, punktAusExport_ };')();
 
 let fehler = 0;
 const pruefe = (bedingung, text) => { if (!bedingung) { fehler++; console.log('FEHLER ' + text); } };
@@ -39,9 +39,13 @@ const bestehende = [
   { id: 'p011', name: 'EnBW Appenweier', lat: 48.56299, lon: 7.955814 },
   { id: 'p099', name: 'ohne Koordinaten', lat: '', lon: '' },
 ];
-const d = gs.findeDublette_(bestehende, 50.76320, 8.15580);
-pruefe(d && d.id === 'p010' && d.abstand_m < 25, 'Dublette Haiger erkannt: ' + JSON.stringify(d));
-pruefe(gs.findeDublette_(bestehende, 48.562915, 7.959093) === null, 'Gegenseite Appenweier (~240 m) keine Dublette');
+const d = gs.naechsteStation_(bestehende, 50.76320, 8.15580);
+pruefe(d && d.id === 'p010' && d.abstand_m <= 25, 'Dublette Haiger (≤ 25 m): ' + JSON.stringify(d));
+const gegenseite = gs.naechsteStation_(bestehende, 48.562915, 7.959093);
+pruefe(gegenseite && gegenseite.id === 'p011' && gegenseite.abstand_m > 25 && gegenseite.abstand_m <= 300, 'Gegenseite Appenweier → Nähe-Warnung (25–300 m): ' + JSON.stringify(gegenseite));
+const weit = gs.naechsteStation_(bestehende, 47.0, 7.0);
+pruefe(weit && weit.abstand_m > 300, 'weit entfernt → keine Warnung: ' + (weit && weit.abstand_m) + ' m');
+pruefe(gs.naechsteStation_([{ id: 'p099', name: 'x', lat: '', lon: '' }], 47, 7) === null, 'ohne Koordinaten → null');
 
 // Rückmeldung aus dem Export
 const json = {

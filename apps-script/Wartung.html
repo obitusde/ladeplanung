@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<!--
+  Ladeplanung — Seite „Wartung & Status": zeigt den Zustand und stößt Rechenschritte samt Folgeschritten an.
+  Wird von doGet() in Code.js ausgeliefert (…/exec?seite=wartung).
+  Version 0.12.0
+-->
+<html lang="de">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    :root {
+      --grund: #ffffff; --flaeche: #f2f2f2; --text: #000000; --leise: #3d3d3d; --linie: #c8c8c8;
+      --akzent: #9a4a00; --akzent-text: #ffffff; --fehler: #7a0000; --gut: #1d6b1d;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --grund: #000000; --flaeche: #161616; --text: #ffffff; --leise: #c4c4c4; --linie: #3a3a3a;
+        --akzent: #ffac4a; --akzent-text: #000000; --fehler: #ffb4b4; --gut: #8fdc8f;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--grund); color: var(--text); font: 18px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 620px; margin: 0 auto; padding: 16px; }
+    h1 { font-size: 26px; margin: 4px 0 6px; }
+    h2 { font-size: 21px; margin: 26px 0 8px; }
+    h3 { font-size: 19px; margin: 0 0 4px; }
+    p { margin: 0 0 8px; }
+    .leise { color: var(--leise); overflow-wrap: anywhere; }
+    .status { margin: 0 0 6px; padding-left: 4px; overflow-wrap: anywhere; }
+    .status.ok::before { content: "✓ "; color: var(--gut); font-weight: 800; }
+    .status.warn::before { content: "⚠ "; color: var(--fehler); font-weight: 800; }
+    .status.info::before { content: "ℹ "; color: var(--leise); }
+    .karte { border: 2px solid var(--linie); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+    .knopf {
+      display: flex; align-items: center; justify-content: center; width: 100%; min-height: 54px; margin-top: 8px;
+      border-radius: 10px; border: 2px solid var(--linie); background: var(--flaeche); color: var(--text);
+      font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; text-align: center; padding: 0 12px;
+    }
+    .knopf.haupt { background: var(--akzent); border-color: var(--akzent); color: var(--akzent-text); }
+    .knopf.gefahr { border-color: var(--fehler); color: var(--fehler); background: transparent; }
+    .knopf:disabled { opacity: .6; }
+    details { margin-top: 8px; }
+    summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
+    pre {
+      white-space: pre-wrap; overflow-wrap: anywhere; background: var(--flaeche); border-radius: 10px;
+      padding: 12px; font: 15px/1.4 ui-monospace, Consolas, monospace; margin: 0;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Wartung &amp; Status</h1>
+    <p class="leise">Stationen hinzufügen, bearbeiten oder löschen brauchst du hier nicht – das erledigt das Formular aus der App, samt Veröffentlichung. Diese Seite ist für alles andere.</p>
+
+    <h2>Status</h2>
+    <div id="status"></div>
+
+    <h2>Was ist wann zu tun?</h2>
+
+    <div class="karte">
+      <h3>Routen berechnen</h3>
+      <p><b>Wann:</b> wenn oben bei einer Route „neu berechnen" steht – nach Änderungen im Blatt „Routen" (Start, Via, Ziel, neue Route) oder nach einem Update der Rechnung.</p>
+      <p class="leise">Berechnet nur, was nötig ist, und veröffentlicht danach. Dauert bis zu 2 Minuten.</p>
+      <button class="knopf haupt" data-aktion="routen">Routen berechnen und veröffentlichen</button>
+    </div>
+
+    <div class="karte">
+      <h3>Änderungen aus dem Sheet veröffentlichen</h3>
+      <p><b>Wann:</b> nachdem du etwas <b>direkt im Sheet</b> geändert hast, z. B. Notiz, kW, Richtung oder Favorit.</p>
+      <button class="knopf" data-aktion="export">Veröffentlichen</button>
+    </div>
+
+    <div class="karte">
+      <h3>Neue Zeilen aus dem Sheet ergänzen</h3>
+      <p><b>Wann:</b> wenn du im Sheet eine Zeile nur mit Maps-Link eingetragen hast (oben steht dann „noch ohne Koordinaten").</p>
+      <p class="leise">Ergänzt Name, Adresse, Koordinaten und Betreiber und veröffentlicht danach.</p>
+      <button class="knopf" data-aktion="links">Ergänzen und veröffentlichen</button>
+    </div>
+
+    <div class="karte">
+      <h3>Doppelte Stationen prüfen</h3>
+      <p><b>Wann:</b> wenn eine Station doppelt in der App erscheint.</p>
+      <p class="leise">Zeigt zuerst nur an, was zusammengeführt würde. Erst der zweite Knopf ändert etwas.</p>
+      <button class="knopf" data-aktion="bereinigen_vorschau">Prüfen (ändert nichts)</button>
+      <button id="bereinigen-ja" class="knopf gefahr" data-aktion="bereinigen" hidden>Zusammenführen und veröffentlichen</button>
+    </div>
+
+    <details>
+      <summary>Selten nötig</summary>
+      <div class="karte">
+        <h3>Alle Routen neu berechnen</h3>
+        <p><b>Wann:</b> nur wenn Kilometer oder Höhenmeter unplausibel wirken. Sonst reicht „Routen berechnen".</p>
+        <button class="knopf" data-aktion="routen_neu">Alle Routen neu berechnen</button>
+      </div>
+    </details>
+
+    <h2>Protokoll</h2>
+    <pre id="protokoll">Noch nichts ausgeführt.</pre>
+
+    <a id="zur-app" class="knopf haupt" href="#">Zur App</a>
+    <p id="version" class="leise"></p>
+  </main>
+
+  <script>
+    'use strict';
+    const MODELL = <?!= modellJson ?>;
+    const $ = id => document.getElementById(id);
+
+    $('zur-app').href = MODELL.appUrl;
+    $('version').textContent = 'Apps Script v' + MODELL.version;
+
+    function datum(iso) {
+      if (!iso) return '–';
+      const d = new Date(iso);
+      if (isNaN(d)) return String(iso);
+      const z = n => String(n).padStart(2, '0');
+      return z(d.getDate()) + '.' + z(d.getMonth() + 1) + '.' + d.getFullYear() + ' ' + z(d.getHours()) + ':' + z(d.getMinutes());
+    }
+
+    function zeigeStatus(s) {
+      const box = $('status');
+      box.replaceChildren();
+      const zeile = (text, art) => { const p = document.createElement('p'); p.className = 'status ' + art; p.textContent = text; box.append(p); };
+
+      const probleme = [];
+      if (s.ohneKoordinaten) probleme.push(s.ohneKoordinaten + ' noch ohne Koordinaten');
+      if (s.nichtAufloesbar) probleme.push(s.nichtAufloesbar + ' Link nicht auflösbar');
+      zeile(s.punkte + ' Stationen' + (probleme.length ? ' – ' + probleme.join(', ') : ''), probleme.length ? 'warn' : 'ok');
+      if (s.ohneRoute && s.ohneRoute.length) zeile('Keiner Route zugeordnet (> 10 km): ' + s.ohneRoute.join(', '), 'info');
+      zeile('Zuletzt veröffentlicht: ' + datum(s.letzterExport), s.letzterExport ? 'ok' : 'warn');
+      for (const r of s.routen || []) {
+        if (r.aktuell) zeile(r.name + ' – ' + (r.laenge ? String(r.laenge).replace('.', ',') + ' km, ' : '') + 'berechnet ' + r.stand, 'ok');
+        else zeile(r.name + ' – neu berechnen' + (String(r.stand).indexOf('Fehler') === 0 ? ' (' + r.stand + ')' : ''), 'warn');
+      }
+    }
+
+    function starte(knopf) {
+      const aktion = knopf.dataset.aktion;
+      const alle = document.querySelectorAll('button[data-aktion]');
+      const text = knopf.textContent;
+      alle.forEach(k => { k.disabled = true; });
+      knopf.textContent = 'Läuft … bitte warten';
+      $('protokoll').textContent = 'Läuft: ' + text + ' …';
+      const fertig = () => { alle.forEach(k => { k.disabled = false; }); knopf.textContent = text; };
+
+      google.script.run
+        .withSuccessHandler(erg => {
+          fertig();
+          $('protokoll').textContent = (erg.ok ? '' : '⚠ ') + erg.text;
+          if (erg.status) zeigeStatus(erg.status);
+          if (aktion === 'bereinigen_vorschau') $('bereinigen-ja').hidden = !(erg.ok && !/Nichts zu tun/.test(erg.text));
+          if (aktion === 'bereinigen') $('bereinigen-ja').hidden = true;
+          $('protokoll').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        })
+        .withFailureHandler(f => { fertig(); $('protokoll').textContent = 'Fehler: ' + ((f && f.message) || f); })
+        .wartungAusfuehren(aktion);
+    }
+
+    document.querySelectorAll('button[data-aktion]').forEach(k => k.addEventListener('click', () => starte(k)));
+    zeigeStatus(MODELL.status || {});
+  </script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.12.0 — Löschen (ins Blatt „Gelöscht"), Nähe-Warnung bis 300 m, Seite „Wartung & Status".
  * Version 0.11.0 — Web-App-Formular zum Bearbeiten und Hinzufügen von Ladepunkten (nur eigenes Google-Konto).
  * Version 0.10.0 — Höhenprofil über 2 km geglättet (gleitender Median) vor dem 10-m-Filter; Straßennamen gekürzt.
  * Version 0.9.1 — Zuordnungskorridor 10 km.
@@ -16,7 +17,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.11.0';
+const VERSION = '0.12.0';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -28,6 +29,13 @@ function tabelle_() {
 const BLATT_PUNKTE = 'Ladepunkte';
 const BLATT_ROUTEN = 'Routen';
 const BLATT_SICHERUNG = 'Alt-Import (Sicherung)';
+const BLATT_GELOESCHT = 'Gelöscht'; // gelöschte Stationen werden hierher verschoben, nicht endgültig entfernt
+
+// Beim Hinzufügen: ≤ 25 m gilt als dieselbe Station, bis 300 m wird nachgefragt (z. B. Raststätten-Gegenseite).
+const NAEHE_WARNUNG_M = 300;
+
+// Sammelt Meldungen, während die Wartungsseite Schritte ausführt (sonst null).
+let MELDUNGS_PUFFER = null;
 
 const SPALTEN_PUNKTE = ['id', 'Maps-Link', 'Name', 'Adresse', 'Lat', 'Lon', 'Betreiber', 'kW', 'Anzahl', 'Richtung', 'Favorit', 'Notiz', 'Status'];
 const SPALTEN_ROUTEN = ['id', 'Name', 'Start', 'Via', 'Ziel', 'Länge km', 'Fahrzeit', 'Stand'];
@@ -101,6 +109,7 @@ function meldungsUi_() {
     Button: echt ? echt.Button : { YES: 'YES' },
     alert: function (titel, text, knoepfe) {
       console.log(titel + (text ? '\n' + text : ''));
+      if (MELDUNGS_PUFFER) MELDUNGS_PUFFER.push(titel + (text ? '\n' + text : ''));
       return echt ? echt.alert(titel, text, knoepfe) : null;
     },
   };
@@ -118,6 +127,14 @@ const FORMULAR_FELDER = ['Name', 'Betreiber', 'kW', 'Anzahl', 'Richtung', 'Favor
 function doGet(e) {
   const p = (e && e.parameter) || {};
   const modell = { appUrl: APP_URL, formularUrl: ScriptApp.getService().getUrl(), version: VERSION };
+  if (p.seite === 'wartung') {
+    modell.status = wartungStatus_();
+    const seite = HtmlService.createTemplateFromFile('Wartung');
+    seite.modellJson = JSON.stringify(modell).replace(/</g, '\\u003c');
+    return seite.evaluate()
+      .setTitle('Ladeplanung – Wartung & Status')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  }
   if (p.id) {
     const punkt = /^p\d{1,5}$/.test(p.id) ? liesPunkt_(p.id) : null;
     if (!punkt) return einfacheSeite_('Ladepunkt „' + p.id + '" nicht gefunden.');
@@ -198,11 +215,13 @@ function legePunktAn(daten) {
       return { id: String(z[t.sp.id - 1]).trim(), name: String(z[t.sp.Name - 1]), lat: z[t.sp.Lat - 1], lon: z[t.sp.Lon - 1] };
     });
     if (!daten.trotzdem) {
-      const dublette = findeDublette_(bestehende, info.lat, info.lon);
-      if (dublette) return { ok: false, dublette: dublette };
+      const naechste = naechsteStation_(bestehende, info.lat, info.lon);
+      if (naechste && naechste.abstand_m <= DUBLETTE_MAX_M) return { ok: false, dublette: naechste };
+      if (naechste && naechste.abstand_m <= NAEHE_WARNUNG_M) return { ok: false, naehe: naechste };
     }
 
-    const id = naechsteId_(bestehende.map(function (b) { return b.id; }));
+    // ids gelöschter Stationen werden nicht neu vergeben
+    const id = naechsteId_(bestehende.map(function (b) { return b.id; }).concat(geloeschteIds_()));
     const neu = normalisiereFormular_(daten);
     const zeile = new Array(t.blatt.getLastColumn()).fill('');
     zeile[t.sp.id - 1] = id;
@@ -225,6 +244,114 @@ function legePunktAn(daten) {
   } finally {
     sperre.releaseLock();
   }
+}
+
+/** Wird vom Formular aufgerufen: verschiebt die Zeile ins Blatt „Gelöscht" (zurückholbar) und veröffentlicht. */
+function loeschePunkt(id) {
+  const sperre = LockService.getScriptLock();
+  sperre.waitLock(30000);
+  try {
+    if (!/^p\d{1,5}$/.test(String(id))) return { ok: false, fehler: 'Ungültige id.' };
+    const t = punkteBlattMitIndex_();
+    const zeile = findeZeile_(t.blatt, t.sp, id);
+    if (!zeile) return { ok: false, fehler: 'Ladepunkt ' + id + ' nicht gefunden — vielleicht schon gelöscht?' };
+
+    const ss = tabelle_();
+    const koepfe = t.blatt.getRange(1, 1, 1, t.blatt.getLastColumn()).getValues()[0];
+    let archiv = ss.getSheetByName(BLATT_GELOESCHT);
+    if (!archiv) {
+      archiv = ss.insertSheet(BLATT_GELOESCHT, ss.getSheets().length);
+      archiv.getRange(1, 1, 1, koepfe.length + 1).setValues([koepfe.concat(['gelöscht am'])]).setFontWeight('bold');
+      archiv.setFrozenRows(1);
+    }
+    const werte = t.blatt.getRange(zeile, 1, 1, koepfe.length).getValues()[0];
+    archiv.appendRow(werte.concat([new Date()]));
+    t.blatt.deleteRow(zeile);
+    SpreadsheetApp.flush();
+
+    const exp = exportJson();
+    return {
+      ok: true,
+      meldung: 'Gelöscht: ' + id + ' ' + werte[t.sp.Name - 1] + '.\nDie Zeile liegt im Blatt „' + BLATT_GELOESCHT + '" und kann von dort zurückkopiert werden.',
+      warnung: exp.fehler ? 'Veröffentlichen fehlgeschlagen:\n' + exp.meldungen.join('\n') : '',
+    };
+  } finally {
+    sperre.releaseLock();
+  }
+}
+
+/**
+ * Wartungsseite: führt eine Aktion samt Folgeschritten aus, damit nichts in der falschen
+ * Reihenfolge angestoßen wird (z. B. Routen berechnen → veröffentlichen).
+ */
+function wartungAusfuehren(aktion) {
+  const ablaeufe = {
+    export: [exportJson],
+    links: [aufloeseLinks, exportJson],
+    routen: [berechneRouten, exportJson],
+    routen_neu: [berechneRoutenNeu, exportJson],
+    bereinigen_vorschau: [function () { bereinigeIntern_('vorschau'); }],
+    bereinigen: [function () { bereinigeIntern_('ausfuehren'); }, exportJson],
+  };
+  const schritte = ablaeufe[aktion];
+  if (!schritte) return { ok: false, text: 'Unbekannte Aktion: ' + aktion };
+
+  const sperre = LockService.getScriptLock();
+  if (!sperre.tryLock(30000)) return { ok: false, text: 'Gerade läuft schon eine andere Änderung — bitte in einer Minute noch einmal.' };
+  MELDUNGS_PUFFER = [];
+  try {
+    schritte.forEach(function (schritt) { schritt(); });
+    return { ok: true, text: MELDUNGS_PUFFER.join('\n\n') || 'Fertig.', status: wartungStatus_() };
+  } catch (e) {
+    return { ok: false, text: MELDUNGS_PUFFER.concat(['Fehler: ' + e.message]).join('\n\n'), status: wartungStatus_() };
+  } finally {
+    MELDUNGS_PUFFER = null;
+    sperre.releaseLock();
+  }
+}
+
+/** Zustand für die Wartungsseite: Stationen, Routen (aktuell oder neu zu berechnen), letzte Veröffentlichung. */
+function wartungStatus_() {
+  const ss = tabelle_();
+  const props = PropertiesService.getScriptProperties();
+  const status = { punkte: 0, ohneKoordinaten: 0, nichtAufloesbar: 0, ohneRoute: [], routen: [], letzterExport: '' };
+
+  const punkte = ss.getSheetByName(BLATT_PUNKTE);
+  if (punkte && punkte.getLastRow() >= 2) {
+    const sp = spaltenIndex_(punkte);
+    punkte.getRange(2, 1, punkte.getLastRow() - 1, punkte.getLastColumn()).getValues().forEach(function (z) {
+      const id = String(z[sp.id - 1]).trim();
+      if (!id) return;
+      status.punkte++;
+      const st = String(z[sp.Status - 1]);
+      if (z[sp.Lat - 1] === '' && String(z[sp['Maps-Link'] - 1]).trim() !== '') status.ohneKoordinaten++;
+      if (st.indexOf(STATUS_FEHLER_PRAEFIX) === 0) status.nichtAufloesbar++;
+      if (st === STATUS_OHNE_ROUTE) status.ohneRoute.push(id + ' ' + z[sp.Name - 1]);
+    });
+  }
+
+  const routen = ss.getSheetByName(BLATT_ROUTEN);
+  if (routen && routen.getLastRow() >= 2) {
+    const sp = spaltenIndex_(routen);
+    routen.getRange(2, 1, routen.getLastRow() - 1, routen.getLastColumn()).getValues().forEach(function (z) {
+      const f = function (name) { return String(z[sp[name] - 1]).trim(); };
+      const id = f('id');
+      if (!id) return;
+      const standRoh = z[sp.Stand - 1];
+      const stand = standRoh instanceof Date ? Utilities.formatDate(standRoh, 'Europe/Zurich', 'dd.MM.yyyy HH:mm') : String(standRoh);
+      const eingabe = [f('Start'), f('Via'), f('Ziel')].join('|');
+      const aktuell = stand !== '' && stand.indexOf('Fehler') !== 0 && props.getProperty('EINGABE_' + id) === eingabe + '#f' + LINIEN_FORMAT;
+      status.routen.push({ id: id, name: f('Name'), laenge: f('Länge km'), stand: stand, aktuell: aktuell });
+    });
+  }
+
+  try {
+    const text = githubLies_('routes.json');
+    if (text) status.letzterExport = JSON.parse(text).erzeugt || '';
+  } catch (e) {
+    status.letzterExport = '';
+  }
+  return status;
 }
 
 function punkteBlattMitIndex_() {
@@ -293,15 +420,21 @@ function naechsteId_(ids) {
   return 'p' + ('00' + (max + 1)).slice(-Math.max(3, String(max + 1).length));
 }
 
-/** Bestehender Punkt innerhalb von DUBLETTE_MAX_M, sonst null. */
-function findeDublette_(bestehende, lat, lon) {
+/** Nächstgelegene bestehende Station mit Abstand in Metern, oder null, wenn keine Koordinaten vorhanden sind. */
+function naechsteStation_(bestehende, lat, lon) {
   let beste = null;
   bestehende.forEach(function (b) {
-    if (b.lat === '' || b.lon === '' || b.lat === null) return;
+    if (b.lat === '' || b.lon === '' || b.lat === null || b.lat === undefined) return;
     const m = haversine_(Number(b.lat), Number(b.lon), lat, lon) * 1000;
-    if (m <= DUBLETTE_MAX_M && (!beste || m < beste.abstand_m)) beste = { id: b.id, name: b.name, abstand_m: Math.round(m) };
+    if (!beste || m < beste.abstand_m) beste = { id: b.id, name: b.name, abstand_m: Math.round(m) };
   });
   return beste;
+}
+
+function geloeschteIds_() {
+  const archiv = tabelle_().getSheetByName(BLATT_GELOESCHT);
+  if (!archiv || archiv.getLastRow() < 2) return [];
+  return archiv.getRange(2, 1, archiv.getLastRow() - 1, 1).getValues().map(function (z) { return String(z[0]).trim(); });
 }
 
 /** Kurzfassung eines exportierten Punktes für die Rückmeldung im Formular. */
