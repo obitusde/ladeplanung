@@ -1,6 +1,6 @@
 # Ladeplanung Cupra Born — Projektstand für Claude
 
-**Stand 15.09.2026** · App (`index.html`) v0.14.0 · Apps Script (`apps-script/Code.js`) v0.14.1 · Web-App-Deployment @6
+**Stand 15.09.2026** · App (`index.html`) v0.14.0 · Apps Script (`apps-script/Code.js`) v0.15.0 · Web-App-Deployment @7
 Ursprünglicher Auftrag: [`docs/Umsetzungsbrief_v5.0.md`](docs/Umsetzungsbrief_v5.0.md). Diese Datei beschreibt den **tatsächlichen** Stand inklusive aller späteren Entscheidungen und hat Vorrang vor dem Brief.
 
 ---
@@ -134,7 +134,7 @@ Christof pflegt über die App; Rechenschritte stößt er über **Wartung & Statu
 
 **Export** (`exportJson`): Zuordnung bis **10 km** Querabstand, mit `quer_km`, `strasse` (`kurzStrasse_`: Autobahnnummer, sonst erster Teil vor dem Komma; unbenannte Stücke → nächste benannte Straße bis 3 km), `raststaette` (q ≤ 0,5 km und Richtung einseitig oder Muster „Raststätte/Rasthof/Autobahn/…"). Leerer Betreiber → aus dem Namen (`BETREIBER_MUSTER`). Status „keiner Route zugeordnet (> 10 km)" im Sheet.
 
-**Links auflösen:** Kurzlink per `followRedirects:false` verfolgen; Name aus `/maps/place/<Name>/`, Koordinaten aus letztem `!3d<lat>!4d<lon>`, sonst `@lat,lon`. Adresse + Ort über `Maps.newGeocoder().reverseGeocode` (Name = Maps-Name + Ort). Nicht auflösbar → Status, nie raten.
+**Links auflösen:** Kurzlink per `followRedirects:false` verfolgen; Name aus `/maps/place/<Name>/`, Koordinaten aus letztem `!3d<lat>!4d<lon>`, sonst `@lat,lon`, sonst (neueres Teilen-Format `/maps/place/Name, Straße, PLZ Ort, Land/data=…`) Adresse per `Maps.newGeocoder().geocode` – nur wenn nicht `APPROXIMATE`, Status „Koordinaten aus Adresse" (`linkInfo_`). Adresse + Ort über `Maps.newGeocoder().reverseGeocode` (Name = Maps-Name + Ort). Nicht auflösbar → Status, nie raten.
 
 **Energiemodell** (identisch App/Script, `energieAnteile`/`energieAnteile_`):
 ```
@@ -215,3 +215,4 @@ Weiter gültig aus dem Brief: keine Google Directions/Distance Matrix/Places API
 - Rohe ORS-Höhen summieren Rauschen (Faktor 2–3); 1000 hm bergauf ≈ 6,6 kWh ≈ 11 % Akku.
 - Commit-Nachrichten mit „…" in Bash brechen die Quotierung → `-F Datei`.
 - Das Script committet selbst ins Repo → vor jedem Push `git pull --rebase`.
+- Google Maps teilt seit Sept. 2026 teils Links **ohne Koordinaten** (nur Name + Adresse + Orts-ID `0x…:0x…`); die Maps-Seite liefert ohne Browser auch keine → Geokodierung der Adresse.

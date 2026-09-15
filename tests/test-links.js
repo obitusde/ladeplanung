@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const quelle = fs.readFileSync(path.join(__dirname, '..', 'apps-script', 'Code.js'), 'utf8');
-const gs = new Function(quelle + '; return { werteMapsUrlAus_, betreiberAusName_, nameMitOrt_ };')();
+const gs = new Function(quelle + '; return { werteMapsUrlAus_, koordinatenAusAdresse_, betreiberAusName_, nameMitOrt_ };')();
 
 let fehler = 0;
 const pruefe = (bedingung, text) => { if (!bedingung) { fehler++; console.log('FEHLER ' + text); } };
@@ -34,6 +34,24 @@ const ohne = gs.werteMapsUrlAus_('https://www.google.com/maps?cid=123456');
 pruefe(ohne.lat === null, 'Link ohne Koordinaten muss null liefern (nicht raten)');
 
 pruefe(gs.werteMapsUrlAus_('https://www.google.com/maps/place/Porsche+Sales+%26+Marketplace/@1,1,1z').name === 'Porsche Sales & Marketplace', 'URL-Dekodierung');
+
+// 2b. Neueres Teilen-Format ohne Koordinaten (echter Link EnBW Aitrach, 15.09.2026): Adresse geokodieren.
+const aitrachUrl = 'https://www.google.com/maps/place/EnBW+Ladestation,+St.-Konrad-Weg+2,+88319+Aitrach,+Deutschland/data=!4m2!3m1!1s0x479b92c1aa582f8d:0x4046dc41a22ee33d!18m1!1e1?utm_source=mstt_1&entry=gps';
+const aitrach = gs.werteMapsUrlAus_(aitrachUrl);
+pruefe(aitrach.lat === null, 'Aitrach: keine Koordinaten im Link');
+pruefe(aitrach.name === 'EnBW Ladestation', 'Aitrach: Name ohne Adresse, war ' + aitrach.name);
+pruefe(aitrach.adresse === 'St.-Konrad-Weg 2, 88319 Aitrach, Deutschland', 'Aitrach: Adresse, war ' + aitrach.adresse);
+pruefe(gs.werteMapsUrlAus_('https://www.google.com/maps/place/Hauptstrasse+5,+8000+Zürich/data=!4m2').adresse === 'Hauptstrasse 5, 8000 Zürich', 'reine Adresse als Name');
+pruefe(gs.werteMapsUrlAus_('https://www.google.com/maps/place/Irgendwas/data=!4m2').adresse === undefined, 'ohne Adresse nichts zu geokodieren');
+
+const geoAntwort = { status: 'OK', results: [{ geometry: { location: { lat: 47.95, lng: 10.08 }, location_type: 'ROOFTOP' } }] };
+globalThis.Maps = { newGeocoder: () => ({ setLanguage() { return this; }, geocode: (a) => (geoAntwort.gefragt = a, geoAntwort) }) };
+const geo = gs.koordinatenAusAdresse_(gs.werteMapsUrlAus_(aitrachUrl));
+pruefe(geo.lat === 47.95 && geo.lon === 10.08 && geo.ausAdresse === true, 'Geokodierung übernimmt Koordinaten');
+pruefe(geoAntwort.gefragt === 'St.-Konrad-Weg 2, 88319 Aitrach, Deutschland', 'geokodiert wird die Adresse');
+geoAntwort.results[0].geometry.location_type = 'APPROXIMATE';
+pruefe(gs.koordinatenAusAdresse_(gs.werteMapsUrlAus_(aitrachUrl)).lat === null, 'nur ortsgenaue Geokodierung wird abgelehnt');
+pruefe(gs.koordinatenAusAdresse_(amag).lat === 46.5226087, 'vorhandene Koordinaten bleiben unverändert');
 
 // 3. Name mit Ort.
 pruefe(gs.nameMitOrt_('EnBW Ladestation', 'Achern') === 'EnBW Ladestation Achern', 'Ort anhängen');

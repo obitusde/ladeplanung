@@ -1,6 +1,8 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.15.0 — Maps-Links im neueren Teilen-Format ohne Koordinaten: Adresse aus dem Link wird geokodiert
+ *                  (mindestens straßengenau), Status „Koordinaten aus Adresse".
  * Version 0.14.1 — Fahrzeit bei Vergleichswerten Pflicht, ohne Fahrzeit zählen sie nicht; veralteter Status „keiner Route
  *                  zugeordnet (> 2 km)" wird entfernt; Betreiber EWE Go, leerer Betreiber im Export aus dem Namen.
  *                  Robuste Kalibrierung: Ausreißer (> 35 % neben dem Median) nicht verwenden, erst Gesamtfaktor, dann
@@ -25,7 +27,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.14.1';
+const VERSION = '0.15.0';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -231,12 +233,12 @@ function legePunktAn(daten) {
 
     let info;
     try {
-      info = werteMapsUrlAus_(folgeWeiterleitungen_(link));
+      info = linkInfo_(link);
     } catch (e) {
       return { ok: false, fehler: 'Link nicht auflösbar: ' + e.message };
     }
     if (info.lat === null) {
-      return { ok: false, fehler: 'Im Link stehen keine Koordinaten. In Google Maps den Ort antippen, „Teilen" → „Link kopieren" und diesen Link einfügen.' };
+      return { ok: false, fehler: 'Im Link stehen weder Koordinaten noch eine genaue Adresse. In Google Maps lange auf die Station drücken (Stecknadel), „Teilen" → „Link kopieren" und diesen Link einfügen.' };
     }
 
     const t = punkteBlattMitIndex_();
@@ -259,6 +261,7 @@ function legePunktAn(daten) {
     zeile[t.sp.Lat - 1] = runde_(info.lat, 6);
     zeile[t.sp.Lon - 1] = runde_(info.lon, 6);
     FORMULAR_FELDER.forEach(function (f) { zeile[t.sp[f] - 1] = neu[f]; });
+    if (info.ausAdresse) zeile[t.sp.Status - 1] = STATUS_AUS_ADRESSE;
     t.blatt.appendRow(zeile);
     SpreadsheetApp.flush();
 
@@ -267,7 +270,8 @@ function legePunktAn(daten) {
     const punkt = punktAusExport_(exp.json, id);
     return {
       ok: true,
-      meldung: 'Angelegt als ' + id + (punkt && punkt.name ? ': ' + punkt.name : '') + '.',
+      meldung: 'Angelegt als ' + id + (punkt && punkt.name ? ': ' + punkt.name : '') + '.' +
+        (info.ausAdresse ? '\nDer Link enthielt keine Koordinaten – sie wurden aus der Adresse ermittelt. Lage bei Bedarf in Google Maps prüfen.' : ''),
       warnung: exp.fehler ? 'Export fehlgeschlagen:\n' + exp.meldungen.join('\n') : '',
       punkt: punkt,
     };
@@ -1267,12 +1271,14 @@ function aufloeseLinks() {
       let lat = feld('Lat');
       let lon = feld('Lon');
       let linkName = '';
+      let ausAdresse = false;
 
       if (fehltName || fehltKoord) {
-        const info = werteMapsUrlAus_(folgeWeiterleitungen_(link));
-        if (info.lat === null) throw new Error('keine Koordinaten im Link gefunden');
+        const info = linkInfo_(link);
+        if (info.lat === null) throw new Error('weder Koordinaten noch genaue Adresse im Link gefunden');
         linkName = info.name;
         if (fehltKoord) {
+          ausAdresse = !!info.ausAdresse;
           lat = runde_(info.lat, 6);
           lon = runde_(info.lon, 6);
           setze('Lat', lat);
@@ -1296,6 +1302,7 @@ function aufloeseLinks() {
       }
 
       if (String(feld('Status')).indexOf(STATUS_FEHLER_PRAEFIX) === 0) setze('Status', '');
+      if (ausAdresse) setze('Status', STATUS_AUS_ADRESSE);
       bilanz.ergaenzt++;
     } catch (e) {
       setze('Status', STATUS_FEHLER_PRAEFIX + ': ' + e.message);
@@ -1370,7 +1377,36 @@ function werteMapsUrlAus_(url) {
 
   const ersatz = u.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || u.match(/[?&]q=(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
   if (ersatz) return { name: name, lat: Number(ersatz[1]), lon: Number(ersatz[2]) };
+
+  // Neueres Teilen-Format ohne Koordinaten: „Name, Straße Nr, PLZ Ort, Land"
+  const teile = name.split(',');
+  if (teile.length >= 2 && /\d/.test(name)) {
+    const ersterIstAdresse = /\d/.test(teile[0]);
+    return {
+      name: ersterIstAdresse ? name : teile[0].trim(),
+      lat: null, lon: null,
+      adresse: ersterIstAdresse ? name : teile.slice(1).join(',').trim(),
+    };
+  }
   return { name: name, lat: null, lon: null };
+}
+
+const STATUS_AUS_ADRESSE = 'Koordinaten aus Adresse';
+
+/** Fehlen Koordinaten, wird die Adresse aus dem Link geokodiert – nur wenn mindestens straßengenau, sonst bleibt lat null. */
+function koordinatenAusAdresse_(info) {
+  if (info.lat !== null || !info.adresse) return info;
+  const antwort = Maps.newGeocoder().setLanguage('de').geocode(info.adresse);
+  const erstes = antwort.status === 'OK' && antwort.results && antwort.results[0];
+  if (!erstes || erstes.geometry.location_type === 'APPROXIMATE') return info;
+  info.lat = erstes.geometry.location.lat;
+  info.lon = erstes.geometry.location.lng;
+  info.ausAdresse = true;
+  return info;
+}
+
+function linkInfo_(link) {
+  return koordinatenAusAdresse_(werteMapsUrlAus_(folgeWeiterleitungen_(link)));
 }
 
 /** Rückwärts-Geokodierung über den eingebauten Maps-Dienst (kein Schlüssel nötig). */
@@ -1637,7 +1673,7 @@ function koordinateAusEingabe_(text) {
   const m = String(text).match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
   if (m) return [Number(m[2]), Number(m[1])];
   if (istMapsLink_(text)) {
-    const info = werteMapsUrlAus_(folgeWeiterleitungen_(text));
+    const info = linkInfo_(text);
     if (info.lat === null) throw new Error('Link ohne Koordinaten: ' + text);
     return [info.lon, info.lat];
   }
