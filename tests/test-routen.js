@@ -107,7 +107,7 @@ pruefe(p006 && p006.quer_km === 0.1 && p006.raststaette === true && p006.strasse
 pruefe(exp.punkte[0].zuordnung[0].strasse === 'Route de Genève' && exp.punkte[1].zuordnung[0].raststaette === false, 'Straße vor km 8; 1,1 km abseits keine Raststätte');
 pruefe(exp.punkte[0].zuordnung.length === 1 && exp.punkte[0].lat === 46 && exp.punkte[0].lon === 6.05123, 'Punkt auf Linie zugeordnet und gerundet: ' + JSON.stringify(exp.punkte[0]));
 pruefe(exp.punkte[1].zuordnung.length === 1 && exp.punkte[1].richtung === 'hin', '1,1 km abseits zugeordnet');
-pruefe(exp.punkte[2].zuordnung.length === 0, '5,5 km abseits nicht zugeordnet');
+pruefe(exp.punkte[2].zuordnung.length === 1 && exp.punkte[2].zuordnung[0].quer_km === 5.5, '5,5 km abseits zugeordnet (Korridor 10 km): ' + JSON.stringify(exp.punkte[2].zuordnung));
 pruefe(exp.punkte[3].zuordnung.length === 0, 'außerhalb des Rechtecks nicht zugeordnet');
 const zu = exp.punkte[0].zuordnung[0];
 pruefe(zu.route === 'test' && zu.km === 3.96 && zu.hm_hin === 26 && zu.hm_rueck === 5, 'Zuordnungswerte: ' + JSON.stringify(zu));

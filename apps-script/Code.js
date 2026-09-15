@@ -1,6 +1,7 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.9.1 — Zuordnungskorridor 10 km.
  * Version 0.9.0 — Zuordnung bis 5 km mit Querabstand, Straße und Raststätten-Kennung; Höhenfilter 10 m.
  * Version 0.8.0 — Savona als zwei Varianten (Simplon, Gr. St. Bernhard), Mont Blanc gestrichen; routenVorgabenUebernehmen().
  * Version 0.7.0 — Alle Schritte auch direkt im Editor ausführbar (schritt1_… bis schritt5_…).
@@ -13,7 +14,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.9.0';
+const VERSION = '0.9.1';
 
 const BLATT_PUNKTE = 'Ladepunkte';
 const BLATT_ROUTEN = 'Routen';
@@ -827,9 +828,10 @@ function duenneAus_(voll) {
 // routes.json und lädt sie ins Repo. Reine Rechenarbeit, kein Routing-Aufruf.
 // ---------------------------------------------------------------------------
 
-// 5 km statt der 2 km aus dem Brief (Christof, 15.09.2026): Stationen an Ausfahrten und an
-// parallelen Autobahnen gehören dazu; der Querabstand wird mit exportiert und angezeigt.
-const ZUORDNUNG_MAX_KM = 5;
+// 10 km statt der 2 km aus dem Brief (Christof, 15.09.2026): Stationen an Ausfahrten und an
+// parallelen Autobahnen (A5/A67) gehören dazu — er trägt ohnehin nur sinnvolle Punkte ein.
+// Der Querabstand wird mit exportiert und angezeigt.
+const ZUORDNUNG_MAX_KM = 10;
 const STATUS_OHNE_ROUTE = 'keiner Route zugeordnet (> ' + ZUORDNUNG_MAX_KM + ' km)';
 const RASTSTAETTE_MAX_KM = 0.5;
 const RASTSTAETTE_MUSTER = /rastst[äa]tte|rasthof|rastanlage|rastplatz|autobahn|autogrill|aire de service|area di servizio/i;

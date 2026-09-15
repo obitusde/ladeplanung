@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.10.0 — Ein Richtungsknopf, Namen ohne „Ladestation", Betreiber nicht doppelt, Korridor 10 km.
   Version 0.9.1 — Straße im Titel; ABRP-Link mit aktueller Position als Start.
   Version 0.9.0 — Lage je Station: Raststätte, Straße, Querabstand („3,2 km abseits · A 5").
   Version 0.8.0 — Etappe 7/8: Liste, Projektion, Simulationsmodus, Detailansicht, drei Ausgabewege.
@@ -72,12 +73,12 @@
       font-weight: 600; cursor: pointer;
     }
     .knopf.haupt { background: var(--akzent); color: var(--akzent-text); border-color: var(--akzent); }
-    .umschalter { flex: 1; min-width: 0; display: flex; border: 2px solid var(--linie); border-radius: 10px; overflow: hidden; }
-    .umschalter button {
-      flex: 1; min-width: 0; min-height: 48px; border: 0; background: var(--flaeche); font-weight: 600; cursor: pointer;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 6px;
+    .richtung {
+      flex: 1; min-width: 0; min-height: 52px; padding: 0 12px;
+      background: var(--text); color: var(--grund); border: 0; border-radius: 10px;
+      font-size: 20px; font-weight: 800; cursor: pointer;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    .umschalter button[aria-pressed="true"] { background: var(--text); color: var(--grund); }
 
     #hinweis {
       margin: 10px 12px 0; padding: 10px 12px; border-radius: 10px;
@@ -151,10 +152,7 @@
       <button id="einstellungen" class="knopf" aria-label="Einstellungen">⚙</button>
     </div>
     <div class="zeile">
-      <div class="umschalter" role="group" aria-label="Richtung">
-        <button id="hin" type="button" aria-pressed="true">Hin</button>
-        <button id="rueck" type="button" aria-pressed="false">Rück</button>
-      </div>
+      <button id="richtung" class="richtung" type="button" aria-label="Fahrtrichtung wechseln">nach …</button>
       <button id="standort" class="knopf haupt" type="button">Standort</button>
     </div>
   </header>
@@ -196,8 +194,8 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.9.1';
-    const QUER_MAX_KM = 5;          // darüber: Luftlinien-Hinweis
+    const APP_VERSION = '0.10.0';
+    const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
     const SPEICHER = 'ladeplanung.v1';
@@ -345,6 +343,15 @@
       return e;
     }
 
+    /** Name ohne Füllwörter: „EnBW Ladestation Appenweier" → „EnBW Appenweier". Nur Anzeige, das Sheet bleibt. */
+    function kurzname(name) {
+      const kurz = String(name || '')
+        .replace(/[-\s]*(ladestation|ladepunkt|ladesäule|charging station|station de recharge|stazione di ricarica)\b/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      return kurz || name;
+    }
+
     /** „Raststätte A 5", „3,2 km abseits · A 5" oder „an A 1" — leer, wenn nichts bekannt ist. */
     function lageText(z) {
       if (!z) return '';
@@ -365,7 +372,8 @@
       const teile = [];
       teile.push(e.hm === null ? 'keine Höhendaten' : '+ ' + e.hm + ' hm');
       teile.push((e.punkt.kw ? e.punkt.kw : '–') + ' kW');
-      if (e.punkt.betreiber) teile.push(e.punkt.betreiber);
+      const b = e.punkt.betreiber;
+      if (b && kurzname(e.punkt.name).toLowerCase().indexOf(b.toLowerCase()) === -1) teile.push(b);
       return teile.join(' · ');
     }
 
@@ -375,10 +383,7 @@
       zustand.route = route.id;
 
       const [start, ziel] = route.name.split(/\s+[–-]\s+/);
-      $('hin').textContent = 'Hin → ' + (ziel || 'Ziel');
-      $('rueck').textContent = 'Rück → ' + (start || 'Start');
-      $('hin').setAttribute('aria-pressed', String(zustand.richtung === 'hin'));
-      $('rueck').setAttribute('aria-pressed', String(zustand.richtung === 'rueck'));
+      $('richtung').textContent = 'nach ' + (zustand.richtung === 'hin' ? (ziel || 'Ziel') : (start || 'Start')) + '  ⇄';
       $('route').value = route.id;
 
       const pos = aktuellePosition();
@@ -418,7 +423,7 @@
         const km = el('span', 'km', fmtKm(e.km));
         km.append(el('small', '', 'km'));
         const strasse = e.z && e.z.strasse ? ' (' + e.z.strasse + ')' : '';
-        zeile.append(km, el('span', 'name', (e.punkt.favorit ? '★ ' : '') + e.punkt.name + strasse));
+        zeile.append(km, el('span', 'name', (e.punkt.favorit ? '★ ' : '') + kurzname(e.punkt.name) + strasse));
         const lage = lageKurz(e.z);
         if (lage) zeile.append(el('span', 'lage' + (e.z.raststaette && !(e.z.quer_km > 1) ? ' rast' : ''), lage));
         zeile.append(el('span', 'meta', metaZeile(e)));
@@ -446,7 +451,7 @@
     function zeigeDetail(e, modus) {
       const p = e.punkt;
       detailPunkt = p;
-      $('d-name').textContent = (p.favorit ? '★ ' : '') + p.name;
+      $('d-name').textContent = (p.favorit ? '★ ' : '') + kurzname(p.name);
       $('d-gross').textContent = fmtKm(e.km) + ' km ' + (modus === 'luftlinie' ? 'Luftlinie' : 'voraus') +
         (e.hm === null ? '' : ' · + ' + e.hm + ' hm');
 
@@ -607,8 +612,11 @@
 
     function bindeEreignisse() {
       $('route').addEventListener('change', () => { zustand.route = $('route').value; speichere(); render(); });
-      $('hin').addEventListener('click', () => { zustand.richtung = 'hin'; speichere(); render(); });
-      $('rueck').addEventListener('click', () => { zustand.richtung = 'rueck'; speichere(); render(); });
+      $('richtung').addEventListener('click', () => {
+        zustand.richtung = zustand.richtung === 'hin' ? 'rueck' : 'hin';
+        speichere();
+        render();
+      });
       $('standort').addEventListener('click', holeStandort);
       $('einstellungen').addEventListener('click', oeffneEinstellungen);
       $('dlg').querySelector('form').addEventListener('submit', schliesseEinstellungen);
