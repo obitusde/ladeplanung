@@ -1,6 +1,7 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.6.0 — bereinigePunkte(): Porsche Destination entfernen, Dubletten zusammenführen.
  * Version 0.5.0 — Etappe 6: exportJson() mit Zuordnung und GitHub-Upload.
  * Version 0.4.0 — Etappe 4/5: berechneRouten() mit Kumulierung, Ausdünnung, Rundung.
  * Version 0.3.0 — Etappe 3: aufloeseLinks().
@@ -9,7 +10,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.5.0';
+const VERSION = '0.6.0';
 
 const BLATT_PUNKTE = 'Ladepunkte';
 const BLATT_ROUTEN = 'Routen';
@@ -43,6 +44,7 @@ function onOpen() {
     .addItem('Routen neu berechnen (alle)', 'berechneRoutenNeu')
     .addItem('Export nach GitHub', 'exportJson')
     .addSeparator()
+    .addItem('Punkte bereinigen (Dubletten, Entfernte)', 'bereinigePunkte')
     .addSubMenu(SpreadsheetApp.getUi().createMenu('Zugänge')
       .addItem('ORS-Schlüssel hinterlegen', 'orsSchluesselHinterlegen')
       .addItem('GitHub-Token hinterlegen', 'githubTokenHinterlegen'))
@@ -369,6 +371,112 @@ function betreiberAusName_(name) {
 function runde_(zahl, stellen) {
   const f = Math.pow(10, stellen);
   return Math.round(zahl * f) / f;
+}
+
+// ---------------------------------------------------------------------------
+// bereinigePunkte() — auf Christofs Wunsch (15.09.2026): ausdrücklich genannte
+// Stationen entfernen, Dubletten (≤ 25 m) zusammenführen. Zeigt vorher, was passiert,
+// und handelt erst nach Bestätigung. Ein zweiter Lauf findet nichts mehr.
+// Einzige Ausnahme von der Notiz-Regel: bei Dubletten werden die Notizen vereinigt.
+// ---------------------------------------------------------------------------
+
+// Sicherung über den Namen, damit nie eine falsche Zeile mit gleicher id gelöscht wird.
+const ENTFERNEN = [{ id: 'p003', nameEnthaelt: 'Porsche Destination' }];
+const DUBLETTE_MAX_M = 25;
+
+function bereinigePunkte() {
+  const ui = SpreadsheetApp.getUi();
+  const blatt = SpreadsheetApp.getActive().getSheetByName(BLATT_PUNKTE);
+  if (!blatt || blatt.getLastRow() < 2) {
+    ui.alert('Punkte bereinigen', 'Blatt „' + BLATT_PUNKTE + '" fehlt oder ist leer.', ui.ButtonSet.OK);
+    return;
+  }
+  const sp = spaltenIndex_(blatt);
+  const zeilen = blatt.getRange(2, 1, blatt.getLastRow() - 1, blatt.getLastColumn()).getValues().map(function (z, i) {
+    const feld = function (name) { return z[sp[name] - 1]; };
+    return {
+      zeile: i + 2, id: String(feld('id')).trim(), name: String(feld('Name')), lat: feld('Lat'), lon: feld('Lon'),
+      notiz: String(feld('Notiz')), favorit: String(feld('Favorit')), richtung: String(feld('Richtung')),
+      betreiber: feld('Betreiber'), kw: feld('kW'), anzahl: feld('Anzahl'),
+    };
+  });
+
+  const plan = planeBereinigung_(zeilen);
+  if (plan.loeschen.length === 0) {
+    ui.alert('Punkte bereinigen v' + VERSION, 'Nichts zu tun — keine Dubletten, nichts zu entfernen.', ui.ButtonSet.OK);
+    return;
+  }
+  const antwort = ui.alert('Punkte bereinigen v' + VERSION, plan.beschreibung.join('\n') + '\n\nAusführen?', ui.ButtonSet.YES_NO);
+  if (antwort !== ui.Button.YES) return;
+
+  // Erst Felder der verbleibenden Zeilen ändern, dann von unten nach oben löschen.
+  plan.aenderungen.forEach(function (a) {
+    Object.keys(a.felder).forEach(function (f) { blatt.getRange(a.zeile, sp[f]).setValue(a.felder[f]); });
+  });
+  plan.loeschen.slice().sort(function (x, y) { return y - x; }).forEach(function (z) { blatt.deleteRow(z); });
+
+  ui.alert('Punkte bereinigen v' + VERSION, plan.loeschen.length + ' Zeilen gelöscht, ' + plan.aenderungen.length + ' Zeilen ergänzt.', ui.ButtonSet.OK);
+}
+
+/**
+ * Plant die Bereinigung, ohne etwas zu schreiben (testbar).
+ * zeilen: [{ zeile, id, name, lat, lon, notiz, favorit, richtung, betreiber, kw, anzahl }]
+ * Gibt { loeschen: [Zeilennummern], aenderungen: [{ zeile, felder }], beschreibung: [Text] } zurück.
+ */
+function planeBereinigung_(zeilen) {
+  const loeschen = [], aenderungen = [], beschreibung = [];
+  const weg = {};
+
+  zeilen.forEach(function (z) {
+    ENTFERNEN.forEach(function (e) {
+      if (z.id === e.id && z.name.indexOf(e.nameEnthaelt) !== -1 && !weg[z.zeile]) {
+        weg[z.zeile] = true;
+        loeschen.push(z.zeile);
+        beschreibung.push('Löschen: ' + z.id + ' ' + z.name);
+      }
+    });
+  });
+
+  for (let i = 0; i < zeilen.length; i++) {
+    const a = zeilen[i];
+    if (weg[a.zeile] || a.lat === '' || a.lon === '') continue;
+    const neu = { Notiz: a.notiz, Favorit: a.favorit, Richtung: a.richtung, Betreiber: a.betreiber, kW: a.kw, Anzahl: a.anzahl };
+
+    for (let j = i + 1; j < zeilen.length; j++) {
+      const b = zeilen[j];
+      if (weg[b.zeile] || b.lat === '' || b.lon === '') continue;
+      if (haversine_(Number(a.lat), Number(a.lon), Number(b.lat), Number(b.lon)) * 1000 > DUBLETTE_MAX_M) continue;
+
+      weg[b.zeile] = true;
+      loeschen.push(b.zeile);
+      neu.Notiz = vereinigeNotizen_(neu.Notiz, b.notiz);
+      if (b.favorit === 'ja') neu.Favorit = 'ja';
+      if (neu.Richtung !== b.richtung) neu.Richtung = 'beide';
+      if (neu.Betreiber === '') neu.Betreiber = b.betreiber;
+      if (neu.kW === '') neu.kW = b.kw;
+      if (neu.Anzahl === '') neu.Anzahl = b.anzahl;
+      beschreibung.push('Zusammenführen: ' + b.id + ' → ' + a.id + ' (' + a.name + ')');
+    }
+
+    const felder = {};
+    const alt = { Notiz: a.notiz, Favorit: a.favorit, Richtung: a.richtung, Betreiber: a.betreiber, kW: a.kw, Anzahl: a.anzahl };
+    Object.keys(neu).forEach(function (k) { if (neu[k] !== alt[k]) felder[k] = neu[k]; });
+    if (Object.keys(felder).length > 0) aenderungen.push({ zeile: a.zeile, id: a.id, felder: felder });
+  }
+
+  return { loeschen: loeschen, aenderungen: aenderungen, beschreibung: beschreibung };
+}
+
+/** Vereinigt kommagetrennte Notizen ohne Wiederholung, Reihenfolge bleibt erhalten. */
+function vereinigeNotizen_(a, b) {
+  const teile = [], gesehen = {};
+  [a, b].forEach(function (t) {
+    String(t || '').split(',').forEach(function (s) {
+      const x = s.trim();
+      if (x && !gesehen[x.toLowerCase()]) { gesehen[x.toLowerCase()] = true; teile.push(x); }
+    });
+  });
+  return teile.join(', ');
 }
 
 // ---------------------------------------------------------------------------
