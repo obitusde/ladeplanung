@@ -1,17 +1,622 @@
-<!-- Ladeplanung Cupra Born — Grundgerüst v0.1.0 (Etappe 1). Die eigentliche App folgt in Etappe 7. -->
 <!DOCTYPE html>
+<!--
+  Ladeplanung Cupra Born — PWA
+  Version 0.8.0 — Etappe 7/8: Liste, Projektion, Simulationsmodus, Detailansicht, drei Ausgabewege.
+  Grundlage: Umsetzungsbrief v5.0, Stufe 1. Keine externen Bibliotheken, kein Service Worker.
+-->
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
   <title>Ladeplanung</title>
   <style>
-    body { font-family: system-ui, sans-serif; margin: 0; padding: 24px; background: #fff; color: #111; }
-    @media (prefers-color-scheme: dark) { body { background: #000; color: #eee; } }
+    :root {
+      --grund: #ffffff;
+      --flaeche: #f2f2f2;
+      --text: #000000;
+      --leise: #3d3d3d;
+      --linie: #c8c8c8;
+      --akzent: #9a4a00;
+      --akzent-text: #ffffff;
+      --favorit: #fff1d6;
+      --warnung: #7a0000;
+      --warnung-grund: #ffe3e3;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --grund: #000000;
+        --flaeche: #161616;
+        --text: #ffffff;
+        --leise: #c4c4c4;
+        --linie: #3a3a3a;
+        --akzent: #ffac4a;
+        --akzent-text: #000000;
+        --favorit: #2b1d06;
+        --warnung: #ffc9c9;
+        --warnung-grund: #3d0b0b;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--grund); color: var(--text); }
+    body {
+      font: 18px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    button, select, input { font: inherit; color: inherit; }
+
+    header {
+      position: sticky; top: 0; z-index: 2;
+      background: var(--grund);
+      border-bottom: 2px solid var(--linie);
+      padding: 10px 12px;
+      display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px;
+    }
+    .zeile { display: flex; gap: 8px; align-items: stretch; }
+    select#route {
+      flex: 1; min-width: 0; min-height: 52px; padding: 0 10px;
+      background: var(--flaeche); border: 2px solid var(--linie); border-radius: 10px;
+      font-weight: 600;
+    }
+    .knopf {
+      min-height: 52px; padding: 0 14px;
+      background: var(--flaeche); border: 2px solid var(--linie); border-radius: 10px;
+      font-weight: 600; cursor: pointer;
+    }
+    .knopf.haupt { background: var(--akzent); color: var(--akzent-text); border-color: var(--akzent); }
+    .umschalter { flex: 1; min-width: 0; display: flex; border: 2px solid var(--linie); border-radius: 10px; overflow: hidden; }
+    .umschalter button {
+      flex: 1; min-width: 0; min-height: 48px; border: 0; background: var(--flaeche); font-weight: 600; cursor: pointer;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 6px;
+    }
+    .umschalter button[aria-pressed="true"] { background: var(--text); color: var(--grund); }
+
+    #hinweis {
+      margin: 10px 12px 0; padding: 10px 12px; border-radius: 10px;
+      background: var(--warnung-grund); color: var(--warnung); font-weight: 600;
+    }
+    #hinweis.sim { background: var(--flaeche); color: var(--text); border: 2px dashed var(--akzent); }
+
+    main { flex: 1; padding: 6px 0 12px; }
+    .leer { padding: 24px 16px; color: var(--leise); font-size: 20px; }
+    .eintrag {
+      display: grid; grid-template-columns: auto 1fr; column-gap: 14px; row-gap: 2px;
+      width: 100%; text-align: left; background: transparent;
+      border: 0; border-bottom: 1px solid var(--linie);
+      padding: 12px 14px; cursor: pointer; min-height: 76px;
+    }
+    .eintrag.favorit { background: var(--favorit); border-left: 6px solid var(--akzent); padding-left: 8px; }
+    .eintrag .km { grid-row: 1 / span 3; font-size: 34px; font-weight: 800; line-height: 1; align-self: center; min-width: 3.6ch; font-variant-numeric: tabular-nums; }
+    .eintrag .km small { font-size: 16px; font-weight: 600; margin-left: 2px; }
+    .eintrag .name { font-weight: 700; overflow-wrap: anywhere; }
+    .eintrag .meta { color: var(--text); font-variant-numeric: tabular-nums; }
+    .eintrag .notiz { color: var(--leise); overflow-wrap: anywhere; }
+
+    footer {
+      position: sticky; bottom: 0;
+      background: var(--grund); border-top: 2px solid var(--linie);
+      padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 4px 16px;
+      font-size: 16px; color: var(--leise); font-variant-numeric: tabular-nums;
+    }
+    footer b { color: var(--text); }
+
+    #detail {
+      position: fixed; inset: 0; z-index: 5; overflow-y: auto;
+      background: var(--grund); padding: calc(env(safe-area-inset-top) + 10px) 14px 24px;
+    }
+    #detail h2 { margin: 12px 0 4px; font-size: 26px; overflow-wrap: anywhere; }
+    #detail .gross { font-size: 22px; font-weight: 700; margin: 0 0 12px; }
+    dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0 0 18px; }
+    dt { color: var(--leise); }
+    dd { margin: 0; overflow-wrap: anywhere; }
+    .aktionen { display: grid; gap: 10px; }
+    .aktionen .knopf { display: flex; align-items: center; justify-content: center; text-decoration: none; min-height: 60px; font-size: 20px; }
+
+    dialog {
+      width: min(94vw, 480px); border: 2px solid var(--linie); border-radius: 14px;
+      background: var(--grund); color: var(--text); padding: 16px;
+    }
+    dialog::backdrop { background: rgba(0, 0, 0, .6); }
+    dialog h2 { margin: 0 0 12px; }
+    dialog label { display: grid; gap: 4px; margin-bottom: 14px; }
+    dialog label.schalter { display: flex; gap: 10px; align-items: center; font-weight: 600; }
+    dialog label.schalter input { width: 26px; height: 26px; }
+    dialog select, dialog input[type="text"] {
+      min-height: 48px; padding: 0 10px; background: var(--flaeche);
+      border: 2px solid var(--linie); border-radius: 10px; width: 100%;
+    }
+    .klein { font-size: 14px; color: var(--leise); }
+
+    #toast {
+      position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 70px); transform: translateX(-50%);
+      z-index: 10; background: var(--text); color: var(--grund);
+      padding: 12px 18px; border-radius: 12px; font-weight: 600; max-width: 90vw;
+    }
   </style>
 </head>
 <body>
-  <h1>Ladeplanung</h1>
-  <p>Grundgerüst v0.1.0 — die App ist im Aufbau.</p>
+  <header>
+    <div class="zeile">
+      <select id="route" aria-label="Route"></select>
+      <button id="einstellungen" class="knopf" aria-label="Einstellungen">⚙</button>
+    </div>
+    <div class="zeile">
+      <div class="umschalter" role="group" aria-label="Richtung">
+        <button id="hin" type="button" aria-pressed="true">Hin</button>
+        <button id="rueck" type="button" aria-pressed="false">Rück</button>
+      </div>
+      <button id="standort" class="knopf haupt" type="button">Standort</button>
+    </div>
+  </header>
+
+  <div id="hinweis" hidden></div>
+  <main id="liste"><p class="leer">Lade Daten …</p></main>
+  <footer id="fuss"></footer>
+
+  <section id="detail" hidden>
+    <button id="zurueck" class="knopf" type="button">← Zurück</button>
+    <h2 id="d-name"></h2>
+    <p id="d-gross" class="gross"></p>
+    <dl id="d-felder"></dl>
+    <div class="aktionen">
+      <button id="d-kopieren" class="knopf haupt" type="button">Adresse kopieren</button>
+      <a id="d-maps" class="knopf" target="_blank" rel="noopener">Google Maps</a>
+      <a id="d-abrp" class="knopf" target="_blank" rel="noopener">ABRP</a>
+      <button id="d-sim" class="knopf" type="button" hidden>Simulierte Position hierher</button>
+    </div>
+  </section>
+
+  <dialog id="dlg">
+    <form method="dialog">
+      <h2>Einstellungen</h2>
+      <label class="schalter"><input type="checkbox" id="sim-aktiv" aria-label="Simulationsmodus"> Simulationsmodus</label>
+      <label>Vorlage
+        <select id="sim-vorlage"></select>
+      </label>
+      <label>Position (lat,lon)
+        <input type="text" id="sim-koord" inputmode="decimal" autocomplete="off" placeholder="46.50432,6.49127">
+      </label>
+      <p class="klein" id="version"></p>
+      <button class="knopf haupt" value="ok" style="width:100%">Fertig</button>
+    </form>
+  </dialog>
+
+  <div id="toast" hidden></div>
+
+  <script>
+    'use strict';
+
+    const APP_VERSION = '0.8.0';
+    const QUER_MAX_KM = 5;          // darüber: Luftlinien-Hinweis
+    const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
+    const ERDRADIUS_KM = 6371.0088;
+    const SPEICHER = 'ladeplanung.v1';
+    const ABSEITS = { label: 'Weit abseits (Annecy)', lat: 45.8992, lon: 6.1294 };
+
+    // -----------------------------------------------------------------------
+    // Rechenkern (identisch zu apps-script/Code.js: projiziere_, haversine_)
+    // -----------------------------------------------------------------------
+
+    function projiziere(linie, lat, lon, lat0) {
+      const fx = 111.320 * Math.cos(lat0 * Math.PI / 180);
+      const fy = 110.574;
+      const px = lon * fx, py = lat * fy;
+      let bester = { q: Infinity, km: 0, hm_hin: 0, hm_rueck: 0 };
+      for (let i = 0; i < linie.length - 1; i++) {
+        const a = linie[i], b = linie[i + 1];
+        const ax = a[1] * fx, ay = a[0] * fy;
+        const dx = b[1] * fx - ax, dy = b[0] * fy - ay;
+        const l2 = dx * dx + dy * dy;
+        let t = l2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
+        t = Math.max(0, Math.min(1, t));
+        const cx = ax + t * dx, cy = ay + t * dy;
+        const q = Math.hypot(px - cx, py - cy);
+        if (q < bester.q) {
+          bester = { q, km: a[2] + t * (b[2] - a[2]), hm_hin: a[3] + t * (b[3] - a[3]), hm_rueck: a[4] + t * (b[4] - a[4]) };
+        }
+      }
+      return bester;
+    }
+
+    function haversine(lat1, lon1, lat2, lon2) {
+      const rad = Math.PI / 180;
+      const dLat = (lat2 - lat1) * rad, dLon = (lon2 - lon1) * rad;
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) ** 2;
+      return 2 * ERDRADIUS_KM * Math.asin(Math.min(1, Math.sqrt(a)));
+    }
+
+    function lat0Von(route) {
+      if (route.lat0 === undefined) route.lat0 = route.linie.reduce((s, p) => s + p[0], 0) / route.linie.length;
+      return route.lat0;
+    }
+
+    /** Liste der Punkte voraus für eine Position. Rein rechnerisch, kein Netzwerk. */
+    function berechneListe(daten, routeId, richtung, lat, lon) {
+      const route = daten.routen.find(r => r.id === routeId);
+      const pr = projiziere(route.linie, lat, lon, lat0Von(route));
+      const hin = richtung === 'hin';
+      const kandidaten = daten.punkte
+        .map(p => ({ punkt: p, z: (p.zuordnung || []).find(z => z.route === routeId) }))
+        .filter(x => x.z && (x.punkt.richtung === 'beide' || x.punkt.richtung === richtung));
+
+      if (pr.q > QUER_MAX_KM) {
+        const eintraege = kandidaten
+          .map(x => ({ punkt: x.punkt, z: x.z, km: haversine(lat, lon, x.punkt.lat, x.punkt.lon), hm: null }))
+          .sort((a, b) => a.km - b.km);
+        return { modus: 'luftlinie', q: pr.q, s: null, rest: null, eintraege };
+      }
+
+      const eintraege = [];
+      for (const x of kandidaten) {
+        const km = hin ? x.z.km - pr.km : pr.km - x.z.km;
+        if (km <= AUSBLENDEN_KM) continue;
+        const hm = hin ? x.z.hm_hin - pr.hm_hin : pr.hm_rueck - x.z.hm_rueck;
+        eintraege.push({ punkt: x.punkt, z: x.z, km, hm: Math.max(0, Math.round(hm)) });
+      }
+      eintraege.sort((a, b) => a.km - b.km);
+      return { modus: 'strecke', q: pr.q, s: pr.km, rest: hin ? route.laenge_km - pr.km : pr.km, eintraege };
+    }
+
+    /** Position bei Streckenkilometer km (linear im Segment). */
+    function punktBeiKm(route, km) {
+      const l = route.linie;
+      for (let i = 0; i < l.length - 1; i++) {
+        if (km <= l[i + 1][2]) {
+          const span = l[i + 1][2] - l[i][2];
+          const t = span > 0 ? Math.max(0, (km - l[i][2]) / span) : 0;
+          return { lat: l[i][0] + t * (l[i + 1][0] - l[i][0]), lon: l[i][1] + t * (l[i + 1][1] - l[i][1]) };
+        }
+      }
+      const letzter = l[l.length - 1];
+      return { lat: letzter[0], lon: letzter[1] };
+    }
+
+    function mapsUrl(p) {
+      return 'https://www.google.com/maps/dir/?api=1&destination=' + p.lat + ',' + p.lon;
+    }
+
+    function abrpUrl(p) {
+      return 'https://abetterrouteplanner.com/?destinations=' +
+        encodeURIComponent(JSON.stringify([{ address: p.adresse || p.name, lat: p.lat, lon: p.lon }]));
+    }
+
+    // -----------------------------------------------------------------------
+    // Zustand
+    // -----------------------------------------------------------------------
+
+    const $ = id => document.getElementById(id);
+    let daten = null;
+    let gps = null;          // { lat, lon, genauigkeit }
+    let gpsFehler = '';
+    let gpsLaeuft = false;
+    let detailPunkt = null;
+
+    const zustand = (() => {
+      const standard = { route: null, richtung: 'hin', sim: { aktiv: false, lat: null, lon: null, label: '' } };
+      try {
+        const g = JSON.parse(localStorage.getItem(SPEICHER) || '{}');
+        return { ...standard, ...g, sim: { ...standard.sim, ...(g.sim || {}) } };
+      } catch (e) { return standard; }
+    })();
+
+    function speichere() {
+      try { localStorage.setItem(SPEICHER, JSON.stringify(zustand)); } catch (e) { /* privat oder gesperrt */ }
+    }
+
+    function aktuelleRoute() {
+      return daten.routen.find(r => r.id === zustand.route) || daten.routen[0];
+    }
+
+    function aktuellePosition() {
+      if (zustand.sim.aktiv) {
+        return zustand.sim.lat !== null ? { lat: zustand.sim.lat, lon: zustand.sim.lon, genauigkeit: null, sim: true } : null;
+      }
+      return gps;
+    }
+
+    // -----------------------------------------------------------------------
+    // Darstellung
+    // -----------------------------------------------------------------------
+
+    const zahl = (x, stellen) => x.toLocaleString('de-DE', { minimumFractionDigits: stellen, maximumFractionDigits: stellen });
+    const fmtKm = km => zahl(km, km < 10 ? 1 : 0);
+
+    function el(tag, klasse, text) {
+      const e = document.createElement(tag);
+      if (klasse) e.className = klasse;
+      if (text !== undefined) e.textContent = text;
+      return e;
+    }
+
+    function metaZeile(e) {
+      const teile = [];
+      teile.push(e.hm === null ? 'keine Höhendaten' : '+ ' + e.hm + ' hm');
+      teile.push((e.punkt.kw ? e.punkt.kw : '–') + ' kW');
+      if (e.punkt.betreiber) teile.push(e.punkt.betreiber);
+      return teile.join(' · ');
+    }
+
+    function render() {
+      if (!daten) return;
+      const route = aktuelleRoute();
+      zustand.route = route.id;
+
+      const [start, ziel] = route.name.split(/\s+[–-]\s+/);
+      $('hin').textContent = 'Hin → ' + (ziel || 'Ziel');
+      $('rueck').textContent = 'Rück → ' + (start || 'Start');
+      $('hin').setAttribute('aria-pressed', String(zustand.richtung === 'hin'));
+      $('rueck').setAttribute('aria-pressed', String(zustand.richtung === 'rueck'));
+      $('route').value = route.id;
+
+      const pos = aktuellePosition();
+      const liste = $('liste');
+      const hinweis = $('hinweis');
+      liste.replaceChildren();
+      hinweis.hidden = true;
+      hinweis.className = '';
+
+      if (!pos) {
+        const text = zustand.sim.aktiv ? 'Simulation aktiv, aber keine Position gesetzt — ⚙ öffnen.'
+          : gpsLaeuft ? 'Standort wird abgefragt …'
+          : gpsFehler ? 'Standort nicht verfügbar: ' + gpsFehler
+          : 'Standort drücken.';
+        liste.append(el('p', 'leer', text));
+        renderFuss(route, null, null);
+        return;
+      }
+
+      const erg = berechneListe(daten, route.id, zustand.richtung, pos.lat, pos.lon);
+
+      const hinweise = [];
+      if (pos.sim) hinweise.push('Simulation: ' + (zustand.sim.label || zahl(pos.lat, 5) + ', ' + zahl(pos.lon, 5)));
+      if (erg.modus === 'luftlinie') hinweise.push('Abseits der Route (' + fmtKm(erg.q) + ' km) — Luftlinie, keine Höhendaten');
+      if (hinweise.length) {
+        hinweis.textContent = hinweise.join(' · ');
+        hinweis.hidden = false;
+        if (pos.sim && erg.modus !== 'luftlinie') hinweis.className = 'sim';
+      }
+
+      if (erg.eintraege.length === 0) {
+        liste.append(el('p', 'leer', 'Keine Ladepunkte voraus.'));
+      }
+      for (const e of erg.eintraege) {
+        const zeile = el('button', 'eintrag' + (e.punkt.favorit ? ' favorit' : ''));
+        zeile.type = 'button';
+        const km = el('span', 'km', fmtKm(e.km));
+        km.append(el('small', '', 'km'));
+        zeile.append(km, el('span', 'name', (e.punkt.favorit ? '★ ' : '') + e.punkt.name), el('span', 'meta', metaZeile(e)));
+        if (e.punkt.notiz) zeile.append(el('span', 'notiz', e.punkt.notiz));
+        zeile.addEventListener('click', () => zeigeDetail(e, erg.modus));
+        liste.append(zeile);
+      }
+
+      renderFuss(route, erg, pos);
+    }
+
+    function renderFuss(route, erg, pos) {
+      const fuss = $('fuss');
+      fuss.replaceChildren();
+      const teil = (label, wert) => { const s = el('span', '', label + ' '); s.append(el('b', '', wert)); fuss.append(s); };
+
+      teil('Ziel', erg && erg.rest !== null ? fmtKm(Math.max(0, erg.rest)) + ' km' : '–');
+      const d = new Date(daten.erzeugt);
+      const zwei = n => String(n).padStart(2, '0');
+      teil('Daten', isNaN(d) ? '–' : zwei(d.getDate()) + '.' + zwei(d.getMonth() + 1) + '. ' + zwei(d.getHours()) + ':' + zwei(d.getMinutes()));
+      if (pos && pos.sim) teil('GPS', 'Simulation');
+      else teil('GPS', pos ? '± ' + Math.round(pos.genauigkeit) + ' m' : '–');
+    }
+
+    function zeigeDetail(e, modus) {
+      const p = e.punkt;
+      detailPunkt = p;
+      $('d-name').textContent = (p.favorit ? '★ ' : '') + p.name;
+      $('d-gross').textContent = fmtKm(e.km) + ' km ' + (modus === 'luftlinie' ? 'Luftlinie' : 'voraus') +
+        (e.hm === null ? '' : ' · + ' + e.hm + ' hm');
+
+      const felder = [
+        ['Adresse', p.adresse || '–'],
+        ['Betreiber', p.betreiber || '–'],
+        ['Leistung', p.kw ? p.kw + ' kW' : '–'],
+        ['Ladepunkte', p.anzahl ? String(p.anzahl) : '–'],
+        ['Richtung', { hin: 'nur Hinfahrt', rueck: 'nur Rückfahrt', beide: 'beide' }[p.richtung] || p.richtung],
+        ['Favorit', p.favorit ? 'ja' : 'nein'],
+        ['Notiz', p.notiz || '–'],
+        ['Streckenkm', e.z ? zahl(e.z.km, 1) + ' km ab Start' : '–'],
+        ['Koordinaten', zahl(p.lat, 5) + ', ' + zahl(p.lon, 5)],
+        ['id', p.id],
+      ];
+      const dl = $('d-felder');
+      dl.replaceChildren();
+      for (const [k, v] of felder) dl.append(el('dt', '', k), el('dd', '', v));
+
+      $('d-maps').href = mapsUrl(p);
+      $('d-abrp').href = abrpUrl(p);
+      $('d-sim').hidden = !zustand.sim.aktiv;
+
+      $('detail').hidden = false;
+      history.pushState({ detail: true }, '');
+    }
+
+    function schliesseDetail() {
+      $('detail').hidden = true;
+      detailPunkt = null;
+    }
+
+    let toastTimer = null;
+    function toast(text) {
+      const t = $('toast');
+      t.textContent = text;
+      t.hidden = false;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { t.hidden = true; }, 2500);
+    }
+
+    // -----------------------------------------------------------------------
+    // Standort
+    // -----------------------------------------------------------------------
+
+    function holeStandort() {
+      if (zustand.sim.aktiv) { render(); return; }
+      if (!('geolocation' in navigator)) { gpsFehler = 'Gerät bietet kein GPS'; render(); return; }
+      gpsLaeuft = true;
+      gpsFehler = '';
+      render();
+      navigator.geolocation.getCurrentPosition(
+        p => {
+          gps = { lat: p.coords.latitude, lon: p.coords.longitude, genauigkeit: p.coords.accuracy };
+          gpsLaeuft = false;
+          render();
+        },
+        err => {
+          gpsLaeuft = false;
+          gpsFehler = err.code === 1 ? 'Zugriff verweigert' : err.message || 'unbekannter Fehler';
+          render();
+        },
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+      );
+    }
+
+    // -----------------------------------------------------------------------
+    // Zwischenablage — synchron im Klick-Handler, Rückfall über textarea
+    // -----------------------------------------------------------------------
+
+    function kopiereRueckfall(text) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.append(ta);
+      ta.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      ta.remove();
+      toast(ok ? 'Adresse kopiert' : 'Kopieren nicht möglich — Adresse lange drücken');
+    }
+
+    function kopiereAdresse() {
+      const text = detailPunkt && detailPunkt.adresse;
+      if (!text) { toast('Keine Adresse vorhanden'); return; }
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(() => toast('Adresse kopiert'), () => kopiereRueckfall(text));
+      } else {
+        kopiereRueckfall(text);
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Einstellungen / Simulationsmodus
+    // -----------------------------------------------------------------------
+
+    function simVorlagen() {
+      const erste = daten.routen[0].linie[0];
+      const v = [{ label: 'Morges (Start)', lat: erste[0], lon: erste[1] }];
+      for (const r of daten.routen) {
+        v.push({ label: 'Mitte ' + r.name, ...punktBeiKm(r, r.laenge_km / 2) });
+        v.push({ label: 'Kurz vor Ziel ' + r.name, ...punktBeiKm(r, Math.max(0, r.laenge_km - 15)) });
+      }
+      v.push(ABSEITS);
+      return v;
+    }
+
+    function oeffneEinstellungen() {
+      const vorlagen = simVorlagen();
+      const sel = $('sim-vorlage');
+      sel.replaceChildren(el('option', '', '— Vorlage wählen —'));
+      vorlagen.forEach((v, i) => { const o = el('option', '', v.label); o.value = String(i); sel.append(o); });
+      sel.onchange = sel.oninput = () => {
+        const v = vorlagen[Number(sel.value)];
+        if (v) { $('sim-koord').value = v.lat.toFixed(5) + ',' + v.lon.toFixed(5); $('sim-koord').dataset.label = v.label; }
+      };
+      $('sim-aktiv').checked = zustand.sim.aktiv;
+      $('sim-koord').value = zustand.sim.lat !== null ? zustand.sim.lat.toFixed(5) + ',' + zustand.sim.lon.toFixed(5) : '';
+      $('sim-koord').dataset.label = zustand.sim.label || '';
+      $('sim-koord').oninput = () => { $('sim-koord').dataset.label = ''; };
+      $('version').textContent = 'App v' + APP_VERSION + ' · Daten v' + (daten.version || '?');
+      einstellungenOffen = true;
+      $('dlg').showModal();
+    }
+
+    // Übernahme beim Absenden des Formulars (verlässlich vor dem Schließen); das close-Ereignis
+    // dient nur als Rückfall (z. B. Zurück-Taste) — die Sperre verhindert doppelte Übernahme.
+    let einstellungenOffen = false;
+    function schliesseEinstellungen() {
+      if (!einstellungenOffen) return;
+      einstellungenOffen = false;
+      const warAktiv = zustand.sim.aktiv;
+      zustand.sim.aktiv = $('sim-aktiv').checked;
+      const m = $('sim-koord').value.match(/^\s*(-?\d+(?:[.]\d+)?)\s*,\s*(-?\d+(?:[.]\d+)?)\s*$/);
+      if (m) {
+        zustand.sim.lat = Number(m[1]);
+        zustand.sim.lon = Number(m[2]);
+        zustand.sim.label = $('sim-koord').dataset.label || '';
+      } else if (zustand.sim.aktiv && $('sim-koord').value.trim() !== '') {
+        toast('Position nicht erkannt — Format: 46.50432,6.49127');
+      }
+      speichere();
+      if (warAktiv && !zustand.sim.aktiv) holeStandort(); else render();
+    }
+
+    // -----------------------------------------------------------------------
+    // Start
+    // -----------------------------------------------------------------------
+
+    function datenUrl() {
+      // ?daten=tests/fixtures/… nur für Tests; ausschließlich relative .json-Pfade im eigenen Repo
+      const wunsch = new URLSearchParams(location.search).get('daten');
+      return wunsch && /^[\w\-/]+\.json$/.test(wunsch) && !wunsch.includes('..') ? wunsch : 'routes.json';
+    }
+
+    function bindeEreignisse() {
+      $('route').addEventListener('change', () => { zustand.route = $('route').value; speichere(); render(); });
+      $('hin').addEventListener('click', () => { zustand.richtung = 'hin'; speichere(); render(); });
+      $('rueck').addEventListener('click', () => { zustand.richtung = 'rueck'; speichere(); render(); });
+      $('standort').addEventListener('click', holeStandort);
+      $('einstellungen').addEventListener('click', oeffneEinstellungen);
+      $('dlg').querySelector('form').addEventListener('submit', schliesseEinstellungen);
+      $('dlg').addEventListener('close', schliesseEinstellungen);
+      $('zurueck').addEventListener('click', () => history.back());
+      window.addEventListener('popstate', () => { if (!$('detail').hidden) schliesseDetail(); });
+      $('d-kopieren').addEventListener('click', kopiereAdresse);
+      $('d-sim').addEventListener('click', () => {
+        if (!detailPunkt) return;
+        zustand.sim = { aktiv: true, lat: detailPunkt.lat, lon: detailPunkt.lon, label: 'auf ' + detailPunkt.name };
+        speichere();
+        history.back();
+        render();
+      });
+    }
+
+    async function start() {
+      bindeEreignisse();
+      try {
+        const antwort = await fetch(datenUrl(), { cache: 'no-store' });
+        if (!antwort.ok) throw new Error('HTTP ' + antwort.status);
+        daten = await antwort.json();
+        if (!daten.routen || daten.routen.length === 0) throw new Error('keine Routen in den Daten');
+      } catch (e) {
+        $('liste').replaceChildren(el('p', 'leer', 'Daten konnten nicht geladen werden: ' + e.message));
+        return;
+      }
+
+      const sel = $('route');
+      for (const r of daten.routen) { const o = el('option', '', r.name); o.value = r.id; sel.append(o); }
+      if (zustand.richtung !== 'hin' && zustand.richtung !== 'rueck') zustand.richtung = 'hin';
+
+      render();
+      if (!zustand.sim.aktiv) holeStandort();
+    }
+
+    // Für automatisierte Tests zugänglich machen
+    window.ladeplanung = { berechneListe, projiziere, haversine, punktBeiKm, mapsUrl, abrpUrl, get daten() { return daten; } };
+
+    start();
+  </script>
 </body>
 </html>
