@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.9.1 — Straße im Titel; ABRP-Link mit aktueller Position als Start.
   Version 0.9.0 — Lage je Station: Raststätte, Straße, Querabstand („3,2 km abseits · A 5").
   Version 0.8.0 — Etappe 7/8: Liste, Projektion, Simulationsmodus, Detailansicht, drei Ausgabewege.
   Grundlage: Umsetzungsbrief v5.0, Stufe 1. Keine externen Bibliotheken, kein Service Worker.
@@ -195,7 +196,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.9.0';
+    const APP_VERSION = '0.9.1';
     const QUER_MAX_KM = 5;          // darüber: Luftlinien-Hinweis
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -284,9 +285,16 @@
       return 'https://www.google.com/maps/dir/?api=1&destination=' + p.lat + ',' + p.lon;
     }
 
-    function abrpUrl(p) {
-      return 'https://abetterrouteplanner.com/?destinations=' +
-        encodeURIComponent(JSON.stringify([{ address: p.adresse || p.name, lat: p.lat, lon: p.lon }]));
+    /**
+     * ABRP-Deep-Link. „destinations" ist die ganze Wegpunktliste, der erste Eintrag ist der Start
+     * (Beispiel der ABRP-Doku: Lund → Stockholm). Ohne Start meldet ABRP „keine Positionsdaten" —
+     * daher die aktuelle (oder simulierte) Position voranstellen, wenn sie bekannt ist.
+     */
+    function abrpUrl(p, start) {
+      const ziele = [];
+      if (start) ziele.push({ address: 'Aktueller Standort', lat: Number(start.lat.toFixed(5)), lon: Number(start.lon.toFixed(5)) });
+      ziele.push({ address: p.adresse || p.name, lat: p.lat, lon: p.lon });
+      return 'https://abetterrouteplanner.com/?destinations=' + encodeURIComponent(JSON.stringify(ziele));
     }
 
     // -----------------------------------------------------------------------
@@ -346,6 +354,13 @@
       return strasse ? 'an ' + strasse : '';
     }
 
+    /** Für die Liste: Straße steht schon im Titel, hier nur „Raststätte" oder „3,2 km abseits". */
+    function lageKurz(z) {
+      if (!z) return '';
+      if (z.quer_km > 1) return fmtKm(z.quer_km) + ' km abseits';
+      return z.raststaette ? 'Raststätte' : '';
+    }
+
     function metaZeile(e) {
       const teile = [];
       teile.push(e.hm === null ? 'keine Höhendaten' : '+ ' + e.hm + ' hm');
@@ -402,8 +417,9 @@
         zeile.type = 'button';
         const km = el('span', 'km', fmtKm(e.km));
         km.append(el('small', '', 'km'));
-        zeile.append(km, el('span', 'name', (e.punkt.favorit ? '★ ' : '') + e.punkt.name));
-        const lage = lageText(e.z);
+        const strasse = e.z && e.z.strasse ? ' (' + e.z.strasse + ')' : '';
+        zeile.append(km, el('span', 'name', (e.punkt.favorit ? '★ ' : '') + e.punkt.name + strasse));
+        const lage = lageKurz(e.z);
         if (lage) zeile.append(el('span', 'lage' + (e.z.raststaette && !(e.z.quer_km > 1) ? ' rast' : ''), lage));
         zeile.append(el('span', 'meta', metaZeile(e)));
         if (e.punkt.notiz) zeile.append(el('span', 'notiz', e.punkt.notiz));
@@ -452,7 +468,7 @@
       for (const [k, v] of felder) dl.append(el('dt', '', k), el('dd', '', v));
 
       $('d-maps').href = mapsUrl(p);
-      $('d-abrp').href = abrpUrl(p);
+      $('d-abrp').href = abrpUrl(p, aktuellePosition());
       $('d-sim').hidden = !zustand.sim.aktiv;
 
       $('detail').hidden = false;
