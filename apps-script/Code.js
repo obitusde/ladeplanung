@@ -38,8 +38,33 @@ function onOpen() {
     .createMenu('Ladeplanung')
     .addItem('Links auflösen', 'aufloeseLinks')
     .addSeparator()
+    .addSubMenu(SpreadsheetApp.getUi().createMenu('Zugänge')
+      .addItem('ORS-Schlüssel hinterlegen', 'orsSchluesselHinterlegen')
+      .addItem('GitHub-Token hinterlegen', 'githubTokenHinterlegen'))
     .addItem('Setup (Blätter anlegen)', 'setup')
     .addToUi();
+}
+
+// ---------------------------------------------------------------------------
+// Zugänge — Geheimnisse per Eingabedialog in die Script Properties, nie ins Sheet.
+// ---------------------------------------------------------------------------
+
+function orsSchluesselHinterlegen() { hinterlegeGeheimnis_('ORS_API_KEY', 'OpenRouteService-Schlüssel'); }
+function githubTokenHinterlegen() { hinterlegeGeheimnis_('GITHUB_TOKEN', 'GitHub-Token'); }
+
+function hinterlegeGeheimnis_(schluessel, bezeichnung) {
+  const ui = SpreadsheetApp.getUi();
+  const props = PropertiesService.getScriptProperties();
+  const hinweis = props.getProperty(schluessel) ? 'Es ist bereits ein Wert hinterlegt — ein neuer ersetzt ihn.\n\n' : '';
+  const antwort = ui.prompt(bezeichnung + ' hinterlegen',
+    hinweis + 'Wert einfügen. Er wird nur in den Script Properties gespeichert, nicht im Sheet und nicht im Repo.',
+    ui.ButtonSet.OK_CANCEL);
+  if (antwort.getSelectedButton() !== ui.Button.OK) return;
+
+  const wert = antwort.getResponseText().trim();
+  if (!wert) { ui.alert('Kein Wert eingegeben — nichts geändert.'); return; }
+  props.setProperty(schluessel, wert);
+  ui.alert(bezeichnung + ' gespeichert (' + wert.length + ' Zeichen).');
 }
 
 // ---------------------------------------------------------------------------
