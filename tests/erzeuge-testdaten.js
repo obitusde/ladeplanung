@@ -43,14 +43,16 @@ const punkt = (id, name, km, extra) => {
 const punkte = [
   punkt('t01', 'Vor dem Pass', 20),
   punkt('t02', 'Nur Rückfahrt', 45, { richtung: 'rueck', notiz: 'darf in Hinfahrt nicht erscheinen' }),
-  punkt('t03', 'Nur Hinfahrt', 60, { richtung: 'hin', betreiber: 'Ionity', kw: 350 }),
+  punkt('t03', 'Nur Hinfahrt', 60, { richtung: 'hin', betreiber: 'Ionity', kw: 350, notiz: 'Raststätte' }),
+  Object.assign(punkt('t08', 'Ausfahrt 3 km', 150, { notiz: 'Autohof' }), { lat: beiKm(150)[0] + 0.03 }),
   punkt('t04', 'Hinter dem Pass', 130, { favorit: true, notiz: 'Favorit, Coop' }),
   punkt('t05', 'Ohne kW', 170, { kw: null, anzahl: null, betreiber: '' }),
   punkt('t06', 'Kurz vor Ziel', L - 5),
   Object.assign(punkt('t07', 'Weit abseits', 100), { lat: 47.5, lon: 9.0 }),
 ];
 
-const json = gs.baueExport_([{ id: 'test', name: 'Morges – Testziel', linie }], punkte, '2026-09-15T08:00:00Z');
+const strassen = [[0, 'Route de Lausanne'], [5, 'A 1'], [95, ''], [97, 'Passstrasse'], [140, 'A 26']];
+const json = gs.baueExport_([{ id: 'test', name: 'Morges – Testziel', linie, strassen }], punkte, '2026-09-15T08:00:00Z');
 const ziel = path.join(__dirname, 'fixtures', 'routes-test.json');
 fs.writeFileSync(ziel, JSON.stringify(json));
 console.log('geschrieben:', ziel, '—', linie.length, 'Stützpunkte,', L, 'km, Anstieg hin', linie[linie.length - 1][3], 'm');

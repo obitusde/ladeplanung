@@ -1,6 +1,7 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.9.0 — Zuordnung bis 5 km mit Querabstand, Straße und Raststätten-Kennung; Höhenfilter 10 m.
  * Version 0.8.0 — Savona als zwei Varianten (Simplon, Gr. St. Bernhard), Mont Blanc gestrichen; routenVorgabenUebernehmen().
  * Version 0.7.0 — Alle Schritte auch direkt im Editor ausführbar (schritt1_… bis schritt5_…).
  * Version 0.6.0 — bereinigePunkte(): Porsche Destination entfernen, Dubletten zusammenführen.
@@ -12,7 +13,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.8.0';
+const VERSION = '0.9.0';
 
 const BLATT_PUNKTE = 'Ladepunkte';
 const BLATT_ROUTEN = 'Routen';
@@ -633,7 +634,8 @@ function berechneRoutenIntern_(erzwingen) {
 
     const eingabe = [feld('Start'), feld('Via'), feld('Ziel')].join('|');
     const stand = feld('Stand');
-    const aktuell = stand !== '' && stand.indexOf('Fehler') !== 0 && props.getProperty('EINGABE_' + id) === eingabe;
+    // Das Linienformat gehört zum Fingerabdruck: ändert sich die Rechnung, wird automatisch neu berechnet.
+    const aktuell = stand !== '' && stand.indexOf('Fehler') !== 0 && props.getProperty('EINGABE_' + id) === eingabe + '#f' + LINIEN_FORMAT;
     if (aktuell && !erzwingen) { meldungen.push(id + ': unverändert, übersprungen'); continue; }
 
     if (Date.now() - start > MAX_START_NEUE_ROUTE_MS) { abgebrochen = true; break; }
@@ -664,6 +666,8 @@ function berechneRoutenIntern_(erzwingen) {
         hm_hin: letzter[3],
         hm_rueck: letzter[4],
         stuetzpunkte_voll: voll.length,
+        format: LINIEN_FORMAT,
+        strassen: strassenAbschnitte_(route.schritte, voll),
         linie: linie,
       };
       githubSchreibe_(LINIEN_ORDNER + '/' + id + '.json', JSON.stringify(datei), 'Linie ' + id + ' berechnet (Apps Script v' + VERSION + ')');
@@ -671,7 +675,7 @@ function berechneRoutenIntern_(erzwingen) {
       setze('Länge km', runde_(route.distanz_m / 1000, 1));
       setze('Fahrzeit', formatiereDauer_(route.dauer_s));
       setze('Stand', Utilities.formatDate(new Date(), 'Europe/Zurich', 'dd.MM.yyyy HH:mm'));
-      props.setProperty('EINGABE_' + id, eingabe);
+      props.setProperty('EINGABE_' + id, eingabe + '#f' + LINIEN_FORMAT);
 
       meldungen.push(id + ': ' + letzter[2] + ' km, Anstieg ' + letzter[3] + ' m hin / ' + letzter[4] +
         ' m rück, ' + voll.length + ' → ' + linie.length + ' Stützpunkte');
@@ -705,7 +709,7 @@ function holeRoute_(punkte, schluessel) {
     payload: JSON.stringify({
       coordinates: punkte,
       elevation: true,
-      instructions: false,
+      instructions: true, // nur für die Straßennamen je Abschnitt
       radiuses: punkte.map(function () { return FANGRADIUS_M; }),
     }),
     muteHttpExceptions: true,
@@ -727,8 +731,52 @@ function holeRoute_(punkte, schluessel) {
   if (!f || !f.geometry || !f.geometry.coordinates || f.geometry.coordinates.length < 2) throw new Error('ORS lieferte keine Geometrie');
   if (f.geometry.coordinates[0].length < 3) throw new Error('ORS lieferte keine Höhenwerte');
   const summe = (f.properties && f.properties.summary) || {};
-  return { koordinaten: f.geometry.coordinates, distanz_m: summe.distance || 0, dauer_s: summe.duration || 0 };
+  const schritte = [];
+  ((f.properties && f.properties.segments) || []).forEach(function (segment) {
+    (segment.steps || []).forEach(function (s) {
+      schritte.push({ von: s.way_points ? s.way_points[0] : 0, name: s.name || '' });
+    });
+  });
+  return { koordinaten: f.geometry.coordinates, distanz_m: summe.distance || 0, dauer_s: summe.duration || 0, schritte: schritte };
 }
+
+/**
+ * Straßennamen je Abschnitt aus den ORS-Schritten: [[km_ab, name], …], gleiche Namen zusammengefasst.
+ * Unbenannte Abschnitte (ORS schreibt „-") bleiben als leerer Name erhalten.
+ */
+function strassenAbschnitte_(schritte, voll) {
+  const erg = [];
+  (schritte || []).forEach(function (s) {
+    const i = Math.max(0, Math.min(voll.length - 1, s.von));
+    const name = s.name && s.name !== '-' ? String(s.name).trim() : '';
+    if (erg.length > 0 && erg[erg.length - 1][1] === name) return;
+    erg.push([runde_(voll[i][2], 2), name]);
+  });
+  return erg;
+}
+
+/** Straße bei Streckenkilometer km; liegt km auf einem unbenannten Stück, der nächste benannte Abschnitt bis 3 km. */
+function strasseBeiKm_(strassen, km) {
+  if (!strassen || strassen.length === 0) return '';
+  let i = 0;
+  while (i + 1 < strassen.length && strassen[i + 1][0] <= km) i++;
+  if (strassen[i][1]) return strassen[i][1];
+
+  let davor = i - 1, danach = i + 1;
+  while (davor >= 0 && !strassen[davor][1]) davor--;
+  while (danach < strassen.length && !strassen[danach][1]) danach++;
+  const abstandDavor = davor >= 0 ? km - strassen[davor + 1][0] : Infinity;
+  const abstandDanach = danach < strassen.length ? strassen[danach][0] - km : Infinity;
+  if (Math.min(abstandDavor, abstandDanach) > 3) return '';
+  return abstandDavor <= abstandDanach ? strassen[davor][1] : strassen[danach][1];
+}
+
+// Höhenfilter: Anstieg/Gefälle zählt erst, wenn sich die Höhe seit dem letzten gezählten Punkt
+// um mindestens 10 m geändert hat. Ohne Filter summiert das Rauschen der Höhendaten sich auf
+// das Zwei- bis Dreifache (Rheinebene +965 statt +53 m). Ergebnis bleibt ein Näherungswert.
+const HOEHEN_SCHWELLE_M = 10;
+// Bei jeder Änderung an Rechnung oder Linienformat erhöhen — erzwingt Neuberechnung der Routen.
+const LINIEN_FORMAT = 2;
 
 /**
  * [lon, lat, höhe] in voller Auflösung → [lat, lon, km, anstieg_hin, anstieg_rueck, höhe].
@@ -737,13 +785,15 @@ function holeRoute_(punkte, schluessel) {
 function kumuliere_(koordinaten) {
   const erg = [];
   let km = 0, auf = 0, ab = 0;
+  let bezug = koordinaten.length > 0 ? koordinaten[0][2] : 0;
   for (let i = 0; i < koordinaten.length; i++) {
     const p = koordinaten[i];
     if (i > 0) {
       const v = koordinaten[i - 1];
       km += haversine_(v[1], v[0], p[1], p[0]);
-      const d = p[2] - v[2];
-      if (d > 0) auf += d; else ab -= d;
+      const d = p[2] - bezug;
+      if (d >= HOEHEN_SCHWELLE_M) { auf += d; bezug = p[2]; }
+      else if (-d >= HOEHEN_SCHWELLE_M) { ab -= d; bezug = p[2]; }
     }
     erg.push([p[1], p[0], km, auf, ab, p[2]]);
   }
@@ -773,12 +823,16 @@ function duenneAus_(voll) {
 }
 
 // ---------------------------------------------------------------------------
-// exportJson() — ordnet Punkte den Routen zu (Querabstand ≤ 2 km), baut
+// exportJson() — ordnet Punkte den Routen zu (Querabstand ≤ 5 km), baut
 // routes.json und lädt sie ins Repo. Reine Rechenarbeit, kein Routing-Aufruf.
 // ---------------------------------------------------------------------------
 
-const ZUORDNUNG_MAX_KM = 2;
-const STATUS_OHNE_ROUTE = 'keiner Route zugeordnet (> 2 km)';
+// 5 km statt der 2 km aus dem Brief (Christof, 15.09.2026): Stationen an Ausfahrten und an
+// parallelen Autobahnen gehören dazu; der Querabstand wird mit exportiert und angezeigt.
+const ZUORDNUNG_MAX_KM = 5;
+const STATUS_OHNE_ROUTE = 'keiner Route zugeordnet (> ' + ZUORDNUNG_MAX_KM + ' km)';
+const RASTSTAETTE_MAX_KM = 0.5;
+const RASTSTAETTE_MUSTER = /rastst[äa]tte|rasthof|rastanlage|rastplatz|autobahn|autogrill|aire de service|area di servizio/i;
 
 function exportJson() {
   const ui = meldungsUi_();
@@ -804,7 +858,8 @@ function exportJson() {
         const datei = JSON.parse(text);
         const eingabe = [spR.Start, spR.Via, spR.Ziel].map(function (s) { return String(z[s - 1]).trim(); }).join('|');
         if (datei.eingabe !== eingabe) meldungen.push(id + ': Start/Via/Ziel geändert, Linie veraltet — bitte Routen berechnen');
-        routen.push({ id: id, name: String(z[spR.Name - 1]).trim() || datei.name, linie: datei.linie });
+        if (datei.format !== LINIEN_FORMAT) meldungen.push(id + ': Linie im alten Format — bitte Routen berechnen');
+        routen.push({ id: id, name: String(z[spR.Name - 1]).trim() || datei.name, linie: datei.linie, strassen: datei.strassen || [] });
       });
     }
     if (routen.length === 0) throw new Error('keine berechnete Route vorhanden');
@@ -890,7 +945,12 @@ function baueExport_(routen, punkte, zeitstempel) {
       if (p.lat < v.box[0] || p.lat > v.box[1] || p.lon < v.box[2] || p.lon > v.box[3]) return;
       const pr = projiziere_(v.r.linie, p.lat, p.lon, v.lat0);
       if (pr.q <= ZUORDNUNG_MAX_KM) {
-        zuordnung.push({ route: v.r.id, km: runde_(pr.km, 2), hm_hin: Math.round(pr.hm_hin), hm_rueck: Math.round(pr.hm_rueck) });
+        zuordnung.push({
+          route: v.r.id, km: runde_(pr.km, 2), hm_hin: Math.round(pr.hm_hin), hm_rueck: Math.round(pr.hm_rueck),
+          quer_km: runde_(pr.q, 1),
+          strasse: strasseBeiKm_(v.r.strassen, pr.km),
+          raststaette: pr.q <= RASTSTAETTE_MAX_KM && istRaststaette_(p),
+        });
       }
     });
     const kopie = {};
@@ -902,7 +962,7 @@ function baueExport_(routen, punkte, zeitstempel) {
   });
 
   return {
-    version: '1.0',
+    version: '1.1', // 1.1: zuordnung um quer_km, strasse, raststaette ergänzt
     erzeugt: zeitstempel,
     routen: routen.map(function (r) {
       const letzter = r.linie[r.linie.length - 1];
@@ -910,6 +970,15 @@ function baueExport_(routen, punkte, zeitstempel) {
     }),
     punkte: punkteMitZuordnung,
   };
+}
+
+/**
+ * Raststätte, wenn der Punkt nur in eine Fahrtrichtung erreichbar ist oder Name, Adresse
+ * oder Notiz darauf hinweisen. Wird nur gesetzt, wenn er direkt an der Linie liegt.
+ */
+function istRaststaette_(p) {
+  if (p.richtung === 'hin' || p.richtung === 'rueck') return true;
+  return RASTSTAETTE_MUSTER.test([p.name, p.adresse, p.notiz].join(' '));
 }
 
 function zahlOderNull_(wert) {

@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.9.0 — Lage je Station: Raststätte, Straße, Querabstand („3,2 km abseits · A 5").
   Version 0.8.0 — Etappe 7/8: Liste, Projektion, Simulationsmodus, Detailansicht, drei Ausgabewege.
   Grundlage: Umsetzungsbrief v5.0, Stufe 1. Keine externen Bibliotheken, kein Service Worker.
 -->
@@ -92,7 +93,9 @@
       padding: 12px 14px; cursor: pointer; min-height: 76px;
     }
     .eintrag.favorit { background: var(--favorit); border-left: 6px solid var(--akzent); padding-left: 8px; }
-    .eintrag .km { grid-row: 1 / span 3; font-size: 34px; font-weight: 800; line-height: 1; align-self: center; min-width: 3.6ch; font-variant-numeric: tabular-nums; }
+    .eintrag .lage { font-weight: 600; color: var(--leise); }
+    .eintrag .lage.rast { color: var(--akzent); }
+    .eintrag .km { grid-row: 1 / span 4; font-size: 34px; font-weight: 800; line-height: 1; align-self: center; min-width: 3.6ch; font-variant-numeric: tabular-nums; }
     .eintrag .km small { font-size: 16px; font-weight: 600; margin-left: 2px; }
     .eintrag .name { font-weight: 700; overflow-wrap: anywhere; }
     .eintrag .meta { color: var(--text); font-variant-numeric: tabular-nums; }
@@ -192,7 +195,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.8.0';
+    const APP_VERSION = '0.9.0';
     const QUER_MAX_KM = 5;          // darüber: Luftlinien-Hinweis
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -334,6 +337,15 @@
       return e;
     }
 
+    /** „Raststätte A 5", „3,2 km abseits · A 5" oder „an A 1" — leer, wenn nichts bekannt ist. */
+    function lageText(z) {
+      if (!z) return '';
+      const strasse = z.strasse || '';
+      if (z.quer_km > 1) return fmtKm(z.quer_km) + ' km abseits' + (strasse ? ' · ' + strasse : '');
+      if (z.raststaette) return 'Raststätte' + (strasse ? ' ' + strasse : '');
+      return strasse ? 'an ' + strasse : '';
+    }
+
     function metaZeile(e) {
       const teile = [];
       teile.push(e.hm === null ? 'keine Höhendaten' : '+ ' + e.hm + ' hm');
@@ -390,7 +402,10 @@
         zeile.type = 'button';
         const km = el('span', 'km', fmtKm(e.km));
         km.append(el('small', '', 'km'));
-        zeile.append(km, el('span', 'name', (e.punkt.favorit ? '★ ' : '') + e.punkt.name), el('span', 'meta', metaZeile(e)));
+        zeile.append(km, el('span', 'name', (e.punkt.favorit ? '★ ' : '') + e.punkt.name));
+        const lage = lageText(e.z);
+        if (lage) zeile.append(el('span', 'lage' + (e.z.raststaette && !(e.z.quer_km > 1) ? ' rast' : ''), lage));
+        zeile.append(el('span', 'meta', metaZeile(e)));
         if (e.punkt.notiz) zeile.append(el('span', 'notiz', e.punkt.notiz));
         zeile.addEventListener('click', () => zeigeDetail(e, erg.modus));
         liste.append(zeile);
@@ -420,6 +435,7 @@
         (e.hm === null ? '' : ' · + ' + e.hm + ' hm');
 
       const felder = [
+        ['Lage', lageText(e.z) || '–'],
         ['Adresse', p.adresse || '–'],
         ['Betreiber', p.betreiber || '–'],
         ['Leistung', p.kw ? p.kw + ' kW' : '–'],

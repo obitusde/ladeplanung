@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const quelle = fs.readFileSync(path.join(__dirname, '..', 'apps-script', 'Code.js'), 'utf8');
-const gs = new Function(quelle + '; return { haversine_, kumuliere_, duenneAus_, koordinateAusEingabe_, formatiereDauer_, projiziere_, baueExport_ };')();
+const gs = new Function(quelle + '; return { haversine_, kumuliere_, duenneAus_, koordinateAusEingabe_, formatiereDauer_, projiziere_, baueExport_, strassenAbschnitte_, strasseBeiKm_, istRaststaette_ };')();
 
 let fehler = 0;
 const pruefe = (bedingung, text) => { if (!bedingung) { fehler++; console.log('FEHLER ' + text); } };
@@ -20,6 +20,28 @@ const letzter = k[k.length - 1];
 pruefe(letzter[3] === 60 && letzter[4] === 30, 'Anstieg hin/rück: ' + letzter[3] + '/' + letzter[4]);
 pruefe(k[0][2] === 0 && k[0][3] === 0 && k[0][4] === 0, 'Erster Punkt bei 0');
 pruefe(k[0][0] === 46.0 && k[0][1] === 6.0, 'Reihenfolge [lat, lon]');
+
+// Höhenfilter: Rauschen von ±4 m zählt nicht, echter Anstieg über 10 m schon
+const rauschen = [];
+for (let i = 0; i <= 200; i++) rauschen.push([6 + i * 0.001, 46, 400 + (i % 2 ? 4 : -4)]);
+const kr = gs.kumuliere_(rauschen);
+pruefe(kr[kr.length - 1][3] === 0 && kr[kr.length - 1][4] === 0, 'Rauschen ±4 m ergibt keinen Anstieg: ' + kr[kr.length - 1][3] + '/' + kr[kr.length - 1][4]);
+const kleineWelle = gs.kumuliere_([[6, 46, 400], [6.001, 46, 406], [6.002, 46, 412], [6.003, 46, 409]]);
+pruefe(kleineWelle[3][3] === 12 && kleineWelle[3][4] === 0, 'Anstieg zählt ab 10 m, 3 m Rückgang nicht: ' + kleineWelle[3][3] + '/' + kleineWelle[3][4]);
+
+// Straßenabschnitte aus ORS-Schritten
+const vollKurz = [[46, 6, 0], [46, 6.1, 5], [46, 6.2, 10], [46, 6.3, 15], [46, 6.4, 20]];
+const strassen = gs.strassenAbschnitte_([{ von: 0, name: 'Route de Lausanne' }, { von: 1, name: 'A 1' }, { von: 2, name: 'A 1' }, { von: 3, name: '-' }, { von: 4, name: 'A 5' }], vollKurz);
+pruefe(JSON.stringify(strassen) === JSON.stringify([[0, 'Route de Lausanne'], [5, 'A 1'], [15, ''], [20, 'A 5']]), 'Abschnitte zusammengefasst: ' + JSON.stringify(strassen));
+pruefe(gs.strasseBeiKm_(strassen, 7) === 'A 1', 'Straße bei km 7');
+pruefe(gs.strasseBeiKm_(strassen, 16) === 'A 1', 'unbenanntes Stück → nächste benannte Straße (A 1 endet bei 15)');
+pruefe(gs.strasseBeiKm_(strassen, 19) === 'A 5', 'unbenanntes Stück näher an A 5');
+pruefe(gs.strasseBeiKm_([], 3) === '', 'ohne Abschnitte leer');
+
+// Raststätten-Erkennung
+pruefe(gs.istRaststaette_({ richtung: 'hin', name: 'EnBW', adresse: '', notiz: '' }), 'einseitig erreichbar → Raststätte');
+pruefe(gs.istRaststaette_({ richtung: 'beide', name: 'EnBW Ladestation Freudenberg', adresse: 'Autobahn-Raststätte-Siegerland-West 1', notiz: '' }), 'Adresse mit Raststätte');
+pruefe(!gs.istRaststaette_({ richtung: 'beide', name: 'EnBW Ladestation Walldorf', adresse: 'Roter Str. 2', notiz: 'Hotel' }), 'normale Station keine Raststätte');
 
 // Ausdünnung: 10 km flache Strecke in 10-m-Schritten → ca. 40 Punkte, erster/letzter bleiben
 const dicht = [];
@@ -65,18 +87,24 @@ pruefe(vorStart.km === 0 && nah(vorStart.q, 0.1 * 111.320 * Math.cos(46 * Math.P
 
 // Export: Zuordnung nur bis 2 km, Rundung, Punkt ohne Route bleibt mit leerer Zuordnung drin
 const exp = gs.baueExport_(
-  [{ id: 'test', name: 'Test', linie: linieOst }],
+  [{ id: 'test', name: 'Test', linie: linieOst, strassen: [[0, 'Route de Genève'], [8, 'A 1']] }],
   [
     { id: 'p001', name: 'Auf der Linie', lat: 46.0000012, lon: 6.0512345, richtung: 'beide' },
     { id: 'p002', name: '1,1 km nördlich', lat: 46.01, lon: 6.15, richtung: 'hin' },
     { id: 'p003', name: '5,5 km nördlich', lat: 46.05, lon: 6.15, richtung: 'beide' },
     { id: 'p004', name: 'weit weg', lat: 50.0, lon: 8.0, richtung: 'beide' },
+    { id: 'p005', name: '3,3 km nördlich', lat: 46.03, lon: 6.12, richtung: 'beide', notiz: 'Autohof' },
+    { id: 'p006', name: 'Raststätte', lat: 46.001, lon: 6.18, richtung: 'beide', notiz: 'Raststätte' },
   ],
   '2026-09-15T08:00:00Z'
 );
-pruefe(exp.version === '1.0' && exp.erzeugt === '2026-09-15T08:00:00Z', 'Kopf von routes.json');
+pruefe(exp.version === '1.1' && exp.erzeugt === '2026-09-15T08:00:00Z', 'Kopf von routes.json');
 pruefe(exp.routen[0].laenge_km === 15.47 && exp.routen[0].hm_hin === 100 && exp.routen[0].hm_rueck === 20, 'Routen-Summen: ' + JSON.stringify(exp.routen[0]).slice(0, 80));
-pruefe(exp.punkte.length === 4, 'alle Punkte exportiert');
+pruefe(exp.punkte.length === 6, 'alle Punkte exportiert');
+const p005 = exp.punkte[4].zuordnung[0], p006 = exp.punkte[5].zuordnung[0];
+pruefe(p005 && p005.quer_km === 3.3 && p005.strasse === 'A 1' && p005.raststaette === false, '3,3 km abseits zugeordnet mit Straße: ' + JSON.stringify(p005));
+pruefe(p006 && p006.quer_km === 0.1 && p006.raststaette === true && p006.strasse === 'A 1', 'Raststätte direkt an A 1: ' + JSON.stringify(p006));
+pruefe(exp.punkte[0].zuordnung[0].strasse === 'Route de Genève' && exp.punkte[1].zuordnung[0].raststaette === false, 'Straße vor km 8; 1,1 km abseits keine Raststätte');
 pruefe(exp.punkte[0].zuordnung.length === 1 && exp.punkte[0].lat === 46 && exp.punkte[0].lon === 6.05123, 'Punkt auf Linie zugeordnet und gerundet: ' + JSON.stringify(exp.punkte[0]));
 pruefe(exp.punkte[1].zuordnung.length === 1 && exp.punkte[1].richtung === 'hin', '1,1 km abseits zugeordnet');
 pruefe(exp.punkte[2].zuordnung.length === 0, '5,5 km abseits nicht zugeordnet');
