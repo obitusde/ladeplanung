@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.13.0 — Akku-Prognose je Station (Bedarf, Ankunft, rot wenn unter Reserve); optional Losfahren/Angekommen
+                   mit Kalibrierung; Einstellungen Geschwindigkeit, Zusatzgewicht, Temperatur, Reserve.
+                   Rote Schrift auf Christofs Wunsch (15.09.2026) — bewusste Abweichung vom Nicht-Ziel „Farblogik" im Brief.
   Version 0.12.1 — Getrennt: „Navigieren (Google Maps)" und „In Google Maps ansehen" (Ort ohne Route).
   Version 0.12.0 — Info-Seite (ⓘ) mit Erklärung und Link zu „Wartung & Status"; Hinweis zu My CUPRA.
   Version 0.11.0 — Knopf „＋" (Ladepunkt hinzufügen) und „Bearbeiten" öffnen das Formular; Daten laden bei Rückkehr neu.
@@ -31,6 +34,7 @@
       --favorit: #fff1d6;
       --warnung: #7a0000;
       --warnung-grund: #ffe3e3;
+      --rot: #c00018;
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -44,6 +48,7 @@
         --favorit: #2b1d06;
         --warnung: #ffc9c9;
         --warnung-grund: #3d0b0b;
+        --rot: #ff6b6b;
       }
     }
     * { box-sizing: border-box; }
@@ -84,6 +89,15 @@
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
 
+    .fahrt {
+      margin: 10px 12px 0; padding: 8px 10px; border-radius: 10px; border: 2px solid var(--linie);
+      display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    }
+    .fahrt.laeuft { border-color: var(--akzent); }
+    .fahrt .text { flex: 1 1 170px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .fahrt .knopf { min-height: 44px; padding: 0 12px; }
+    .fahrt a.knopf { font-size: 18px; }
+
     #hinweis {
       margin: 10px 12px 0; padding: 10px 12px; border-radius: 10px;
       background: var(--warnung-grund); color: var(--warnung); font-weight: 600;
@@ -101,11 +115,13 @@
     .eintrag.favorit { background: var(--favorit); border-left: 6px solid var(--akzent); padding-left: 8px; }
     .eintrag .lage { font-weight: 600; color: var(--leise); }
     .eintrag .lage.rast { color: var(--akzent); }
-    .eintrag .km { grid-row: 1 / span 4; font-size: 34px; font-weight: 800; line-height: 1; align-self: center; min-width: 3.6ch; font-variant-numeric: tabular-nums; }
+    .eintrag .km { grid-row: 1 / span 5; font-size: 34px; font-weight: 800; line-height: 1; align-self: center; min-width: 3.6ch; font-variant-numeric: tabular-nums; }
     .eintrag .km small { font-size: 16px; font-weight: 600; margin-left: 2px; }
     .eintrag .name { font-weight: 700; overflow-wrap: anywhere; }
+    .eintrag .akku { font-weight: 700; font-variant-numeric: tabular-nums; }
     .eintrag .meta { color: var(--text); font-variant-numeric: tabular-nums; }
     .eintrag .notiz { color: var(--leise); overflow-wrap: anywhere; }
+    .rot, .eintrag .rot { color: var(--rot); }
 
     footer {
       position: sticky; bottom: 0;
@@ -138,13 +154,15 @@
     }
     dialog::backdrop { background: rgba(0, 0, 0, .6); }
     dialog h2 { margin: 0 0 12px; }
+    dialog h3 { margin: 18px 0 8px; font-size: 19px; }
     dialog label { display: grid; gap: 4px; margin-bottom: 14px; }
     dialog label.schalter { display: flex; gap: 10px; align-items: center; font-weight: 600; }
     dialog label.schalter input { width: 26px; height: 26px; }
-    dialog select, dialog input[type="text"] {
+    dialog select, dialog input[type="text"], dialog input[type="number"] {
       min-height: 48px; padding: 0 10px; background: var(--flaeche);
       border: 2px solid var(--linie); border-radius: 10px; width: 100%;
     }
+    dialog .zwei { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
     .klein { font-size: 14px; color: var(--leise); }
 
     #toast {
@@ -168,6 +186,7 @@
     </div>
   </header>
 
+  <div id="fahrt" class="fahrt" hidden></div>
   <div id="hinweis" hidden></div>
   <main id="liste"><p class="leer">Lade Daten …</p></main>
   <footer id="fuss"></footer>
@@ -193,7 +212,7 @@
     <h2>So funktioniert die App</h2>
 
     <h3>Was sie macht</h3>
-    <p>Während der Fahrt zeigt sie die Ladepunkte, die <b>vor dir</b> auf der gewählten Stammstrecke liegen – mit Entfernung entlang der Straße, Anstieg bis dorthin, Leistung, Lage und deiner Notiz. Entscheiden tust du; navigiert wird mit Google Maps, ABRP oder dem Auto.</p>
+    <p>Während der Fahrt zeigt sie die Ladepunkte, die <b>vor dir</b> auf der gewählten Stammstrecke liegen – mit Entfernung entlang der Straße, Anstieg, geschätztem Akkubedarf, Leistung, Lage und deiner Notiz. Entscheiden tust du; navigiert wird mit Google Maps, ABRP oder dem Auto.</p>
 
     <h3>So entsteht die Liste</h3>
     <ol>
@@ -207,31 +226,38 @@
     <h3>Was die Angaben bedeuten</h3>
     <ul>
       <li><b>Große Zahl:</b> Kilometer entlang der Route bis auf Höhe des Ladepunkts. Liegt er abseits, kommt der Weg von der Ausfahrt noch dazu („3,2 km abseits").</li>
-      <li><b>+ hm:</b> Summe der Anstiege bis dorthin, geglättet. Ein Näherungswert, um die Restreichweite einzuschätzen – keine Verbrauchsrechnung.</li>
+      <li><b>≈ 23 % Akku</b> bzw. <b>Ankunft ≈ 34 %</b>: siehe Akku-Prognose. <span class="rot"><b>Rot</b></span> = Ankunft unter deiner Reserve.</li>
+      <li><b>+ hm:</b> Summe der Anstiege bis dorthin, geglättet.</li>
       <li><b>(A 5):</b> Straße, an der der Punkt liegt. <b>Raststätte:</b> direkt an der Autobahn, oft nur in einer Fahrtrichtung erreichbar.</li>
       <li><b>★</b> Favorit.</li>
     </ul>
+
+    <h3>Akku-Prognose</h3>
+    <p>Der Akkubedarf bis zu jeder Station wird aus Strecke, Höhenmetern, deiner <b>Reisegeschwindigkeit</b>, dem <b>Zusatzgewicht</b> (beides unter ⚙) und der <b>Außentemperatur</b> geschätzt. Die Temperatur ist der Durchschnitt aus jetzt und in drei Stunden am Standort – oder dein eigener Wert unter ⚙.</p>
+    <p>Die Geschwindigkeit hat den größten Einfluss: 130 statt 110 km/h brauchen rund ein Viertel mehr. 1000 Höhenmeter bergauf kosten etwa 11 % Akku, bergab kommt gut ein Drittel davon zurück.</p>
+    <p><b>Optional:</b> Tippst du beim Losfahren den Akkustand ein, zeigt die Liste den <b>Akku bei Ankunft</b>. „Angekommen" öffnet ein kurzes Formular: echter Akkustand rein, fertig – daraus lernt das Modell und wird mit jeder Fahrt genauer. Ohne diese Eingaben siehst du nur den Bedarf.</p>
+    <p id="info-modell" class="klein-hinweis"></p>
 
     <h3>Richtung</h3>
     <p>„nach Neuenrade ⇄" wechselt beim Antippen. Punkte, die nur in einer Richtung erreichbar sind, erscheinen nur dort.</p>
 
     <h3>Abseits der Route</h3>
-    <p>Bist du mehr als 10 km von der Linie entfernt, zeigt die App Luftlinie ohne Höhenmeter – ein Notbehelf, bis du wieder auf der Route bist. Die GPS-Genauigkeit steht unten; bei mehreren hundert Metern ist die Position unzuverlässig.</p>
+    <p>Bist du mehr als 10 km von der Linie entfernt, zeigt die App Luftlinie ohne Höhenmeter und ohne Akku-Prognose – ein Notbehelf, bis du wieder auf der Route bist. Die GPS-Genauigkeit steht unten; bei mehreren hundert Metern ist die Position unzuverlässig.</p>
 
     <h3>Details</h3>
-    <p>Eine Station antippen: <b>Adresse kopieren</b> (in My CUPRA einfügen), <b>Google Maps</b>, <b>ABRP</b> (Plan von deinem Standort) und <b>Bearbeiten</b>.</p>
+    <p>Eine Station antippen: <b>Adresse kopieren</b> (in My CUPRA einfügen), <b>Navigieren</b> oder <b>Ort ansehen</b> in Google Maps, <b>ABRP</b> (Plan von deinem Standort) und <b>Bearbeiten</b>.</p>
 
     <h3>Daten pflegen</h3>
     <ul>
       <li><b>＋</b> neue Station per Google-Maps-Link. Gibt es sie schon (oder eine in der Nähe), wirst du gewarnt.</li>
       <li><b>Bearbeiten</b> in den Details – dort auch <b>Löschen</b>.</li>
       <li>Beides veröffentlicht automatisch; die App zeigt es nach 1–2 Minuten.</li>
-      <li>Alles andere – Routen ändern, direkt im Sheet bearbeiten – unter <b>Wartung &amp; Status</b>. Dort steht auch, wann was zu tun ist.</li>
+      <li>Alles andere – Routen ändern, direkt im Sheet bearbeiten, Modell neu kalibrieren – unter <b>Wartung &amp; Status</b>. Dort steht auch, wann was zu tun ist.</li>
     </ul>
     <a id="info-wartung" class="knopf haupt" href="#" target="_blank" rel="noopener" style="font-size:20px">Wartung &amp; Status öffnen</a>
 
     <h3>Was sie nicht macht</h3>
-    <p>Keine Navigation, kein Belegt-Status, keine Preise, keine Reichweitenprüfung.</p>
+    <p>Keine Navigation, kein Belegt-Status, keine Preise. Die Akku-Prognose ist eine Schätzung – maßgeblich bleibt die Anzeige im Auto.</p>
 
     <h3>Testen ohne Fahrt</h3>
     <p>⚙ → Simulationsmodus: Position von Hand setzen, z. B. „Mitte der Route".</p>
@@ -242,6 +268,19 @@
   <dialog id="dlg">
     <form method="dialog">
       <h2>Einstellungen</h2>
+
+      <h3>Akku-Prognose</h3>
+      <div class="zwei">
+        <label>Reisegeschw. (km/h) <input type="number" id="e-geschwindigkeit" inputmode="numeric" min="60" max="180" step="5"></label>
+        <label>Zusatzgewicht (kg) <input type="number" id="e-zusatzgewicht" inputmode="numeric" min="0" max="1000" step="10"></label>
+      </div>
+      <div class="zwei">
+        <label>Temperatur (°C) <input type="number" id="e-temperatur" inputmode="decimal" min="-30" max="45" placeholder="automatisch"></label>
+        <label>Reserve (%) <input type="number" id="e-reserve" inputmode="numeric" min="0" max="50"></label>
+      </div>
+      <p class="klein">Temperatur leer lassen = automatisch vom Wetter. Stationen mit Ankunft unter der Reserve erscheinen rot.</p>
+
+      <h3>Simulation</h3>
       <label class="schalter"><input type="checkbox" id="sim-aktiv" aria-label="Simulationsmodus"> Simulationsmodus</label>
       <label>Vorlage
         <select id="sim-vorlage"></select>
@@ -254,12 +293,24 @@
     </form>
   </dialog>
 
+  <dialog id="dlg-los">
+    <form>
+      <h2>Losfahren</h2>
+      <p class="klein">Optional. Mit dem Akkustand jetzt zeigt die Liste den Akku bei Ankunft. Start ist deine aktuelle Position.</p>
+      <label>Akkustand jetzt (%)
+        <input type="number" id="los-soc" inputmode="numeric" min="1" max="100" required>
+      </label>
+      <button class="knopf haupt" type="submit" style="width:100%">Losfahren</button>
+      <button class="knopf" type="button" id="los-abbrechen" style="width:100%;margin-top:8px">Abbrechen</button>
+    </form>
+  </dialog>
+
   <div id="toast" hidden></div>
 
   <script>
     'use strict';
 
-    const APP_VERSION = '0.12.1';
+    const APP_VERSION = '0.13.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -267,6 +318,17 @@
     // Formular (Apps-Script-Web-App, nur mit Christofs Google-Konto nutzbar)
     const FORMULAR_URL = 'https://script.google.com/macros/s/AKfycbzTwwwZcQBuUdfmyoniHH5-gALKnrMlvl50VWtuM_JjZ7tBn7nk-AUwPO37bpPNBjsmuw/exec';
     const ABSEITS = { label: 'Weit abseits (Annecy)', lat: 45.8992, lon: 6.1294 };
+    const TEMPERATUR_ERSATZ_C = 15;
+    const ANKUNFT_OFFEN_MS = 12 * 3600e3;  // so lange erinnert die Leiste an eine noch nicht kalibrierte Ankunft
+
+    // Rückfall, falls modell.json nicht geladen werden kann — gleiche Startwerte wie MODELL_STANDARD in Code.js
+    const MODELL_STANDARD = {
+      version: 1,
+      fahrzeug: { name: 'Cupra Born 58 kWh', kapazitaet_kwh: 58, masse_kg: 1811, fahrer_kg: 80 },
+      physik: { cda: 0.63, crr: 0.008, eta: 0.78, rekuperation: 0.6, hilfsleistung_kw: 0.3, heiz_kw_pro_grad: 0.14, heiz_schwelle_c: 18 },
+      korrektur: { gesamt: 1, fahrt: 1, hoehe: 1, heizung: 1 },
+      kalibrierung: { fahrten: 0, abweichung_prozent: null, methode: 'Physik-Startwerte' },
+    };
 
     // -----------------------------------------------------------------------
     // Rechenkern (identisch zu apps-script/Code.js: projiziere_, haversine_)
@@ -305,6 +367,40 @@
       return route.lat0;
     }
 
+    // ENERGIE-START — identisch zu energieAnteile_ / energieKwh_ in apps-script/Code.js (geprüft in tests/test-modell.js)
+    /** Energieanteile in kWh (unkorrigiert): Fahrwiderstand, Höhe (bergauf minus Rückgewinnung), Heizung/Nebenverbraucher. */
+    function energieAnteile(modell, km, hmAuf, hmAb, kmh, temperatur, zusatzKg) {
+      const ph = modell.physik;
+      const masse = modell.fahrzeug.masse_kg + modell.fahrzeug.fahrer_kg + (Number(zusatzKg) || 0);
+      const geschw = Math.max(20, Number(kmh) || 0);
+      const v = geschw / 3.6;
+      const stunden = km / geschw;
+      const luftdichte = 1.293 * 273.15 / (273.15 + temperatur);
+      const leistungRad = 0.5 * luftdichte * ph.cda * v * v * v + ph.crr * masse * 9.81 * v;
+      return {
+        fahrt: leistungRad / ph.eta / 1000 * stunden,
+        hoehe: masse * 9.81 * (hmAuf / ph.eta - hmAb * ph.eta * ph.rekuperation) / 3.6e6,
+        heiz: (ph.hilfsleistung_kw + Math.max(0, ph.heiz_schwelle_c - temperatur) * ph.heiz_kw_pro_grad) * stunden,
+      };
+    }
+
+    /** Korrigierter Energiebedarf in kWh (nie negativ). */
+    function energieKwh(modell, a) {
+      const k = modell.korrektur;
+      return Math.max(0, k.gesamt * (k.fahrt * a.fahrt + k.hoehe * a.hoehe + k.heizung * a.heiz));
+    }
+    // ENERGIE-ENDE
+
+    /** Kilometer, Anstieg und Gefälle zwischen zwei Positionen auf der Linie, in Fahrtrichtung. */
+    function streckenwerte(richtung, von, bis) {
+      const hin = richtung === 'hin';
+      return {
+        km: Math.max(0, hin ? bis.km - von.km : von.km - bis.km),
+        auf: Math.max(0, hin ? bis.hm_hin - von.hm_hin : von.hm_rueck - bis.hm_rueck),
+        ab: Math.max(0, hin ? bis.hm_rueck - von.hm_rueck : von.hm_hin - bis.hm_hin),
+      };
+    }
+
     /** Liste der Punkte voraus für eine Position. Rein rechnerisch, kein Netzwerk. */
     function berechneListe(daten, routeId, richtung, lat, lon) {
       const route = daten.routen.find(r => r.id === routeId);
@@ -318,7 +414,7 @@
         const eintraege = kandidaten
           .map(x => ({ punkt: x.punkt, z: x.z, km: haversine(lat, lon, x.punkt.lat, x.punkt.lon), hm: null }))
           .sort((a, b) => a.km - b.km);
-        return { modus: 'luftlinie', q: pr.q, s: null, rest: null, eintraege };
+        return { modus: 'luftlinie', q: pr.q, s: null, pos: null, rest: null, eintraege };
       }
 
       const eintraege = [];
@@ -329,7 +425,7 @@
         eintraege.push({ punkt: x.punkt, z: x.z, km, hm: Math.max(0, Math.round(hm)) });
       }
       eintraege.sort((a, b) => a.km - b.km);
-      return { modus: 'strecke', q: pr.q, s: pr.km, rest: hin ? route.laenge_km - pr.km : pr.km, eintraege };
+      return { modus: 'strecke', q: pr.q, s: pr.km, pos: pr, rest: hin ? route.laenge_km - pr.km : pr.km, eintraege };
     }
 
     /** Position bei Streckenkilometer km (linear im Segment). */
@@ -374,16 +470,24 @@
 
     const $ = id => document.getElementById(id);
     let daten = null;
+    let modell = MODELL_STANDARD;
     let gps = null;          // { lat, lon, genauigkeit }
     let gpsFehler = '';
     let gpsLaeuft = false;
     let detailPunkt = null;
 
     const zustand = (() => {
-      const standard = { route: null, richtung: 'hin', sim: { aktiv: false, lat: null, lon: null, label: '' } };
+      const standard = {
+        route: null, richtung: 'hin',
+        sim: { aktiv: false, lat: null, lon: null, label: '' },
+        einst: { geschwindigkeit: 120, zusatzgewicht: 0, temperatur: '', reserve: 10 },
+        wetter: null,    // { temp, zeit, lat, lon }
+        fahrt: null,     // { start_soc, start_zeit, start_lat, start_lon, route, route_name, richtung, start: {km, hm_hin, hm_rueck, q} }
+        ankunft: null,   // { url, zeit } — Kalibrierung geöffnet, zur Erinnerung
+      };
       try {
         const g = JSON.parse(localStorage.getItem(SPEICHER) || '{}');
-        return { ...standard, ...g, sim: { ...standard.sim, ...(g.sim || {}) } };
+        return { ...standard, ...g, sim: { ...standard.sim, ...(g.sim || {}) }, einst: { ...standard.einst, ...(g.einst || {}) } };
       } catch (e) { return standard; }
     })();
 
@@ -403,11 +507,75 @@
     }
 
     // -----------------------------------------------------------------------
+    // Akku-Prognose
+    // -----------------------------------------------------------------------
+
+    /** Temperatur für die Prognose: eigene Eingabe, sonst Wetter (höchstens 3 h alt), sonst 15 °C. */
+    function temperatur() {
+      const eingabe = zustand.einst.temperatur;
+      if (eingabe !== '' && eingabe !== null && isFinite(Number(eingabe))) return { wert: Number(eingabe), quelle: 'Eingabe' };
+      if (zustand.wetter && Date.now() - zustand.wetter.zeit < 3 * 3600e3) return { wert: zustand.wetter.temp, quelle: 'Wetter' };
+      return { wert: TEMPERATUR_ERSATZ_C, quelle: 'angenommen' };
+    }
+
+    /** Akkubedarf zwischen zwei Linienpositionen in Fahrtrichtung, plus Umweg zu einer abseits liegenden Station. */
+    function bedarf(richtung, von, bis, umwegKm) {
+      const w = streckenwerte(richtung, von, bis);
+      const a = energieAnteile(modell, w.km + (umwegKm || 0), w.auf, w.ab,
+        zustand.einst.geschwindigkeit, temperatur().wert, zustand.einst.zusatzgewicht);
+      const kwh = energieKwh(modell, a);
+      return { kwh, prozent: kwh / modell.fahrzeug.kapazitaet_kwh * 100, strecke: w };
+    }
+
+    /** Geschätzter Akkustand jetzt, wenn eine Fahrt auf dieser Route und Richtung läuft; sonst null. */
+    function akkuJetzt(routeId, pos) {
+      const f = zustand.fahrt;
+      if (!f || !pos || f.route !== routeId || f.richtung !== zustand.richtung) return null;
+      return f.start_soc - bedarf(f.richtung, f.start, pos, 0).prozent;
+    }
+
+    /** Prognose für einen Listeneintrag. */
+    function prognose(e, pos, jetzt) {
+      if (!pos) return null;
+      const umweg = e.z && e.z.quer_km > 1 ? e.z.quer_km : 0;
+      const b = bedarf(zustand.richtung, pos, e.z, umweg);
+      const ankunft = jetzt === null ? null : jetzt - b.prozent;
+      return { kwh: b.kwh, prozent: b.prozent, ankunft, unerreichbar: ankunft !== null && ankunft < Number(zustand.einst.reserve || 0) };
+    }
+
+    let wetterLaeuft = false;
+    /** Temperatur jetzt und in 3 h am Standort (Open-Meteo, ohne Schlüssel), Durchschnitt. Nur wenn nötig. */
+    async function holeWetter(pos) {
+      const w = zustand.wetter;
+      const frisch = w && Date.now() - w.zeit < 30 * 60e3 && haversine(w.lat, w.lon, pos.lat, pos.lon) < 30;
+      if (frisch || wetterLaeuft || zustand.einst.temperatur !== '') return;
+      wetterLaeuft = true;
+      try {
+        const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + pos.lat.toFixed(3) + '&longitude=' + pos.lon.toFixed(3) +
+          '&current=temperature_2m&hourly=temperature_2m&forecast_hours=4&timezone=UTC';
+        const antwort = await fetch(url);
+        if (!antwort.ok) throw new Error('HTTP ' + antwort.status);
+        const j = await antwort.json();
+        const jetzt = j.current.temperature_2m;
+        const spaeter = j.hourly && j.hourly.temperature_2m && j.hourly.temperature_2m[3];
+        const temp = typeof spaeter === 'number' ? (jetzt + spaeter) / 2 : jetzt;
+        zustand.wetter = { temp: Math.round(temp * 10) / 10, zeit: Date.now(), lat: pos.lat, lon: pos.lon };
+        speichere();
+        render();
+      } catch (e) {
+        /* ohne Netz: zuletzt bekannter Wert oder 15 °C */
+      } finally {
+        wetterLaeuft = false;
+      }
+    }
+
+    // -----------------------------------------------------------------------
     // Darstellung
     // -----------------------------------------------------------------------
 
     const zahl = (x, stellen) => x.toLocaleString('de-DE', { minimumFractionDigits: stellen, maximumFractionDigits: stellen });
     const fmtKm = km => zahl(km, km < 10 ? 1 : 0);
+    const uhrzeit = ms => { const d = new Date(ms); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
 
     function el(tag, klasse, text) {
       const e = document.createElement(tag);
@@ -441,6 +609,12 @@
       return z.raststaette ? 'Raststätte' : '';
     }
 
+    function akkuText(pg) {
+      if (!pg) return '';
+      if (pg.ankunft === null) return '≈ ' + Math.round(pg.prozent) + ' % Akku';
+      return 'Ankunft ≈ ' + Math.round(pg.ankunft) + ' %';
+    }
+
     function metaZeile(e) {
       const teile = [];
       teile.push(e.hm === null ? 'keine Höhendaten' : '+ ' + e.hm + ' hm');
@@ -472,11 +646,14 @@
           : gpsFehler ? 'Standort nicht verfügbar: ' + gpsFehler
           : 'Standort drücken.';
         liste.append(el('p', 'leer', text));
+        renderFahrt(route, null);
         renderFuss(route, null, null);
         return;
       }
 
       const erg = berechneListe(daten, route.id, zustand.richtung, pos.lat, pos.lon);
+      if (erg.modus === 'strecke') holeWetter(pos);
+      const jetzt = erg.modus === 'strecke' ? akkuJetzt(route.id, erg.pos) : null;
 
       const hinweise = [];
       if (pos.sim) hinweise.push('Simulation: ' + (zustand.sim.label || zahl(pos.lat, 5) + ', ' + zahl(pos.lon, 5)));
@@ -491,21 +668,60 @@
         liste.append(el('p', 'leer', 'Keine Ladepunkte voraus.'));
       }
       for (const e of erg.eintraege) {
+        const pg = erg.modus === 'strecke' ? prognose(e, erg.pos, jetzt) : null;
+        e.prognose = pg;
         const zeile = el('button', 'eintrag' + (e.punkt.favorit ? ' favorit' : ''));
         zeile.type = 'button';
-        const km = el('span', 'km', fmtKm(e.km));
+        const km = el('span', 'km' + (pg && pg.unerreichbar ? ' rot' : ''), fmtKm(e.km));
         km.append(el('small', '', 'km'));
         const strasse = e.z && e.z.strasse ? ' (' + e.z.strasse + ')' : '';
-        zeile.append(km, el('span', 'name', (e.punkt.favorit ? '★ ' : '') + kurzname(e.punkt.name) + strasse));
+        zeile.append(km, el('span', 'name' + (pg && pg.unerreichbar ? ' rot' : ''), (e.punkt.favorit ? '★ ' : '') + kurzname(e.punkt.name) + strasse));
         const lage = lageKurz(e.z);
         if (lage) zeile.append(el('span', 'lage' + (e.z.raststaette && !(e.z.quer_km > 1) ? ' rast' : ''), lage));
+        if (pg) zeile.append(el('span', 'akku' + (pg.unerreichbar ? ' rot' : ''), akkuText(pg)));
         zeile.append(el('span', 'meta', metaZeile(e)));
         if (e.punkt.notiz) zeile.append(el('span', 'notiz', e.punkt.notiz));
         zeile.addEventListener('click', () => zeigeDetail(e, erg.modus));
         liste.append(zeile);
       }
 
+      renderFahrt(route, erg);
       renderFuss(route, erg, pos);
+    }
+
+    /** Leiste über der Liste: Losfahren / Fahrt läuft / Angekommen – Kalibrierung offen. Alles optional. */
+    function renderFahrt(route, erg) {
+      const leiste = $('fahrt');
+      leiste.replaceChildren();
+      leiste.hidden = false;
+      leiste.className = 'fahrt';
+      const knopf = (text, klasse, aktion, label) => {
+        const k = el('button', 'knopf' + (klasse ? ' ' + klasse : ''), text);
+        k.type = 'button';
+        if (label) k.setAttribute('aria-label', label);
+        k.addEventListener('click', aktion);
+        return k;
+      };
+
+      const f = zustand.fahrt;
+      if (f) {
+        leiste.className = 'fahrt laeuft';
+        const jetzt = erg && erg.modus === 'strecke' ? akkuJetzt(route.id, erg.pos) : null;
+        let text = 'Fahrt läuft seit ' + uhrzeit(new Date(f.start_zeit).getTime()) + ' · Start ' + f.start_soc + ' %';
+        if (jetzt !== null) text += ' · jetzt ≈ ' + Math.max(0, Math.round(jetzt)) + ' %';
+        else if (f.route !== route.id || f.richtung !== zustand.richtung) text += ' (' + f.route_name + ', ' + (f.richtung === 'hin' ? 'Hinfahrt' : 'Rückfahrt') + ')';
+        leiste.append(el('span', 'text', text), knopf('Angekommen', 'haupt', angekommen), knopf('✕', '', verwerfeFahrt, 'Fahrt verwerfen'));
+        return;
+      }
+      const a = zustand.ankunft;
+      if (a && Date.now() - a.zeit < ANKUNFT_OFFEN_MS) {
+        const link = el('a', 'knopf', 'Kalibrieren');
+        link.href = a.url; link.target = '_blank'; link.rel = 'noopener';
+        leiste.append(el('span', 'text', 'Angekommen ' + uhrzeit(a.zeit) + ' – Kalibrierung noch offen?'), link,
+          knopf('✕', '', () => { zustand.ankunft = null; speichere(); render(); }, 'Erinnerung ausblenden'));
+        return;
+      }
+      leiste.append(el('span', 'text klein', 'Optional: Akkustand beim Start für die Ankunfts-Prognose'), knopf('▶ Losfahren', '', oeffneLosfahren));
     }
 
     function renderFuss(route, erg, pos) {
@@ -514,6 +730,9 @@
       const teil = (label, wert) => { const s = el('span', '', label + ' '); s.append(el('b', '', wert)); fuss.append(s); };
 
       teil('Ziel', erg && erg.rest !== null ? fmtKm(Math.max(0, erg.rest)) + ' km' : '–');
+      const t = temperatur();
+      teil('Temp', zahl(t.wert, 0) + ' °C' + (t.quelle === 'angenommen' ? ' (ang.)' : ''));
+      teil('Tempo', zustand.einst.geschwindigkeit + ' km/h');
       const d = new Date(daten.erzeugt);
       const zwei = n => String(n).padStart(2, '0');
       teil('Daten', isNaN(d) ? '–' : zwei(d.getDate()) + '.' + zwei(d.getMonth() + 1) + '. ' + zwei(d.getHours()) + ':' + zwei(d.getMinutes()));
@@ -523,13 +742,19 @@
 
     function zeigeDetail(e, modus) {
       const p = e.punkt;
+      const pg = e.prognose;
       detailPunkt = p;
       $('d-name').textContent = (p.favorit ? '★ ' : '') + kurzname(p.name);
       $('d-gross').textContent = fmtKm(e.km) + ' km ' + (modus === 'luftlinie' ? 'Luftlinie' : 'voraus') +
-        (e.hm === null ? '' : ' · + ' + e.hm + ' hm');
+        (e.hm === null ? '' : ' · + ' + e.hm + ' hm') + (pg ? ' · ' + akkuText(pg) : '');
+      $('d-gross').className = 'gross' + (pg && pg.unerreichbar ? ' rot' : '');
 
+      const t = temperatur();
       const felder = [
         ['Lage', lageText(e.z) || '–'],
+        ['Akkubedarf', pg ? '≈ ' + zahl(pg.kwh, 1) + ' kWh = ' + Math.round(pg.prozent) + ' %' : '–'],
+        ['Annahmen', zustand.einst.geschwindigkeit + ' km/h · ' + zahl(t.wert, 0) + ' °C (' + t.quelle + ')' +
+          (Number(zustand.einst.zusatzgewicht) ? ' · +' + zustand.einst.zusatzgewicht + ' kg' : '')],
         ['Adresse', p.adresse || '–'],
         ['Betreiber', p.betreiber || '–'],
         ['Leistung', p.kw ? p.kw + ' kW' : '–'],
@@ -566,7 +791,73 @@
       t.textContent = text;
       t.hidden = false;
       clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => { t.hidden = true; }, 2500);
+      toastTimer = setTimeout(() => { t.hidden = true; }, 3000);
+    }
+
+    // -----------------------------------------------------------------------
+    // Losfahren / Angekommen (optional)
+    // -----------------------------------------------------------------------
+
+    function oeffneLosfahren() {
+      $('los-soc').value = '';
+      $('dlg-los').showModal();
+      setTimeout(() => $('los-soc').focus(), 50);
+    }
+
+    function starteFahrt(ev) {
+      ev.preventDefault();
+      const soc = Number($('los-soc').value);
+      if (!(soc >= 1 && soc <= 100)) { toast('Akkustand bitte als Zahl von 1 bis 100'); return; }
+      const pos = aktuellePosition();
+      if (!pos) { $('dlg-los').close(); toast('Erst den Standort bestimmen'); holeStandort(); return; }
+      const route = aktuelleRoute();
+      const pr = projiziere(route.linie, pos.lat, pos.lon, lat0Von(route));
+      zustand.fahrt = {
+        start_soc: soc, start_zeit: new Date().toISOString(), start_lat: pos.lat, start_lon: pos.lon,
+        route: route.id, route_name: route.name, richtung: zustand.richtung,
+        start: { km: pr.km, hm_hin: pr.hm_hin, hm_rueck: pr.hm_rueck, q: pr.q },
+      };
+      zustand.ankunft = null;
+      speichere();
+      $('dlg-los').close();
+      render();
+      if (pr.q > QUER_MAX_KM) toast('Hinweis: Start liegt abseits der Route – die Prognose ist ungenau');
+    }
+
+    function angekommen() {
+      const f = zustand.fahrt;
+      const pos = aktuellePosition();
+      if (!f) return;
+      if (!pos) { toast('Standort unbekannt – erst „Standort" drücken'); holeStandort(); return; }
+      const route = daten.routen.find(r => r.id === f.route) || aktuelleRoute();
+      const pr = projiziere(route.linie, pos.lat, pos.lon, lat0Von(route));
+      const b = bedarf(f.richtung, f.start, pr, 0);
+      if (b.strecke.km < 5) { toast('Noch keine 5 km in Fahrtrichtung gefahren – die Fahrt läuft weiter'); return; }
+
+      const fahrt = {
+        route: f.route, route_name: f.route_name, richtung: f.richtung,
+        start_zeit: f.start_zeit, ende_zeit: new Date().toISOString(),
+        start_lat: Number(f.start_lat.toFixed(5)), start_lon: Number(f.start_lon.toFixed(5)),
+        ende_lat: Number(pos.lat.toFixed(5)), ende_lon: Number(pos.lon.toFixed(5)),
+        start_soc: f.start_soc, km: Math.round(b.strecke.km * 10) / 10,
+        hm_auf: Math.round(b.strecke.auf), hm_ab: Math.round(b.strecke.ab),
+        erwartet: Math.round((f.start_soc - b.prozent) * 10) / 10,
+        geschwindigkeit: Number(zustand.einst.geschwindigkeit), zusatzgewicht: Number(zustand.einst.zusatzgewicht) || 0,
+        quer_warnung: f.start.q > 2 || pr.q > 2,
+      };
+      const url = FORMULAR_URL + '?seite=kalibrieren&fahrt=' + encodeURIComponent(JSON.stringify(fahrt));
+      window.open(url, '_blank', 'noopener');
+      zustand.fahrt = null;
+      zustand.ankunft = { url, zeit: Date.now() };
+      speichere();
+      render();
+    }
+
+    function verwerfeFahrt() {
+      zustand.fahrt = null;
+      speichere();
+      render();
+      toast('Fahrt verworfen');
     }
 
     // -----------------------------------------------------------------------
@@ -650,6 +941,10 @@
       $('sim-koord').value = zustand.sim.lat !== null ? zustand.sim.lat.toFixed(5) + ',' + zustand.sim.lon.toFixed(5) : '';
       $('sim-koord').dataset.label = zustand.sim.label || '';
       $('sim-koord').oninput = () => { $('sim-koord').dataset.label = ''; };
+      $('e-geschwindigkeit').value = zustand.einst.geschwindigkeit;
+      $('e-zusatzgewicht').value = zustand.einst.zusatzgewicht;
+      $('e-temperatur').value = zustand.einst.temperatur;
+      $('e-reserve').value = zustand.einst.reserve;
       $('version').textContent = 'App v' + APP_VERSION + ' · Daten v' + (daten.version || '?');
       einstellungenOffen = true;
       $('dlg').showModal();
@@ -661,6 +956,14 @@
     function schliesseEinstellungen() {
       if (!einstellungenOffen) return;
       einstellungenOffen = false;
+
+      const zahlOder = (id, min, max, ersatz) => { const n = Number($(id).value); return $(id).value.trim() !== '' && n >= min && n <= max ? n : ersatz; };
+      zustand.einst.geschwindigkeit = zahlOder('e-geschwindigkeit', 60, 180, 120);
+      zustand.einst.zusatzgewicht = zahlOder('e-zusatzgewicht', 0, 1000, 0);
+      zustand.einst.reserve = zahlOder('e-reserve', 0, 50, 10);
+      const temp = $('e-temperatur').value.trim();
+      zustand.einst.temperatur = temp !== '' && Number(temp) >= -30 && Number(temp) <= 45 ? Number(temp) : '';
+
       const warAktiv = zustand.sim.aktiv;
       zustand.sim.aktiv = $('sim-aktiv').checked;
       const m = $('sim-koord').value.match(/^\s*(-?\d+(?:[.]\d+)?)\s*,\s*(-?\d+(?:[.]\d+)?)\s*$/);
@@ -696,6 +999,8 @@
       $('einstellungen').addEventListener('click', oeffneEinstellungen);
       $('dlg').querySelector('form').addEventListener('submit', schliesseEinstellungen);
       $('dlg').addEventListener('close', schliesseEinstellungen);
+      $('dlg-los').querySelector('form').addEventListener('submit', starteFahrt);
+      $('los-abbrechen').addEventListener('click', () => $('dlg-los').close());
       $('zurueck').addEventListener('click', () => history.back());
       window.addEventListener('popstate', () => {
         if (!$('detail').hidden) schliesseDetail();
@@ -704,6 +1009,8 @@
       $('info').addEventListener('click', () => {
         const d = daten && new Date(daten.erzeugt);
         $('info-stand').textContent = 'App v' + APP_VERSION + (d && !isNaN(d) ? ' · Daten vom ' + d.toLocaleString('de-CH') : '');
+        const k = modell.kalibrierung || {};
+        $('info-modell').textContent = 'Stand des Modells: ' + (k.fahrten ? k.methode + ', Ø Abweichung ' + String(k.abweichung_prozent).replace('.', ',') + ' % Akku.' : 'Physik-Startwerte, noch keine Fahrt kalibriert.');
         $('info-seite').hidden = false;
         $('info-seite').scrollTop = 0;
         history.pushState({ info: true }, '');
@@ -722,18 +1029,27 @@
     let geladenUm = 0;
 
     /**
-     * Lädt routes.json. Der Zeitstempel im Aufruf umgeht Zwischenspeicher, damit Änderungen aus dem
+     * Lädt routes.json und modell.json. Der Zeitstempel im Aufruf umgeht Zwischenspeicher, damit Änderungen aus dem
      * Formular nach dem GitHub-Pages-Deploy ankommen. still = bei Fehler alte Daten behalten.
      */
     async function ladeDaten(still) {
+      const mitZeit = url => url + (url.includes('?') ? '&' : '?') + 't=' + Date.now();
       try {
-        const url = datenUrl();
-        const antwort = await fetch(url + (url.includes('?') ? '&' : '?') + 't=' + Date.now(), { cache: 'no-store' });
+        const [antwort, modellAntwort] = await Promise.all([
+          fetch(mitZeit(datenUrl()), { cache: 'no-store' }),
+          fetch(mitZeit('modell.json'), { cache: 'no-store' }).catch(() => null),
+        ]);
         if (!antwort.ok) throw new Error('HTTP ' + antwort.status);
         const neu = await antwort.json();
         if (!neu.routen || neu.routen.length === 0) throw new Error('keine Routen in den Daten');
         daten = neu;
         geladenUm = Date.now();
+        if (modellAntwort && modellAntwort.ok) {
+          try {
+            const m = await modellAntwort.json();
+            if (m && m.physik && m.fahrzeug && m.korrektur) modell = m;
+          } catch (e) { /* Startwerte behalten */ }
+        }
       } catch (e) {
         if (!still || !daten) $('liste').replaceChildren(el('p', 'leer', 'Daten konnten nicht geladen werden: ' + e.message));
         return false;
@@ -760,7 +1076,10 @@
     }
 
     // Für automatisierte Tests zugänglich machen
-    window.ladeplanung = { berechneListe, projiziere, haversine, punktBeiKm, mapsUrl, abrpUrl, get daten() { return daten; } };
+    window.ladeplanung = {
+      berechneListe, projiziere, haversine, punktBeiKm, mapsUrl, abrpUrl, energieAnteile, energieKwh, streckenwerte, bedarf,
+      get daten() { return daten; }, get modell() { return modell; }, get zustand() { return zustand; },
+    };
 
     start();
   </script>

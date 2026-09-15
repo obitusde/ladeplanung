@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<!--
+  Ladeplanung — Fahrt kalibrieren. Wird von doGet() mit ?seite=kalibrieren&fahrt=<JSON> ausgeliefert,
+  die App füllt Start, Ankunft, Strecke und Erwartung vor. Version 0.13.0
+-->
+<html lang="de">
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script>window.__status = {"modell":{"gespeichert":3,"kalibrierung":{"fahrten":3,"abweichung_prozent":2.4,"methode":"Gesamtfaktor aus 3 Fahrt(en)"}},"punkte":41,"ohneKoordinaten":1,"nichtAufloesbar":0,"ohneRoute":["p019 EnBW Ladestation Lörrach"],"letzterExport":"2026-09-15T09:35:21.521Z","routen":[{"id":"neuenrade","name":"Morges – Neuenrade","laenge":"716.4","stand":"15.09.2026 09:34","aktuell":false},{"id":"savona_simplon","name":"Morges – Savona (Simplon)","laenge":"478.2","stand":"Fehler: ORS HTTP 403: Quota exceeded","aktuell":false},{"id":"ingolstadt","name":"Morges – Ingolstadt","laenge":"620.7","stand":"15.09.2026 09:34","aktuell":true}]};</script>
+  <script>
+  window.__aufrufe = [];
+  const antwort = (r, wert) => setTimeout(() => r.ok(wert), 200);
+  window.google = { script: { get run() {
+    const r = { ok: null, fehler: null,
+      withSuccessHandler(f) { this.ok = f; return this; },
+      withFailureHandler(f) { this.fehler = f; return this; },
+      speicherePunkt(d) { __aufrufe.push(['speicherePunkt', d]); antwort(this, { ok: true, meldung: 'Gespeichert: Richtung, Notiz.', warnung: '',
+        punkt: { id: 'p023', name: 'EnBW Ladestation Lorsch', zuordnung: [{ route: 'Morges – Neuenrade', km: 468, quer_km: 4.2, strasse: 'A 5', raststaette: false }] } }); },
+      loeschePunkt(id) { __aufrufe.push(['loeschePunkt', id]); antwort(this, { ok: true, meldung: 'Gelöscht: p023 EnBW Ladestation Lorsch.\nDie Zeile liegt im Blatt „Gelöscht" und kann von dort zurückkopiert werden.', warnung: '' }); },
+      legePunktAn(d) { __aufrufe.push(['legePunktAn', d]);
+        if (d.trotzdem) return antwort(this, { ok: true, meldung: 'Angelegt als p048: EnBW Ladestation Appenweier.', warnung: '', punkt: { id: 'p048', name: 'EnBW Ladestation Appenweier', zuordnung: [{ route: 'Morges – Neuenrade', km: 330, quer_km: 0.1, strasse: 'A 5', raststaette: true }] } });
+        if (/doppelt/.test(d.link)) return antwort(this, { ok: false, dublette: { id: 'p010', name: 'EnBW Ladestation Haiger', abstand_m: 12 } });
+        antwort(this, { ok: false, naehe: { id: 'p011', name: 'EnBW Ladestation Appenweier', abstand_m: 240 } }); },
+      speichereFahrt(d) { __aufrufe.push(['speichereFahrt', d]); antwort(this, { ok: true, warnung: '',
+        meldung: 'Fahrt gespeichert: 212 km, Ø 12 °C, 118 km/h (Bordcomputer).\nErwartet waren 31 %, tatsächlich 27 % (-4).\n\nVerbrauchsmodell: Gesamtfaktor aus 1 Fahrt(en).\nKorrektur: gesamt 1.09, Fahrt 1, Höhe 1, Heizung 1\nØ Abweichung: 0 % Akku je Fahrt.' }); },
+      wartungAusfuehren(aktion) { __aufrufe.push(['wartungAusfuehren', aktion]);
+        const texte = { bereinigen_vorschau: 'Punkte bereinigen v0.12.0 — Vorschau, nichts geändert\nZusammenführen: p032 → p010 (EnBW Ladestation Haiger)', routen: 'Routen berechnen v0.12.0\nneuenrade: unverändert, übersprungen\n\nExport v0.12.0\nneuenrade: 26 Punkte, 716.36 km' };
+        antwort(this, { ok: true, text: texte[aktion] || 'Export v0.12.0\n41 Punkte exportiert', status: Object.assign({}, window.__status, { routen: window.__status.routen.map(x => Object.assign({}, x, { aktuell: true, stand: '15.09.2026 11:40' })) }) }); },
+    };
+    return r;
+  } } };
+</script>
+  <meta charset="utf-8">
+  <style>
+    :root {
+      --grund: #ffffff; --flaeche: #f2f2f2; --text: #000000; --leise: #3d3d3d; --linie: #c8c8c8;
+      --akzent: #9a4a00; --akzent-text: #ffffff; --fehler: #7a0000; --fehler-grund: #ffe3e3; --ok-grund: #e4f4e4;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --grund: #000000; --flaeche: #161616; --text: #ffffff; --leise: #c4c4c4; --linie: #3a3a3a;
+        --akzent: #ffac4a; --akzent-text: #000000; --fehler: #ffc9c9; --fehler-grund: #3d0b0b; --ok-grund: #0f2a12;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--grund); color: var(--text); font: 18px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 560px; margin: 0 auto; padding: 16px; }
+    h1 { font-size: 26px; margin: 4px 0 6px; }
+    .leise { color: var(--leise); margin: 0 0 12px; overflow-wrap: anywhere; }
+    dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0 0 16px; }
+    dt { color: var(--leise); }
+    dd { margin: 0; overflow-wrap: anywhere; }
+    label { display: grid; gap: 4px; margin-bottom: 14px; font-weight: 600; }
+    label small { font-weight: 400; color: var(--leise); }
+    input, textarea {
+      font: inherit; color: inherit; background: var(--flaeche);
+      border: 2px solid var(--linie); border-radius: 10px; padding: 10px; width: 100%; min-height: 50px;
+    }
+    .zwei { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+    .knopf {
+      display: flex; align-items: center; justify-content: center; width: 100%; min-height: 56px; margin-top: 10px;
+      border-radius: 10px; border: 2px solid var(--linie); background: var(--flaeche); color: var(--text);
+      font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; text-align: center; padding: 0 12px;
+    }
+    .knopf.haupt { background: var(--akzent); border-color: var(--akzent); color: var(--akzent-text); }
+    .knopf:disabled { opacity: .6; }
+    .hinweis { padding: 12px; border-radius: 10px; margin: 12px 0; white-space: pre-line; overflow-wrap: anywhere; }
+    .hinweis.fehler { background: var(--fehler-grund); color: var(--fehler); font-weight: 600; }
+    .hinweis.ok { background: var(--ok-grund); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Fahrt kalibrieren</h1>
+    <p class="leise">Mit dem echten Akkustand bei Ankunft lernt das Verbrauchsmodell. Die Temperatur holt das Script selbst.</p>
+    <dl id="zusammenfassung"></dl>
+    <div id="hinweis" class="hinweis" hidden></div>
+
+    <form id="form" novalidate>
+      <div class="zwei">
+        <label>Akku bei Ankunft (%) <input name="ende_soc" type="number" inputmode="numeric" min="0" max="100" required></label>
+        <label>Akku beim Start (%) <input name="start_soc" type="number" inputmode="numeric" min="0" max="100"></label>
+      </div>
+      <label>Ø-Geschwindigkeit vom Bordcomputer (km/h) <small>optional – macht die Kalibrierung deutlich genauer</small>
+        <input name="bordcomputer_kmh" type="number" inputmode="numeric" min="20" max="200">
+      </label>
+      <label>Zusatzgewicht (kg) <small>Beifahrer, Gepäck, Dachbox</small>
+        <input name="zusatzgewicht" type="number" inputmode="numeric" min="0" max="1000">
+      </label>
+      <label>Notiz <small>optional, z. B. „starker Gegenwind", „Stau"</small>
+        <textarea name="notiz" rows="2"></textarea>
+      </label>
+      <button id="senden" class="knopf haupt" type="submit">Speichern und kalibrieren</button>
+      <a id="abbrechen" class="knopf" href="#">Abbrechen – zur App</a>
+    </form>
+
+    <section id="fertig" hidden>
+      <div id="fertig-text" class="hinweis ok"></div>
+      <div id="fertig-warnung" class="hinweis fehler" hidden></div>
+      <a id="zur-app" class="knopf haupt" href="#">Fertig – zur App</a>
+    </section>
+
+    <p id="version" class="leise"></p>
+  </main>
+
+  <script>
+    'use strict';
+    const MODELL = {"fahrt":{"route":"neuenrade","route_name":"Morges – Neuenrade","richtung":"hin","start_zeit":"2026-09-15T08:05:00Z","ende_zeit":"2026-09-15T10:20:00Z","start_lat":46.50432,"start_lon":6.49127,"ende_lat":47.59857,"ende_lon":7.60339,"start_soc":82,"km":205.3,"hm_auf":640,"hm_ab":590,"erwartet":31.4,"geschwindigkeit":120,"zusatzgewicht":0,"quer_warnung":false},"appUrl":"https://obitusde.github.io/ladeplanung/","formularUrl":"https://script.google.com/macros/s/TEST/exec","version":"0.12.0"};
+    const $ = id => document.getElementById(id);
+    const form = $('form');
+    const f = MODELL.fahrt || {};
+
+    $('abbrechen').href = MODELL.appUrl;
+    $('zur-app').href = MODELL.appUrl;
+    $('version').textContent = 'Apps Script v' + MODELL.version;
+
+    const uhr = iso => { const d = new Date(iso); return isNaN(d) ? '–' : d.toLocaleString('de-CH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); };
+    const zahl = (x, stellen) => Number(x).toLocaleString('de-DE', { maximumFractionDigits: stellen || 0 });
+    const zeilen = [
+      ['Route', (f.route_name || f.route || '–') + (f.richtung === 'rueck' ? ' (Rückfahrt)' : ' (Hinfahrt)')],
+      ['Start', uhr(f.start_zeit) + ' · ' + zahl(f.start_soc) + ' %'],
+      ['Ankunft', uhr(f.ende_zeit)],
+      ['Strecke', zahl(f.km) + ' km · + ' + zahl(f.hm_auf) + ' / − ' + zahl(f.hm_ab) + ' hm'],
+      ['Erwartet', f.erwartet === null || f.erwartet === undefined ? '–' : '≈ ' + zahl(f.erwartet) + ' % bei Ankunft'],
+    ];
+    if (f.quer_warnung) zeilen.push(['Achtung', 'Start oder Ziel lag abseits der Route – die Kilometer sind ungenau.']);
+    for (const [k, v] of zeilen) {
+      const dt = document.createElement('dt'); dt.textContent = k;
+      const dd = document.createElement('dd'); dd.textContent = v;
+      $('zusammenfassung').append(dt, dd);
+    }
+    form.start_soc.value = f.start_soc ?? '';
+    form.zusatzgewicht.value = f.zusatzgewicht ?? 0;
+
+    function hinweis(text) { const h = $('hinweis'); h.textContent = text || ''; h.className = 'hinweis fehler'; h.hidden = !text; }
+
+    form.addEventListener('submit', ev => {
+      ev.preventDefault();
+      hinweis('');
+      if (form.ende_soc.value.trim() === '') { hinweis('Bitte den Akkustand bei Ankunft eintragen.'); form.ende_soc.focus(); return; }
+      const daten = Object.assign({}, f, {
+        start_soc: form.start_soc.value, ende_soc: form.ende_soc.value,
+        bordcomputer_kmh: form.bordcomputer_kmh.value, zusatzgewicht: form.zusatzgewicht.value, notiz: form.notiz.value,
+      });
+      $('senden').disabled = true;
+      $('senden').textContent = 'Speichere und kalibriere … (ca. 15 Sekunden)';
+      google.script.run
+        .withSuccessHandler(erg => {
+          $('senden').disabled = false;
+          $('senden').textContent = 'Speichern und kalibrieren';
+          if (!erg || !erg.ok) { hinweis((erg && erg.fehler) || 'Unbekannter Fehler.'); return; }
+          form.hidden = true;
+          $('fertig-text').textContent = erg.meldung + '\n\nDie App übernimmt das neue Modell beim nächsten Öffnen.';
+          $('fertig-warnung').textContent = erg.warnung || '';
+          $('fertig-warnung').hidden = !erg.warnung;
+          $('fertig').hidden = false;
+          window.scrollTo(0, 0);
+        })
+        .withFailureHandler(e => {
+          $('senden').disabled = false;
+          $('senden').textContent = 'Speichern und kalibrieren';
+          hinweis('Fehler: ' + ((e && e.message) || e));
+        })
+        .speichereFahrt(daten);
+    });
+  </script>
+</body>
+</html>

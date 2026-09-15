@@ -86,6 +86,13 @@
       <button id="bereinigen-ja" class="knopf gefahr" data-aktion="bereinigen" hidden>Zusammenführen und veröffentlichen</button>
     </div>
 
+    <div class="karte">
+      <h3>Verbrauchsmodell neu kalibrieren</h3>
+      <p><b>Wann:</b> nachdem du im Blatt „Fahrten" eine Zeile gelöscht oder bei „verwenden" <i>nein</i> eingetragen hast, z. B. bei einer Fahrt mit Tippfehler oder unterwegs geladen.</p>
+      <p class="leise">Nach „Angekommen" in der App passiert das automatisch.</p>
+      <button class="knopf" data-aktion="kalibrieren">Neu kalibrieren</button>
+    </div>
+
     <details>
       <summary>Selten nötig</summary>
       <div class="karte">
@@ -129,6 +136,11 @@
       zeile(s.punkte + ' Stationen' + (probleme.length ? ' – ' + probleme.join(', ') : ''), probleme.length ? 'warn' : 'ok');
       if (s.ohneRoute && s.ohneRoute.length) zeile('Keiner Route zugeordnet (> 10 km): ' + s.ohneRoute.join(', '), 'info');
       zeile('Zuletzt veröffentlicht: ' + datum(s.letzterExport), s.letzterExport ? 'ok' : 'warn');
+      if (s.modell) {
+        const k = s.modell.kalibrierung;
+        zeile('Verbrauchsmodell: ' + (k && k.fahrten ? k.methode + ', Ø Abweichung ' + String(k.abweichung_prozent).replace('.', ',') + ' % Akku' : 'Physik-Startwerte, noch keine Fahrt kalibriert') +
+          ' · ' + s.modell.gespeichert + ' Fahrt(en) im Sheet', 'info');
+      }
       for (const r of s.routen || []) {
         if (r.aktuell) zeile(r.name + ' – ' + (r.laenge ? String(r.laenge).replace('.', ',') + ' km, ' : '') + 'berechnet ' + r.stand, 'ok');
         else zeile(r.name + ' – neu berechnen' + (String(r.stand).indexOf('Fehler') === 0 ? ' (' + r.stand + ')' : ''), 'warn');

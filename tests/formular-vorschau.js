@@ -22,6 +22,8 @@ const attrappe = `<script>
         if (d.trotzdem) return antwort(this, { ok: true, meldung: 'Angelegt als p048: EnBW Ladestation Appenweier.', warnung: '', punkt: { id: 'p048', name: 'EnBW Ladestation Appenweier', zuordnung: [{ route: 'Morges – Neuenrade', km: 330, quer_km: 0.1, strasse: 'A 5', raststaette: true }] } });
         if (/doppelt/.test(d.link)) return antwort(this, { ok: false, dublette: { id: 'p010', name: 'EnBW Ladestation Haiger', abstand_m: 12 } });
         antwort(this, { ok: false, naehe: { id: 'p011', name: 'EnBW Ladestation Appenweier', abstand_m: 240 } }); },
+      speichereFahrt(d) { __aufrufe.push(['speichereFahrt', d]); antwort(this, { ok: true, warnung: '',
+        meldung: 'Fahrt gespeichert: 212 km, Ø 12 °C, 118 km/h (Bordcomputer).\\nErwartet waren 31 %, tatsächlich 27 % (-4).\\n\\nVerbrauchsmodell: Gesamtfaktor aus 1 Fahrt(en).\\nKorrektur: gesamt 1.09, Fahrt 1, Höhe 1, Heizung 1\\nØ Abweichung: 0 % Akku je Fahrt.' }); },
       wartungAusfuehren(aktion) { __aufrufe.push(['wartungAusfuehren', aktion]);
         const texte = { bereinigen_vorschau: 'Punkte bereinigen v0.12.0 — Vorschau, nichts geändert\\nZusammenführen: p032 → p010 (EnBW Ladestation Haiger)', routen: 'Routen berechnen v0.12.0\\nneuenrade: unverändert, übersprungen\\n\\nExport v0.12.0\\nneuenrade: 26 Punkte, 716.36 km' };
         antwort(this, { ok: true, text: texte[aktion] || 'Export v0.12.0\\n41 Punkte exportiert', status: Object.assign({}, window.__status, { routen: window.__status.routen.map(x => Object.assign({}, x, { aktuell: true, stand: '15.09.2026 11:40' })) }) }); },
@@ -31,6 +33,7 @@ const attrappe = `<script>
 </script>`;
 
 const status = {
+  modell: { gespeichert: 3, kalibrierung: { fahrten: 3, abweichung_prozent: 2.4, methode: 'Gesamtfaktor aus 3 Fahrt(en)' } },
   punkte: 41, ohneKoordinaten: 1, nichtAufloesbar: 0, ohneRoute: ['p019 EnBW Ladestation Lörrach'], letzterExport: '2026-09-15T09:35:21.521Z',
   routen: [
     { id: 'neuenrade', name: 'Morges – Neuenrade', laenge: '716.4', stand: '15.09.2026 09:34', aktuell: false },
@@ -44,6 +47,10 @@ const seiten = {
   'formular-bearbeiten.html': ['Formular.html', Object.assign({ modus: 'bearbeiten',
     punkt: { id: 'p023', link: 'https://maps.app.goo.gl/dnLiHt5op9KaWodL9', Adresse: 'JHV2+5W, 64653 Lorsch, Deutschland', Name: 'EnBW Ladestation Lorsch', Betreiber: 'EnBW', kW: '', Anzahl: '', Richtung: 'rueck', Favorit: false, Notiz: 'Raststätte </script><b>x</b>' } }, basis)],
   'wartung.html': ['Wartung.html', Object.assign({ status: status }, basis)],
+  'kalibrieren.html': ['Kalibrieren.html', Object.assign({ fahrt: {
+    route: 'neuenrade', route_name: 'Morges – Neuenrade', richtung: 'hin', start_zeit: '2026-09-15T08:05:00Z', ende_zeit: '2026-09-15T10:20:00Z',
+    start_lat: 46.50432, start_lon: 6.49127, ende_lat: 47.59857, ende_lon: 7.60339, start_soc: 82, km: 205.3, hm_auf: 640, hm_ab: 590,
+    erwartet: 31.4, geschwindigkeit: 120, zusatzgewicht: 0, quer_warnung: false } }, basis)],
 };
 
 for (const [ziel, [quelle, modell]] of Object.entries(seiten)) {

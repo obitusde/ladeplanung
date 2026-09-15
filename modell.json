@@ -1,0 +1,8 @@
+{
+ "version": 1,
+ "erzeugt": "2026-09-15T12:00:00Z",
+ "fahrzeug": { "name": "Cupra Born 58 kWh", "kapazitaet_kwh": 58, "masse_kg": 1811, "fahrer_kg": 80 },
+ "physik": { "cda": 0.63, "crr": 0.008, "eta": 0.78, "rekuperation": 0.6, "hilfsleistung_kw": 0.3, "heiz_kw_pro_grad": 0.14, "heiz_schwelle_c": 18 },
+ "korrektur": { "gesamt": 1, "fahrt": 1, "hoehe": 1, "heizung": 1 },
+ "kalibrierung": { "fahrten": 0, "abweichung_prozent": null, "stand": null, "methode": "Physik-Startwerte" }
+}
