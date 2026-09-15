@@ -1,6 +1,7 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.7.0 — Alle Schritte auch direkt im Editor ausführbar (schritt1_… bis schritt5_…).
  * Version 0.6.0 — bereinigePunkte(): Porsche Destination entfernen, Dubletten zusammenführen.
  * Version 0.5.0 — Etappe 6: exportJson() mit Zuordnung und GitHub-Upload.
  * Version 0.4.0 — Etappe 4/5: berechneRouten() mit Kumulierung, Ausdünnung, Rundung.
@@ -10,7 +11,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.6.0';
+const VERSION = '0.7.0';
 
 const BLATT_PUNKTE = 'Ladepunkte';
 const BLATT_ROUTEN = 'Routen';
@@ -50,6 +51,35 @@ function onOpen() {
       .addItem('GitHub-Token hinterlegen', 'githubTokenHinterlegen'))
     .addItem('Setup (Blätter anlegen)', 'setup')
     .addToUi();
+}
+
+// ---------------------------------------------------------------------------
+// Direkt im Apps-Script-Editor ausführbar: Funktion oben in der Liste wählen, „Ausführen".
+// Die Ergebnisse stehen dann im Ausführungsprotokoll unten statt in einem Dialog.
+// ---------------------------------------------------------------------------
+
+function schritt1_PunkteBereinigenVorschau() { bereinigeIntern_('vorschau'); }
+function schritt2_PunkteBereinigen() { bereinigeIntern_('ausfuehren'); }
+function schritt3_LinksAufloesen() { aufloeseLinks(); }
+function schritt4_RoutenBerechnen() { berechneRouten(); }
+function schritt5_Export() { exportJson(); }
+
+/**
+ * Meldungen: im Sheet als Dialog, im Editor nur im Ausführungsprotokoll.
+ * SpreadsheetApp.getUi() wirft außerhalb des Sheets einen Fehler — daher dieser Umweg.
+ */
+function meldungsUi_() {
+  let echt = null;
+  try { echt = SpreadsheetApp.getUi(); } catch (e) { echt = null; }
+  return {
+    imSheet: echt !== null,
+    ButtonSet: echt ? echt.ButtonSet : { OK: 'OK', YES_NO: 'YES_NO' },
+    Button: echt ? echt.Button : { YES: 'YES' },
+    alert: function (titel, text, knoepfe) {
+      console.log(titel + (text ? '\n' + text : ''));
+      return echt ? echt.alert(titel, text, knoepfe) : null;
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -105,7 +135,8 @@ function setup() {
   setzeValidierungen_(punkte);
 
   if (meldungen.length === 0) meldungen.push('Alles war schon eingerichtet — nichts geändert.');
-  SpreadsheetApp.getUi().alert('Setup v' + VERSION, meldungen.join('\n'), SpreadsheetApp.getUi().ButtonSet.OK);
+  const ui = meldungsUi_();
+  ui.alert('Setup v' + VERSION, meldungen.join('\n'), ui.ButtonSet.OK);
 }
 
 /**
@@ -203,7 +234,7 @@ const STATUS_FEHLER_PRAEFIX = 'nicht auflösbar';
 const MAX_LAUFZEIT_MS = 5 * 60 * 1000; // Reserve zur Sechs-Minuten-Grenze
 
 function aufloeseLinks() {
-  const ui = SpreadsheetApp.getUi();
+  const ui = meldungsUi_();
   const blatt = SpreadsheetApp.getActive().getSheetByName(BLATT_PUNKTE);
   if (!blatt || blatt.getLastRow() < 2) {
     ui.alert('Links auflösen', 'Blatt „' + BLATT_PUNKTE + '" fehlt oder ist leer — zuerst Setup ausführen.', ui.ButtonSet.OK);
@@ -384,8 +415,12 @@ function runde_(zahl, stellen) {
 const ENTFERNEN = [{ id: 'p003', nameEnthaelt: 'Porsche Destination' }];
 const DUBLETTE_MAX_M = 25;
 
-function bereinigePunkte() {
-  const ui = SpreadsheetApp.getUi();
+/** Menüpunkt: zeigt den Plan und fragt nach. */
+function bereinigePunkte() { bereinigeIntern_('menue'); }
+
+/** modus: 'menue' (mit Rückfrage), 'vorschau' (nur anzeigen), 'ausfuehren' (ohne Rückfrage, für den Editor). */
+function bereinigeIntern_(modus) {
+  const ui = meldungsUi_();
   const blatt = SpreadsheetApp.getActive().getSheetByName(BLATT_PUNKTE);
   if (!blatt || blatt.getLastRow() < 2) {
     ui.alert('Punkte bereinigen', 'Blatt „' + BLATT_PUNKTE + '" fehlt oder ist leer.', ui.ButtonSet.OK);
@@ -406,8 +441,16 @@ function bereinigePunkte() {
     ui.alert('Punkte bereinigen v' + VERSION, 'Nichts zu tun — keine Dubletten, nichts zu entfernen.', ui.ButtonSet.OK);
     return;
   }
-  const antwort = ui.alert('Punkte bereinigen v' + VERSION, plan.beschreibung.join('\n') + '\n\nAusführen?', ui.ButtonSet.YES_NO);
-  if (antwort !== ui.Button.YES) return;
+  if (modus === 'vorschau') {
+    ui.alert('Punkte bereinigen v' + VERSION + ' — Vorschau, nichts geändert', plan.beschreibung.join('\n'), ui.ButtonSet.OK);
+    return;
+  }
+  if (modus === 'menue') {
+    const antwort = ui.alert('Punkte bereinigen v' + VERSION, plan.beschreibung.join('\n') + '\n\nAusführen?', ui.ButtonSet.YES_NO);
+    if (antwort !== ui.Button.YES) return;
+  } else {
+    console.log('Ausführung ohne Rückfrage:\n' + plan.beschreibung.join('\n'));
+  }
 
   // Erst Felder der verbleibenden Zeilen ändern, dann von unten nach oben löschen.
   plan.aenderungen.forEach(function (a) {
@@ -503,7 +546,7 @@ function berechneRouten() { berechneRoutenIntern_(false); }
 function berechneRoutenNeu() { berechneRoutenIntern_(true); }
 
 function berechneRoutenIntern_(erzwingen) {
-  const ui = SpreadsheetApp.getUi();
+  const ui = meldungsUi_();
   const ss = SpreadsheetApp.getActive();
   const props = PropertiesService.getScriptProperties();
   const schluessel = props.getProperty('ORS_API_KEY');
@@ -682,7 +725,7 @@ const ZUORDNUNG_MAX_KM = 2;
 const STATUS_OHNE_ROUTE = 'keiner Route zugeordnet (> 2 km)';
 
 function exportJson() {
-  const ui = SpreadsheetApp.getUi();
+  const ui = meldungsUi_();
   const ss = SpreadsheetApp.getActive();
   const routenBlatt = ss.getSheetByName(BLATT_ROUTEN);
   const punkteBlatt = ss.getSheetByName(BLATT_PUNKTE);
