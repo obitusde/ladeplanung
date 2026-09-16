@@ -1,6 +1,7 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.15.1 — Test: Veröffentlichen vom Handy (keine inhaltliche Änderung).
  * Version 0.15.0 — Maps-Links im neueren Teilen-Format ohne Koordinaten: Adresse aus dem Link wird geokodiert
  *                  (mindestens straßengenau), Status „Koordinaten aus Adresse".
  * Version 0.14.1 — Fahrzeit bei Vergleichswerten Pflicht, ohne Fahrzeit zählen sie nicht; veralteter Status „keiner Route
@@ -27,7 +28,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.15.0';
+const VERSION = '0.15.1';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
