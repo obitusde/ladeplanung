@@ -1,0 +1,83 @@
+# Apps Script veröffentlichen — Version 1.0.0
+#
+# Läuft bei jedem Push auf main, der etwas unter apps-script/ (oder an dieser Datei) ändert,
+# und auf Knopfdruck (Actions → „Apps Script veröffentlichen" → „Run workflow").
+# Commits des Scripts selbst (routes.json, linien/, modell.json) lösen ihn NICHT aus.
+#
+# Ablauf: Syntax + Node-Tests → clasp push → clasp deploy auf die feste Deployment-ID (URL bleibt gleich).
+# Zugang: Secret CLASPRC_JSON = Inhalt von ~/.clasprc.json (clasp-Login von Christofs Google-Konto).
+#
+# Version 1.0.0 — erste Fassung (Umzug: veröffentlichen ohne PC).
+
+name: Apps Script veröffentlichen
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps-script/**'
+      - '.github/workflows/apps-script.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: apps-script-deploy
+  cancel-in-progress: false
+
+env:
+  DEPLOYMENT_ID: AKfycbzTwwwZcQBuUdfmyoniHH5-gALKnrMlvl50VWtuM_JjZ7tBn7nk-AUwPO37bpPNBjsmuw
+  CLASP_VERSION: 3.4.1
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Repo auschecken
+        uses: actions/checkout@v4
+
+      - name: Node einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Syntax prüfen und Tests
+        run: |
+          set -e
+          node --check apps-script/Code.js
+          for t in tests/test-*.js; do
+            echo "::group::$t"
+            node "$t"
+            echo "::endgroup::"
+          done
+
+      - name: clasp installieren und anmelden
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: |
+          set -e
+          if [ -z "$CLASPRC_JSON" ]; then
+            echo "::error::Secret CLASPRC_JSON fehlt (Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+          npm install -g "@google/clasp@${CLASP_VERSION}"
+          printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+          chmod 600 "$HOME/.clasprc.json"
+          clasp show-authorized-user
+
+      - name: clasp push
+        working-directory: apps-script
+        run: clasp push -f
+
+      - name: clasp deploy (feste Deployment-ID)
+        working-directory: apps-script
+        run: |
+          set -e
+          VERSION=$(sed -n "s/^const VERSION = '\([^']*\)';.*/\1/p" Code.js)
+          BETREFF=$(git log -1 --format=%s | cut -c1-80)
+          clasp deploy -i "$DEPLOYMENT_ID" -d "v${VERSION}: ${BETREFF}"
+          echo "### Apps Script v${VERSION} veröffentlicht" >> "$GITHUB_STEP_SUMMARY"
+          echo "Commit: ${BETREFF}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Zugang aufräumen
+        if: always()
+        run: rm -f "$HOME/.clasprc.json"

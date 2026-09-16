@@ -1,6 +1,6 @@
 # Ladeplanung Cupra Born — Projektstand für Claude
 
-**Stand 15.09.2026** · App (`index.html`) v0.15.0 · Apps Script (`apps-script/Code.js`) v0.15.0 · Web-App-Deployment @7
+**Stand 16.09.2026** · App (`index.html`) v0.15.0 · Apps Script (`apps-script/Code.js`) v0.15.0 · Web-App-Deployment @7 · Veröffentlichen per GitHub Action (`.github/workflows/apps-script.yml`) v1.0.0
 Ursprünglicher Auftrag: [`docs/Umsetzungsbrief_v5.0.md`](docs/Umsetzungsbrief_v5.0.md). Diese Datei beschreibt den **tatsächlichen** Stand inklusive aller späteren Entscheidungen und hat Vorrang vor dem Brief.
 
 ---
@@ -12,6 +12,7 @@ Ursprünglicher Auftrag: [`docs/Umsetzungsbrief_v5.0.md`](docs/Umsetzungsbrief_v
 - **Umsetzungsentscheidungen vorher klar und high-level fragen** – kurze Optionen mit Empfehlung. Multiple-Choice-Dialoge (AskUserQuestion) klickt er oft weg → Fragen lieber als Text mit „a/b/c". Sagt er „erst antworten", nichts bauen; gebaut wird nach „los" / „ja so bauen" / „alles beheben".
 - **Deutsch** in Oberfläche, Kommentaren, Commit-Nachrichten. **Versionsnummer bei jeder Änderung** (Kopfkommentar der Datei + `VERSION` bzw. `APP_VERSION`). Diagnostisch-iterativ: Test/Analyse vor Produktivcode, Unsicherheit ehrlich benennen.
 - Anleitungen für Web-Oberflächen (GitHub, Google) **klickgenau** schreiben.
+- **Zwei Arbeitsorte, ein Stand**: Christof arbeitet mal am PC (Claude Code lokal), mal unterwegs am Handy (Claude Code in der Cloud). **GitHub `main` ist die einzige Wahrheit**, veröffentlicht wird **nur über `git push`** (siehe §5). Kein lokales `clasp push`/`clasp deploy` mehr.
 - **Selbst testen**: Node-Tests, lokale App im Browser-Pane (Simulationsmodus), Formular-Vorschauen mit nachgebautem `google.script.run`. Christof testet nur, was nur auf dem Handy/mit Google-Login geht.
 
 ---
@@ -46,32 +47,50 @@ Kein Backend zur Laufzeit der App: sie lädt `routes.json` + `modell.json` (mit 
 
 | Was | Wert |
 |---|---|
-| Repo | `obitusde/ladeplanung` (öffentlich), lokal `D:\Coding\ladeplanung` |
+| Repo | `obitusde/ladeplanung` (öffentlich). Lokale Kopie am PC optional: `D:\Coding\ladeplanung` |
 | Pages | https://obitusde.github.io/ladeplanung/ |
 | Sheet „Ladestationen" | ID `1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE` |
 | Apps Script (gebunden) | scriptId `1paeATvOfJWWUunRDfUEgsEjFdGPIirbhS9wd4JivvFKhnjhDa0b585_w`, Editor https://script.google.com/d/1paeATvOfJWWUunRDfUEgsEjFdGPIirbhS9wd4JivvFKhnjhDa0b585_w/edit |
 | Web-App | Deployment-ID `AKfycbzTwwwZcQBuUdfmyoniHH5-gALKnrMlvl50VWtuM_JjZ7tBn7nk-AUwPO37bpPNBjsmuw`, URL `https://script.google.com/macros/s/<ID>/exec` (steht als `FORMULAR_URL` in `index.html`). `access: MYSELF`, `executeAs: USER_DEPLOYING` → ohne Google-Login 302 auf accounts.google.com |
 | Script Properties | `ORS_API_KEY` (openrouteservice, Basic), `GITHUB_TOKEN` (fine-grained, Contents Read/Write nur dieses Repo). **Nie ins Repo, nie im Frontend. Claude trägt keine Schlüssel ein.** |
-| gh CLI | als `obitusde` angemeldet |
-| clasp | angemeldet (`~/.clasprc.json`) |
+| GitHub-Secret `CLASPRC_JSON` | Inhalt von `~/.clasprc.json` (clasp-Login). Nutzt die Action zum Veröffentlichen. **Nie ausgeben, nie ins Repo.** Erneuern: am PC `clasp login`, dann `gh secret set CLASPRC_JSON -R obitusde/ladeplanung < ~/.clasprc.json` |
+| gh CLI (PC) | als `obitusde` angemeldet |
+| clasp (PC) | angemeldet (`~/.clasprc.json`) – nur noch für Diagnose und zum Erneuern des Secrets, **nicht** zum Veröffentlichen |
 
 Web-App-Seiten (`doGet`):
 `?id=p023` Bearbeiten/Löschen · `?neu=1` Hinzufügen · `?seite=wartung` Wartung & Status · `?seite=kalibrieren&fahrt=<JSON>` Fahrt kalibrieren · `?seite=vergleich[&route=…&richtung=hin|rueck&nach=p041]` Vergleichswert.
 
 ---
 
-## 5. Routine: testen, veröffentlichen
+## 5. Routine: testen, veröffentlichen (PC und Cloud gleich)
 
+**Sitzungsbeginn – immer:**
 ```bash
-cd /d/Coding/ladeplanung
+git checkout main && git pull --rebase      # das Script committet selbst routes.json, linien/*, modell.json
+```
+
+**Testen:**
+```bash
 node --check apps-script/Code.js
 for t in tests/test-*.js; do node "$t" || break; done     # alle Tests
 node tests/formular-vorschau.js                               # Vorschauen der Web-App-Seiten → tests/fixtures/*.html
 node tests/erzeuge-testdaten.js                               # synthetische routes-test.json für die App
 ```
 
-- **Apps Script veröffentlichen:** `cd apps-script && clasp push -f && clasp deploy -i AKfycbzTwwwZcQBuUdfmyoniHH5-gALKnrMlvl50VWtuM_JjZ7tBn7nk-AUwPO37bpPNBjsmuw -d "vX.Y.Z: …"`. **Immer `-i <ID>`**, sonst neue URL. Ein reiner `clasp push` ändert die veröffentlichte Web-App nicht (Menü/Editor schon).
-- **Git:** Commit-Nachricht per Datei (`git commit -F /tmp/commit-msg.txt`, wegen „…"-Anführungszeichen in Bash), dann `git pull --rebase` (das Script committet selbst `routes.json`, `linien/*`, `modell.json`), dann `git push`. Letzte Zeile: `Co-Authored-By: Claude …`.
+**Veröffentlichen = committen und auf `main` pushen.** Sonst nichts.
+- **App** (`index.html` usw.): GitHub Pages baut nach dem Push selbst (1–2 min).
+- **Apps Script**: Die GitHub Action „Apps Script veröffentlichen" läuft, sobald sich etwas unter `apps-script/` ändert: Syntax + Tests → `clasp push -f` → `clasp deploy -i <Deployment-ID>` (URL bleibt). Beschreibung der Version: `v<VERSION>: <Commit-Betreff>` → **`VERSION` in Code.js vor dem Commit hochzählen.** Manuell starten: GitHub → Actions → „Apps Script veröffentlichen" → „Run workflow".
+- **Nach dem Push prüfen**, ob der Action-Lauf grün ist (`gh run list -R obitusde/ladeplanung --workflow apps-script.yml -L 3`, bzw. GitHub-Tools/-API). Rot → Log lesen, beheben, erneut pushen. Geht das nicht, Christof bitten, in der GitHub-App unter Actions nachzusehen.
+- **Kein lokales `clasp push`/`clasp deploy`.** Ausnahme nur nach Rückfrage, wenn die Action kaputt ist (z. B. Secret abgelaufen) – dann vorher `git pull --rebase`, damit kein alter Stand veröffentlicht wird.
+- **Git:** Commit-Nachricht per Datei (`git commit -F <datei>`, wegen „…"-Anführungszeichen in Bash), dann `git pull --rebase`, dann `git push`. Letzte Zeile: `Co-Authored-By: Claude …`.
+
+**In der Cloud (Handy) zusätzlich:**
+- **Direkt auf `main` arbeiten und pushen** (Christof sagt das zu Beginn; sonst selbst auf `main` wechseln, bevor etwas geändert wird). Der Push geht nur auf den Branch, auf dem die Sitzung arbeitet.
+- Lehnt der Git-Proxy den Push auf `main` ab: auf einen `claude/…`-Branch pushen, Pull Request erstellen und Christof bitten, ihn in der GitHub-App zu mergen. Erst nach dem Merge wird veröffentlicht.
+- Kein Browser-Pane: App-Prüfung per Node/Headless-Chromium (Playwright, falls vorhanden) oder Christof testet auf dem Pixel. Google-Drive-Connector nur, wenn in der Sitzung verfügbar; sonst Daten aus `routes.json`/`modell.json` im Repo.
+- Windows-Pfade (`D:\…`) gelten dort nicht; alle Befehle relativ zum Repo-Wurzelverzeichnis.
+
+**Am PC zusätzlich:**
 - **Lokal testen:** Server `node tests/server.js 8765` (in `.claude/launch.json` als „ladeplanung"). App mit `?daten=tests/fixtures/routes-test.json` oder echten Daten; Simulationsmodus über `localStorage['ladeplanung.v1']` setzen. Browser-Pane-Screenshots laufen oft in Timeouts → Zustand per JavaScript/Seitentext prüfen.
 - **Sheet lesen:** Google-Drive-Connector `read_file_content` mit der Sheet-ID (liefert alle Blätter als Tabellen, Zahlen mit deutschem Komma).
 - **Analyse:** `node tests/analyse-routen.js` (Routenverlauf, Höhensprünge, Punkte ohne Route).
@@ -95,6 +114,7 @@ Christof pflegt über die App; Rechenschritte stößt er über **Wartung & Statu
 | `apps-script/Kalibrieren.html` | Fahrt kalibrieren (nach „Angekommen") |
 | `apps-script/Vergleich.html` | Vergleichswert aus ABRP / My CUPRA |
 | `apps-script/appsscript.json` | Zeitzone Europe/Zurich, V8, `webapp` MYSELF |
+| `.github/workflows/apps-script.yml` | Veröffentlicht Apps Script bei Push auf `main` (nur bei Änderungen unter `apps-script/`) |
 | `tests/test-*.js` | links, routen, bereinigung, routen-vorgaben, formular, modell, vergleich |
 | `tests/formular-vorschau.js`, `tests/erzeuge-testdaten.js`, `tests/server.js`, `tests/analyse-routen.js` | Werkzeuge |
 | `tests/fixtures/` | aufgelöste Maps-Links, synthetische Routen, generierte Vorschauseiten |
@@ -216,3 +236,6 @@ Weiter gültig aus dem Brief: keine Google Directions/Distance Matrix/Places API
 - Commit-Nachrichten mit „…" in Bash brechen die Quotierung → `-F Datei`.
 - Das Script committet selbst ins Repo → vor jedem Push `git pull --rebase`.
 - Google Maps teilt seit Sept. 2026 teils Links **ohne Koordinaten** (nur Name + Adresse + Orts-ID `0x…:0x…`); die Maps-Seite liefert ohne Browser auch keine → Geokodierung der Adresse.
+- Die Action startet nur bei Änderungen unter `apps-script/` (Pfadfilter) – sonst würde jede Kalibrierung/jeder Export des Scripts neu veröffentlichen.
+- Jede Veröffentlichung legt eine neue Apps-Script-Version an; Google begrenzt die Anzahl je Projekt (vermutlich 200, nicht geprüft). Daher nicht für Kleinigkeiten mehrfach hintereinander veröffentlichen.
+- Action rot bei „clasp show-authorized-user"/`invalid_grant` → Secret abgelaufen oder widerrufen (z. B. nach `clasp logout` am PC). Erneuern siehe §4.
