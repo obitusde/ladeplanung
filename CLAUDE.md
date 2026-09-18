@@ -1,6 +1,6 @@
 # Ladeplanung Cupra Born — Projektstand für Claude
 
-**Stand 16.09.2026** · App (`index.html`) v0.15.0 · Apps Script (`apps-script/Code.js`) v0.15.0 · Web-App-Deployment @7 · Veröffentlichen per GitHub Action (`.github/workflows/apps-script.yml`) v1.0.0
+**Stand 18.09.2026** · App (`index.html`) v0.16.0 · Apps Script (`apps-script/Code.js`) v0.16.0 · Veröffentlichen per GitHub Action (`.github/workflows/apps-script.yml`) v1.0.0
 Ursprünglicher Auftrag: [`docs/Umsetzungsbrief_v5.0.md`](docs/Umsetzungsbrief_v5.0.md). Diese Datei beschreibt den **tatsächlichen** Stand inklusive aller späteren Entscheidungen und hat Vorrang vor dem Brief.
 
 ---
@@ -21,7 +21,7 @@ Ursprünglicher Auftrag: [`docs/Umsetzungsbrief_v5.0.md`](docs/Umsetzungsbrief_v
 
 PWA für lange Fahrten mit dem **Cupra Born 58 kWh (2021)**. Zeigt die Ladepunkte **voraus** auf einer Stammstrecke: Entfernung entlang der Straße, Anstieg, **Akku-Prognose**, Leistung, Lage (Straße, Raststätte, „x km abseits"), Notiz. Keine Navigation, kein Belegt-Status, keine Preise – Christof entscheidet selbst.
 
-Stammstrecken (je Hin/Rück): `neuenrade` (Morges–Neuenrade), `ingolstadt` (Morges–Ingolstadt), `savona_simplon`, `savona_bernhard`.
+Stammstrecken (je Hin/Rück): `neuenrade` (Morges–Neuenrade), `ingolstadt` (Ingolstadt über München, ohne Via), `ingolstadt_augsburg` (Via B 17 Hurlach `48.13813,10.83188` + B 300 Aichach `48.52578,11.23978` → A 8 Friedberg-Derching), `savona_simplon`, `savona_bernhard`. Ulm-Variante bewusst nicht.
 
 App: **https://obitusde.github.io/ladeplanung/** (auf dem Pixel installiert).
 
@@ -124,7 +124,7 @@ Christof pflegt über die App; Rechenschritte stößt er über **Wartung & Statu
 
 ## 7. Datenformate
 
-**Blatt `Ladepunkte`:** `id | Maps-Link | Name | Adresse | Lat | Lon | Betreiber | kW | Anzahl | Richtung (hin/rueck/beide) | Favorit (ja) | Notiz | Status`. Das Script schreibt nur leere Felder; `Notiz` nur beim Zusammenführen von Dubletten. `Richtung` bezieht sich auf die Route: `hin` = nur auf der Fahrt ab Morges erreichbar.
+**Blatt `Ladepunkte`:** `id | Maps-Link | Name | Adresse | Lat | Lon | Betreiber | kW | Anzahl | Richtung (hin/rueck/beide) | Favorit (ja) | Notiz | Status | Straße`. `Straße` pflegt Christof selbst (auch im Formular): „A 8", mehrere „A 96, A 7" (Titel zeigt die, auf der die Route dort fährt), „–" = keine; leer → Straße der Route aus den ORS-Namen (`waehleStrasse_`). Spalte wird bei Bedarf angelegt (`spalteSicherstellen_`). Das Script schreibt nur leere Felder; `Notiz` nur beim Zusammenführen von Dubletten. `Richtung` bezieht sich auf die Route: `hin` = nur auf der Fahrt ab Morges erreichbar.
 
 **Blatt `Routen`:** `id | Name | Start | Via (;-getrennt) | Ziel | Länge km | Fahrzeit | Stand`. Start/Via/Ziel als `lat,lon` (als Text schreiben, deutsches Gebietsschema!) oder Maps-Link.
 
@@ -132,14 +132,14 @@ Christof pflegt über die App; Rechenschritte stößt er über **Wartung & Statu
 
 **Blatt `Gelöscht`:** gelöschte Ladepunkte (Zeile + „gelöscht am"); ihre ids werden nie neu vergeben.
 
-**`routes.json` (1.1):**
+**`routes.json` (1.2):**
 ```json
-{ "version": "1.1", "erzeugt": "ISO",
-  "routen": [{ "id", "name", "laenge_km", "hm_hin", "hm_rueck", "linie": [[lat, lon, km, hm_hin_kum, hm_rueck_kum], …] }],
-  "punkte": [{ "id", "name", "adresse", "lat", "lon", "betreiber", "kw", "anzahl", "richtung", "favorit", "notiz", "link",
+{ "version": "1.2", "erzeugt": "ISO",
+  "routen": [{ "id", "name", "laenge_km", "hm_hin", "hm_rueck", "dauer_s", "hoechster": [km, m], "linie": [[lat, lon, km, hm_hin_kum, hm_rueck_kum], …] }],
+  "punkte": [{ "id", "name", "adresse", "lat", "lon", "betreiber", "kw", "anzahl", "richtung", "favorit", "notiz", "link", "strasse",
                "zuordnung": [{ "route", "km", "hm_hin", "hm_rueck", "quer_km", "strasse", "raststaette" }] }] }
 ```
-**`linien/<id>.json`:** `{ version, id, name, eingabe ("Start|Via|Ziel"), erzeugt, ors_distanz_km, ors_dauer_s, laenge_km, hm_hin, hm_rueck, stuetzpunkte_voll, format: 3, strassen: [[km_ab, name]], linie }`.
+**`linien/<id>.json`:** `{ version, id, name, eingabe ("Start|Via|Ziel"), erzeugt, ors_distanz_km, ors_dauer_s, laenge_km, hm_hin, hm_rueck, stuetzpunkte_voll, format: 4, strassen: [[km_ab, name]], hoechster: [km, m], linie }`.
 **`modell.json`:** `{ version, fahrzeug {kapazitaet_kwh 58, masse_kg 1811, fahrer_kg 80}, physik {cda 0.63, crr 0.008, eta 0.78, rekuperation 0.6, hilfsleistung_kw 0.3, heiz_kw_pro_grad 0.14, heiz_schwelle_c 18}, korrektur {gesamt, fahrt, hoehe, heizung}, erzeugt, kalibrierung {fahrten, abweichung_prozent, stand, methode, quellen {Quelle: {n, abweichung, tendenz}}} }`.
 
 **App-Zustand** `localStorage['ladeplanung.v1']`: `route, richtung, sim {aktiv, lat, lon, label}, einst {geschwindigkeit 120, zusatzgewicht 0, temperatur '' (=auto), reserve 10}, wetter {temp, zeit, lat, lon}, fahrt {start_soc, start_zeit, start_lat, start_lon, route, route_name, richtung, start {km, hm_hin, hm_rueck, q}}, ankunft {url, zeit}`.
@@ -150,7 +150,7 @@ Christof pflegt über die App; Rechenschritte stößt er über **Wartung & Statu
 
 **Streckenkilometer-Modell** (Brief §2, unverändert): Position äquirektangulär auf die Linie projizieren (`x = lon·111,320·cos(lat0)`, `y = lat·110,574`) → Streckenkilometer `s`, Querabstand `q`. Distanz zu P: hin `km(P) − s`, rück `s − km(P)`; ≤ 1 km ausblenden. Anstieg aus den kumulierten Werten der Fahrtrichtung. **q > 10 km → Luftlinie** ohne Höhen und ohne Prognose.
 
-**Routen berechnen** (`berechneRouten`): ORS `driving-car/geojson`, `elevation: true`, `instructions: true` (nur für Straßennamen), Fangradius 2000 m. Höhen: **gleitender Median über 2 km im 100-m-Raster, dann 10-m-Hysterese** (sonst 2–3-fach überhöht: Rheinebene +965 statt +53 m, Gondoschlucht). Ausdünnung: Punkt behalten, wenn > 250 m oder > 10 m Höhe seit dem letzten. Übersprungen, wenn `EINGABE_<id>` in den Script Properties = `Start|Via|Ziel#f<LINIEN_FORMAT>`. **`LINIEN_FORMAT` (derzeit 3) erhöhen erzwingt Neuberechnung** aller Routen.
+**Routen berechnen** (`berechneRouten`): ORS `driving-car/geojson`, `elevation: true`, `instructions: true` (nur für Straßennamen), Fangradius 2000 m. Höhen: **gleitender Median über 2 km im 100-m-Raster, dann 10-m-Hysterese** (sonst 2–3-fach überhöht: Rheinebene +965 statt +53 m, Gondoschlucht). Ausdünnung: Punkt behalten, wenn > 250 m oder > 10 m Höhe seit dem letzten. Übersprungen, wenn `EINGABE_<id>` in den Script Properties = `Start|Via|Ziel#f<LINIEN_FORMAT>`. **`LINIEN_FORMAT` (derzeit 4) erhöhen erzwingt Neuberechnung** aller Routen.
 
 **Export** (`exportJson`): Zuordnung bis **10 km** Querabstand, mit `quer_km`, `strasse` (`kurzStrasse_`: Autobahnnummer, sonst erster Teil vor dem Komma; unbenannte Stücke → nächste benannte Straße bis 3 km), `raststaette` (q ≤ 0,5 km und Richtung einseitig oder Muster „Raststätte/Rasthof/Autobahn/…"). Leerer Betreiber → aus dem Namen (`BETREIBER_MUSTER`). Status „keiner Route zugeordnet (> 10 km)" im Sheet.
 
@@ -166,7 +166,7 @@ kWh     = max(0, gesamt·(k_fahrt·fahrt + k_hoehe·hoehe + k_heizung·heiz));  
 ```
 Startwerte abgeglichen mit EV Database (Born 150 kW 58 kWh, 110 km/h): **18,1 kWh/100 km bei 23 °C**, **23,2 bei −10 °C mit Heizung**.
 
-**Prognose in der App:** Bedarf je Station = Strecke ab Position (+ `quer_km` als Umweg) mit Einstellungen Tempo/Zusatzgewicht/Temperatur. Temperatur: Eingabe, sonst Open-Meteo am Standort (Mittel aus jetzt und +3 h, max. 30 min/30 km alt), sonst 15 °C. Mit **„Losfahren"** (Akku %) → „jetzt ≈" = Start − Bedarf(Start→Position), je Station „Ankunft ≈ x %", **rot unter der Reserve** (negative Werte werden angezeigt). **„Angekommen"** öffnet `?seite=kalibrieren` mit vorbefüllten Werten.
+**Prognose in der App:** Bedarf je Station = Strecke ab Position (+ `quer_km` als Umweg) mit Einstellungen Tempo/Zusatzgewicht/Temperatur. Temperatur: Eingabe, sonst Open-Meteo am Standort (Mittel aus jetzt und +3 h, max. 30 min/30 km alt), sonst 15 °C. Mit **„Losfahren"** (Akku %) → „jetzt ≈" = Start − Bedarf(Start→Position), je Station „Ankunft ≈ x %", **rot unter der Reserve**, unter 0 „nicht erreichbar (fehlen ≈ x %)"; Marke **„letzte vor Reserve"**. Je Station „danach x km bis zur nächsten" bzw. „letzte Station, danach x km bis zum Ziel". Fußzeile: Ziel-km und „braucht ≈" bzw. nach Los „am Ziel ≈". Höhenmeter nur in den Details (v0.16.0). **„Angekommen"** öffnet `?seite=kalibrieren` mit vorbefüllten Werten.
 
 **Kalibrierung** (`kalibriereZeilen_` rein rechnerisch → `kalibriere_`), nach jeder gespeicherten Fahrt/jedem Vergleichswert und per Wartung:
 1. Gewicht: gemessen mit Bordcomputer-Tempo 1, ohne 0,5; ABRP/My CUPRA mit Fahrzeit 0,3, **ohne Fahrzeit 0** (nicht verwendet). Gültig ab 10 km und gesunkenem Akku; `verwenden = nein` respektieren.
@@ -214,8 +214,9 @@ Weiter gültig aus dem Brief: keine Google Directions/Distance Matrix/Places API
 
 - **Nach Brief: erst eine echte Fahrt**, dann über Weiteres entscheiden. Dabei „Losfahren"/„Angekommen" mit Bordcomputer-Ø-Tempo nutzen → erste gemessene Kalibrierwerte (Gewicht 1).
 - Heizungsfaktor braucht Werte mit ≥ 10 °C Temperaturunterschied (Winterfahrten).
-- Negative Ankunft („≈ −6 %") evtl. als „nicht erreichbar" anzeigen – Christof hat dazu noch nichts gesagt.
-- Straßennamen fehlen, wo ORS keine liefert (z. B. Kißlegg, Lindau).
+- **Nach v0.16.0 zu tun (Christof):** Wartung → „Routen berechnen und veröffentlichen" (übernimmt die neue Augsburg-Route, Format 4 → alle Routen neu; bei „Zeitlimit" nochmal tippen). Autobahnen in Spalte „Straße" eintragen.
+- **Routeninfo-Seite** (zurückgestellt, 18.09.2026): Verlauf der Strecke (Autobahnen mit km, Orte), Länge/Fahrzeit/hm/höchster Punkt, Energie ganze Strecke + Ladestopps, „du bist auf A 96 bei km …", Hinweise Vignette/Maut von Hand (CH Vignette; A14 Hohenems–Hörbranz vignettenfrei; IT Maut; Tunnelgebühr Gr. St. Bernhard). `dauer_s`/`hoechster` stehen schon in routes.json. Straßen-Verlauf aus ORS-Namen ist lückenhaft; OSM-Overpass liefert ihn sauber (getestet), geht aber nicht aus Apps Script (s. §12) → bräuchte GitHub Action mit Node.
+- Straßennamen der Route fehlen, wo ORS keine liefert (A 96, A 45) – im Titel hilft die Spalte „Straße".
 - A5/A67 bei Neuenrade: Route läuft über A5, Raststätten an der A67 mit ~4 km Querabstand (akzeptiert durch 10-km-Korridor).
 - **OBD-Adapter Veepeak OBDCheck BLE+**: Web Bluetooth geht auf dem Pixel. Community-PIDs (MEB, unbestätigt): SoC `22028C` (Header `ATSP7;ATAT1;ATST96`), Kilometerstand `2202BD` (Header `ATSHFC007B`, `ATCRA17FE007B`). Idee: Live-Akkustand statt Eingabe bei „Losfahren"/„Angekommen" – ausdrücklich **ohne Daueraufzeichnung**. Erst mit einer kleinen Testseite prüfen.
 - Aus dem Brief noch nicht gebaut: Stufe 2 (geteilte Google-Maps-Routen, „Route ab hier"), Stufe 3 (Registerdaten BNetzA/ich-tanke-strom.ch), Stufe 4 (Filter, Service Worker, onChange-Trigger).
@@ -238,4 +239,5 @@ Weiter gültig aus dem Brief: keine Google Directions/Distance Matrix/Places API
 - Google Maps teilt seit Sept. 2026 teils Links **ohne Koordinaten** (nur Name + Adresse + Orts-ID `0x…:0x…`); die Maps-Seite liefert ohne Browser auch keine → Geokodierung der Adresse.
 - Die Action startet nur bei Änderungen unter `apps-script/` (Pfadfilter) – sonst würde jede Kalibrierung/jeder Export des Scripts neu veröffentlichen.
 - Jede Veröffentlichung legt eine neue Apps-Script-Version an; Google begrenzt die Anzahl je Projekt (vermutlich 200, nicht geprüft). Daher nicht für Kleinigkeiten mehrfach hintereinander veröffentlichen.
+- **Overpass (OpenStreetMap) lehnt Apps Script ab**: HTTP 406 bei der Kennung „Google-Apps-Script", UA nicht änderbar. Von PC/Action mit eigener Kennung geht es; große Abfragen in kleinen Stücken (≈ 8 × 20-km-Rechtecke) mit Pausen, sonst „Dispatcher timeout"/Drosselung.
 - Action rot bei „clasp show-authorized-user"/`invalid_grant` → Secret abgelaufen oder widerrufen (z. B. nach `clasp logout` am PC). Erneuern siehe §4.

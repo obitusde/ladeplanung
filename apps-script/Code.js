@@ -1,6 +1,9 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.16.0 — Ingolstadt als zwei Routen (über München / über Augsburg); Spalte „Straße" je Ladepunkt (von Hand,
+ *                  Vorrang im Titel; mehrere mit Komma → die, auf der die Route fährt); Linienformat 4 mit höchstem Punkt;
+ *                  Export 1.2 mit Fahrzeit; „Routen berechnen" übernimmt vorher die Routen-Vorgaben.
  * Version 0.15.1 — Test: Veröffentlichen vom Handy (keine inhaltliche Änderung).
  * Version 0.15.0 — Maps-Links im neueren Teilen-Format ohne Koordinaten: Adresse aus dem Link wird geokodiert
  *                  (mindestens straßengenau), Status „Koordinaten aus Adresse".
@@ -28,7 +31,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.15.1';
+const VERSION = '0.16.0';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -48,7 +51,7 @@ const NAEHE_WARNUNG_M = 300;
 // Sammelt Meldungen, während die Wartungsseite Schritte ausführt (sonst null).
 let MELDUNGS_PUFFER = null;
 
-const SPALTEN_PUNKTE = ['id', 'Maps-Link', 'Name', 'Adresse', 'Lat', 'Lon', 'Betreiber', 'kW', 'Anzahl', 'Richtung', 'Favorit', 'Notiz', 'Status'];
+const SPALTEN_PUNKTE = ['id', 'Maps-Link', 'Name', 'Adresse', 'Lat', 'Lon', 'Betreiber', 'kW', 'Anzahl', 'Richtung', 'Favorit', 'Notiz', 'Status', 'Straße'];
 const SPALTEN_ROUTEN = ['id', 'Name', 'Start', 'Via', 'Ziel', 'Länge km', 'Fahrzeit', 'Stand'];
 
 const RICHTUNGEN = ['hin', 'rueck', 'beide'];
@@ -63,13 +66,20 @@ const VIA_SIMPLON = '46.245838,8.02474';
 // damit der Router weder den Pass noch den Mont-Blanc-Tunnel wählt.
 const VIA_GR_ST_BERNHARD = '45.85658,7.16605';
 const ZIEL_SAVONA = '44.3090500,8.4771500';
+// Ingolstadt über Augsburg (Christof, 18.09.2026), geprüft am 18.09.2026 mit OSRM (0 m neben der Straße):
+// B 17 bei Hurlach (erzwingt Landsberg → Augsburg) und B 300 bei Aichach (A 8 bei Friedberg-Derching, dann B 300).
+const VIA_B17 = '48.13813,10.83188';
+const VIA_B300 = '48.52578,11.23978';
+const ZIEL_INGOLSTADT = '48.7650800,11.4237200';
 
 // Zeilen für das Blatt „Routen": id, Name, Start, Via, Ziel.
-// Zwei Savona-Varianten auf Christofs Wunsch (15.09.2026) — bewusste Abweichung vom Brief
+// Zwei Savona- und zwei Ingolstadt-Varianten auf Christofs Wunsch (15. und 18.09.2026) — bewusste Abweichung vom Brief
 // („eine Route pro Strecke"); die Mont-Blanc-Route ist gestrichen.
 const STAMMSTRECKEN = [
   ['neuenrade', 'Morges – Neuenrade', START_MORGES, '', '51.2847342,7.7950369'],
-  ['ingolstadt', 'Morges – Ingolstadt', START_MORGES, '', '48.7650800,11.4237200'],
+  // Ohne Via wählt OpenRouteService den Weg über München (A 96 – A 99 – A 9); die id bleibt für bestehende Fahrten.
+  ['ingolstadt', 'Morges – Ingolstadt (München)', START_MORGES, '', ZIEL_INGOLSTADT],
+  ['ingolstadt_augsburg', 'Morges – Ingolstadt (Augsburg)', START_MORGES, VIA_B17 + ';' + VIA_B300, ZIEL_INGOLSTADT],
   ['savona_simplon', 'Morges – Savona (Simplon)', START_MORGES, VIA_SIMPLON, ZIEL_SAVONA],
   ['savona_bernhard', 'Morges – Savona (Gr. St. Bernhard)', START_MORGES, VIA_GR_ST_BERNHARD, ZIEL_SAVONA],
 ];
@@ -133,7 +143,7 @@ function meldungsUi_() {
 // ---------------------------------------------------------------------------
 
 const APP_URL = 'https://obitusde.github.io/ladeplanung/';
-const FORMULAR_FELDER = ['Name', 'Betreiber', 'kW', 'Anzahl', 'Richtung', 'Favorit', 'Notiz'];
+const FORMULAR_FELDER = ['Name', 'Betreiber', 'kW', 'Anzahl', 'Richtung', 'Favorit', 'Notiz', 'Straße'];
 
 function doGet(e) {
   const p = (e && e.parameter) || {};
@@ -323,8 +333,8 @@ function wartungAusfuehren(aktion) {
   const ablaeufe = {
     export: [exportJson],
     links: [aufloeseLinks, exportJson],
-    routen: [berechneRouten, exportJson],
-    routen_neu: [berechneRoutenNeu, exportJson],
+    routen: [routenVorgabenUebernehmen, berechneRouten, exportJson],
+    routen_neu: [routenVorgabenUebernehmen, berechneRoutenNeu, exportJson],
     bereinigen_vorschau: [function () { bereinigeIntern_('vorschau'); }],
     bereinigen: [function () { bereinigeIntern_('ausfuehren'); }, exportJson],
     kalibrieren: [function () {
@@ -949,7 +959,18 @@ function kalibriereUndVeroeffentliche_() {
 function punkteBlattMitIndex_() {
   const blatt = tabelle_().getSheetByName(BLATT_PUNKTE);
   if (!blatt) throw new Error('Blatt „' + BLATT_PUNKTE + '" fehlt');
+  spalteSicherstellen_(blatt, 'Straße');
   return { blatt: blatt, sp: spaltenIndex_(blatt) };
+}
+
+/** Hängt eine fehlende Spalte mit Kopf rechts an (z. B. „Straße" ab v0.16.0). */
+function spalteSicherstellen_(blatt, name) {
+  const breite = blatt.getLastColumn();
+  const koepfe = blatt.getRange(1, 1, 1, breite).getValues()[0];
+  if (koepfe.indexOf(name) !== -1) return;
+  if (blatt.getMaxColumns() <= breite) blatt.insertColumnsAfter(breite, 1);
+  blatt.getRange(1, breite + 1).setValue(name).setFontWeight('bold');
+  SpreadsheetApp.flush();
 }
 
 function findeZeile_(blatt, sp, id) {
@@ -969,6 +990,7 @@ function liesPunkt_(id) {
     id: id, link: String(f('Maps-Link')), Adresse: String(f('Adresse')), Name: String(f('Name')),
     Betreiber: String(f('Betreiber')), kW: f('kW') === '' ? '' : Number(f('kW')), Anzahl: f('Anzahl') === '' ? '' : Number(f('Anzahl')),
     Richtung: String(f('Richtung')) || 'beide', Favorit: String(f('Favorit')) === 'ja', Notiz: String(f('Notiz')),
+    'Straße': String(f('Straße')),
   };
 }
 
@@ -1002,6 +1024,7 @@ function normalisiereFormular_(d) {
     Richtung: RICHTUNGEN.indexOf(d.Richtung) !== -1 ? d.Richtung : 'beide',
     Favorit: d.Favorit === true || d.Favorit === 'ja' ? 'ja' : '',
     Notiz: text(d.Notiz, 500),
+    'Straße': text(d['Straße'], 40),
   };
 }
 
@@ -1194,7 +1217,7 @@ function importiereAltblatt_(ss, punkte) {
       const richtungText = String(w[2]).trim();
       const richtung = richtungAusAltText_(richtungText);
       const status = (richtungText && richtung === 'beide') ? 'Richtung unklar: ' + richtungText : '';
-      zeilen.push([id, link, '', '', '', '', '', '', '', richtung, '', String(w[1]).trim(), status]);
+      zeilen.push([id, link, '', '', '', '', '', '', '', richtung, '', String(w[1]).trim(), status, '']);
     });
 
     if (zeilen.length === 0) continue;
@@ -1570,7 +1593,7 @@ const ERDRADIUS_KM = 6371.0088;
 const AUSDUENNUNG_KM = 0.25;
 const AUSDUENNUNG_HM = 10;
 const FANGRADIUS_M = 2000; // so weit darf ORS einen Punkt zur nächsten Straße verschieben
-const MAX_START_NEUE_ROUTE_MS = 4 * 60 * 1000; // danach keine neue Route mehr beginnen
+const MAX_START_NEUE_ROUTE_MS = 3 * 60 * 1000; // danach keine neue Route mehr beginnen (Verlauf und Export brauchen noch Zeit)
 
 const GITHUB_REPO = 'obitusde/ladeplanung';
 const GITHUB_BRANCH = 'main';
@@ -1633,6 +1656,7 @@ function berechneRoutenIntern_(erzwingen) {
       const voll = kumuliere_(route.koordinaten);
       const linie = duenneAus_(voll);
       const letzter = linie[linie.length - 1];
+      const strassen = strassenAbschnitte_(route.schritte, voll);
 
       const datei = {
         version: VERSION,
@@ -1647,7 +1671,8 @@ function berechneRoutenIntern_(erzwingen) {
         hm_rueck: letzter[4],
         stuetzpunkte_voll: voll.length,
         format: LINIEN_FORMAT,
-        strassen: strassenAbschnitte_(route.schritte, voll),
+        strassen: strassen,
+        hoechster: hoechsterPunkt_(voll),
         linie: linie,
       };
       githubSchreibe_(LINIEN_ORDNER + '/' + id + '.json', JSON.stringify(datei), 'Linie ' + id + ' berechnet (Apps Script v' + VERSION + ')');
@@ -1772,7 +1797,8 @@ const HOEHEN_SCHWELLE_M = 10;
 const GLAETTUNG_FENSTER_KM = 2;
 const GLAETTUNG_RASTER_KM = 0.1;
 // Bei jeder Änderung an Rechnung oder Linienformat erhöhen — erzwingt Neuberechnung der Routen.
-const LINIEN_FORMAT = 3;
+// 4 (18.09.2026): zusätzlich hoechster (höchster Punkt).
+const LINIEN_FORMAT = 4;
 
 /**
  * [lon, lat, höhe] in voller Auflösung → [lat, lon, km, anstieg_hin, anstieg_rueck, höhe_geglättet].
@@ -1857,6 +1883,34 @@ function duenneAus_(voll) {
   });
 }
 
+/** Höchster Punkt der geglätteten Linie: [km, Höhe m] — für die Routeninfo in der App. */
+function hoechsterPunkt_(voll) {
+  let best = null;
+  voll.forEach(function (p) { if (best === null || p[5] > best[5]) best = p; });
+  return best ? [runde_(best[2], 1), Math.round(best[5])] : null;
+}
+
+// ---------------------------------------------------------------------------
+// Straßen (Christof, 18.09.2026): Die Straßennamen von OpenRouteService fehlen oft auf langen Stücken
+// (A 96, A 45), weil sie nur an Abbiegungen stehen. Daher Spalte „Straße" je Station, von Hand gepflegt.
+// Automatisch aus OpenStreetMap ging nicht: Overpass lehnt Anfragen aus Apps Script ab (HTTP 406).
+// ---------------------------------------------------------------------------
+
+const STRASSE_KEINE = '–';             // im Blatt: bewusst keine Straße
+
+/** Straße für den Titel: die der Route an dieser Stelle, wenn sie bei der Station liegt; sonst die erste der Station. */
+function waehleStrasse_(stationsStrassen, routenStrasse) {
+  const liste = String(stationsStrassen || '').split(',').map(function (x) { return x.trim(); })
+    .filter(function (x) { return x !== '' && x !== STRASSE_KEINE && x !== '-'; });
+  if (routenStrasse && liste.indexOf(routenStrasse) !== -1) return routenStrasse;
+  return liste[0] || routenStrasse || '';
+}
+
+/** Straße für eine Zuordnung: Straße(n) der Station abgestimmt mit der Straße der Route an dieser Stelle. */
+function strasseFuerZuordnung_(stationsStrassen, route, km) {
+  return waehleStrasse_(stationsStrassen, strasseBeiKm_(route.strassen, km));
+}
+
 // ---------------------------------------------------------------------------
 // exportJson() — ordnet Punkte den Routen zu (Querabstand ≤ 5 km), baut
 // routes.json und lädt sie ins Repo. Reine Rechenarbeit, kein Routing-Aufruf.
@@ -1902,12 +1956,15 @@ function exportJson() {
         const eingabe = [spR.Start, spR.Via, spR.Ziel].map(function (s) { return String(z[s - 1]).trim(); }).join('|');
         if (datei.eingabe !== eingabe) meldungen.push(id + ': Start/Via/Ziel geändert, Linie veraltet — bitte Routen berechnen');
         if (datei.format !== LINIEN_FORMAT) meldungen.push(id + ': Linie im alten Format — bitte Routen berechnen');
-        routen.push({ id: id, name: String(z[spR.Name - 1]).trim() || datei.name, linie: datei.linie, strassen: datei.strassen || [] });
+        routen.push({
+          id: id, name: String(z[spR.Name - 1]).trim() || datei.name, linie: datei.linie, strassen: datei.strassen || [],
+          hoechster: datei.hoechster || null, dauer_s: datei.ors_dauer_s || null,
+        });
       });
     }
     if (routen.length === 0) throw new Error('keine berechnete Route vorhanden');
 
-    // Punkte: alle Zeilen mit Koordinaten.
+    spalteSicherstellen_(punkteBlatt, 'Straße');
     const spP = spaltenIndex_(punkteBlatt);
     const punkte = [];
     const statusZeilen = [];
@@ -1928,6 +1985,7 @@ function exportJson() {
           favorit: String(feld('Favorit')).trim().toLowerCase() === 'ja',
           notiz: String(feld('Notiz')).trim(),
           link: String(feld('Maps-Link')).trim(), // für „In Google Maps ansehen" (öffnet die genaue Ortskarte)
+          strasse: String(feld('Straße') || '').trim(), // „A 96, A 7" oder „–" (keine); Auswahl je Route in baueExport_
         });
         statusZeilen.push({ zeile: i + 2, status: String(feld('Status')) });
       });
@@ -1995,7 +2053,8 @@ function baueExport_(routen, punkte, zeitstempel) {
         zuordnung.push({
           route: v.r.id, km: runde_(pr.km, 2), hm_hin: Math.round(pr.hm_hin), hm_rueck: Math.round(pr.hm_rueck),
           quer_km: runde_(pr.q, 1),
-          strasse: strasseBeiKm_(v.r.strassen, pr.km),
+          // Straße der Station (Spalte „Straße") vor der Straße der Route an dieser Stelle
+          strasse: strasseFuerZuordnung_(p.strasse, v.r, pr.km),
           raststaette: pr.q <= RASTSTAETTE_MAX_KM && istRaststaette_(p),
         });
       }
@@ -2009,11 +2068,15 @@ function baueExport_(routen, punkte, zeitstempel) {
   });
 
   return {
-    version: '1.1', // 1.1: zuordnung um quer_km, strasse, raststaette ergänzt
+    version: '1.2', // 1.1: zuordnung um quer_km, strasse, raststaette; 1.2: routen um dauer_s, hoechster; punkte um strasse
     erzeugt: zeitstempel,
     routen: routen.map(function (r) {
       const letzter = r.linie[r.linie.length - 1];
-      return { id: r.id, name: r.name, laenge_km: letzter[2], hm_hin: letzter[3], hm_rueck: letzter[4], linie: r.linie };
+      return {
+        id: r.id, name: r.name, laenge_km: letzter[2], hm_hin: letzter[3], hm_rueck: letzter[4],
+        dauer_s: r.dauer_s || null, hoechster: r.hoechster || null,
+        linie: r.linie,
+      };
     }),
     punkte: punkteMitZuordnung,
   };

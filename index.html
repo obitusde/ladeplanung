@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.16.0 — Liste ohne Höhenmeter (nur noch in den Details); „nicht erreichbar" statt negativer Ankunft;
+                   Hinweis „letzte vor Reserve"; je Station die Lücke bis zur nächsten; Akku am Ziel in der Fußzeile.
   Version 0.15.0 — Hauptansicht kompakter: Route größer, Akku beim Start direkt oben mit „▶ Los", Akku eindeutig
                    („braucht ≈" / „Rest bei Ankunft ≈"), Anzahl × kW, Notiz hinterlegt, Fußzeile ohne Datenstand.
   Version 0.14.0 — Knopf „Vergleichswert eintragen (ABRP / My CUPRA)" in den Details.
@@ -132,6 +134,8 @@
     .eintrag .name { font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
     .eintrag .akku { font-weight: 700; font-variant-numeric: tabular-nums; }
     .eintrag .meta { color: var(--text); font-variant-numeric: tabular-nums; }
+    .eintrag .luecke { color: var(--leise); font-size: 14px; }
+    .eintrag .marke { justify-self: start; margin-top: 2px; padding: 0 8px; border-radius: 6px; background: var(--akzent); color: var(--akzent-text); font-weight: 700; font-size: 14px; }
     .eintrag .notiz {
       justify-self: start; margin-top: 3px; padding: 0 8px; border-radius: 6px;
       background: var(--flaeche); border: 1px solid var(--linie); overflow-wrap: anywhere;
@@ -248,11 +252,14 @@
     <h3>Was die Angaben bedeuten</h3>
     <ul>
       <li><b>Große Zahl:</b> Kilometer entlang der Route bis auf Höhe des Ladepunkts. Liegt er abseits, kommt der Weg von der Ausfahrt noch dazu („3,2 km abseits").</li>
-      <li><b>braucht ≈ 23 %</b>: so viel Akku kostet der Weg bis dorthin. <b>Rest bei Ankunft ≈ 34 %</b>: so viel ist dort noch übrig – nur nach „▶ Los". <span class="rot"><b>Rot</b></span> = Rest unter deiner Reserve.</li>
+      <li><b>braucht ≈ 23 %</b>: so viel Akku kostet der Weg bis dorthin. <b>Rest bei Ankunft ≈ 34 %</b>: so viel ist dort noch übrig – nur nach „▶ Los". <span class="rot"><b>Rot</b></span> = Rest unter deiner Reserve, <b>nicht erreichbar</b> = Akku reicht nicht bis dorthin.</li>
+      <li><b>letzte vor Reserve</b>: die letzte Station, die du noch über deiner Reserve erreichst.</li>
+      <li><b>danach 38 km bis zur nächsten</b>: Abstand zur nächsten Station voraus – so siehst du lange Lücken.</li>
       <li><b>4 × 150 kW:</b> Anzahl Ladepunkte × Leistung, sofern eingetragen.</li>
+      <li><b>Unten:</b> Kilometer bis zum Ziel und Akku dafür („braucht", nach „▶ Los" „am Ziel ≈").</li>
       <li><b>Hinterlegter Text</b> („Raststätte", „McDo"): deine Notiz.</li>
-      <li><b>+ hm:</b> Summe der Anstiege bis dorthin, geglättet.</li>
-      <li><b>(A 5):</b> Straße, an der der Punkt liegt. <b>Raststätte:</b> direkt an der Autobahn, oft nur in einer Fahrtrichtung erreichbar.</li>
+      <li><b>+ hm</b> (in den Details): Summe der Anstiege bis dorthin, geglättet.</li>
+      <li><b>(A 5):</b> Straße, an der der Punkt liegt – aus der Spalte „Straße" (Bearbeiten), sonst aus der Route. <b>Raststätte:</b> direkt an der Autobahn, oft nur in einer Fahrtrichtung erreichbar.</li>
       <li><b>★</b> Favorit.</li>
     </ul>
 
@@ -323,7 +330,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.15.0';
+    const APP_VERSION = '0.16.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -625,12 +632,12 @@
     function akkuText(pg) {
       if (!pg) return '';
       if (pg.ankunft === null) return 'braucht ≈ ' + Math.round(pg.prozent) + ' %';
+      if (pg.ankunft < 0) return 'nicht erreichbar (fehlen ≈ ' + Math.round(-pg.ankunft) + ' %)';
       return 'Rest bei Ankunft ≈ ' + Math.round(pg.ankunft) + ' %';
     }
 
     function metaZeile(e) {
       const teile = [];
-      teile.push(e.hm === null ? 'keine Höhendaten' : '+ ' + e.hm + ' hm');
       const p = e.punkt;
       if (p.kw) teile.push((p.anzahl ? p.anzahl + ' × ' : '') + p.kw + ' kW');
       else if (p.anzahl) teile.push(p.anzahl + ' Ladepunkte');
@@ -682,9 +689,14 @@
       if (erg.eintraege.length === 0) {
         liste.append(el('p', 'leer', 'Keine Ladepunkte voraus.'));
       }
-      for (const e of erg.eintraege) {
-        const pg = erg.modus === 'strecke' ? prognose(e, erg.pos, jetzt) : null;
-        e.prognose = pg;
+      // Prognosen vorab: „letzte vor Reserve" = letzte Station über der Reserve, wenn danach eine darunter liegt
+      for (const e of erg.eintraege) e.prognose = erg.modus === 'strecke' ? prognose(e, erg.pos, jetzt) : null;
+      let letzteVorReserve = null;
+      if (erg.eintraege.some(e => e.prognose && e.prognose.unerreichbar)) {
+        for (const e of erg.eintraege) if (e.prognose && e.prognose.ankunft !== null && !e.prognose.unerreichbar) letzteVorReserve = e;
+      }
+      erg.eintraege.forEach((e, i) => {
+        const pg = e.prognose;
         const zeile = el('button', 'eintrag' + (e.punkt.favorit ? ' favorit' : ''));
         zeile.type = 'button';
         const km = el('span', 'km' + (pg && pg.unerreichbar ? ' rot' : ''), fmtKm(e.km));
@@ -697,10 +709,18 @@
         if (lage) meta.append(el('span', 'lage' + (e.z.raststaette && !(e.z.quer_km > 1) ? ' rast' : ''), lage), ' · ');
         meta.append(metaZeile(e));
         zeile.append(meta);
+        if (erg.modus === 'strecke') {
+          // Lücke bis zur nächsten Station weiter vorne (gleicher Standort, z. B. beide Raststätten-Seiten, zählt nicht)
+          const naechste = erg.eintraege.slice(i + 1).find(n => n.km - e.km > AUSBLENDEN_KM);
+          const luecke = naechste ? 'danach ' + fmtKm(naechste.km - e.km) + ' km bis zur nächsten'
+            : erg.rest !== null ? 'letzte Station, danach ' + fmtKm(Math.max(0, erg.rest - e.km)) + ' km bis zum Ziel' : '';
+          if (luecke) zeile.append(el('span', 'luecke', luecke));
+        }
+        if (e === letzteVorReserve) zeile.append(el('span', 'marke', 'letzte vor Reserve'));
         if (e.punkt.notiz) zeile.append(el('span', 'notiz', e.punkt.notiz));
         zeile.addEventListener('click', () => zeigeDetail(e, erg.modus));
         liste.append(zeile);
-      }
+      });
 
       renderFahrt(route, erg);
       renderFuss(route, erg, pos);
@@ -750,6 +770,19 @@
       const teil = (label, wert) => { const s = el('span', '', label + ' '); s.append(el('b', '', wert)); fuss.append(s); };
 
       teil('Ziel', erg && erg.rest !== null ? fmtKm(Math.max(0, erg.rest)) + ' km' : '–');
+      // Akku am Ziel: mit „Los" der Rest bei Ankunft, sonst der Bedarf bis dorthin
+      if (erg && erg.modus === 'strecke') {
+        const l = route.linie, ende = zustand.richtung === 'hin' ? l[l.length - 1] : l[0];
+        const b = bedarf(zustand.richtung, erg.pos, { km: ende[2], hm_hin: ende[3], hm_rueck: ende[4] }, 0);
+        const jetzt = akkuJetzt(route.id, erg.pos);
+        if (jetzt === null) teil('braucht', '≈ ' + Math.round(b.prozent) + ' %');
+        else {
+          const rest = jetzt - b.prozent;
+          const s = el('span', rest < Number(zustand.einst.reserve || 0) ? 'rot' : '', 'am Ziel ');
+          s.append(el('b', '', rest < 0 ? 'nicht erreichbar' : '≈ ' + Math.round(rest) + ' %'));
+          fuss.append(s);
+        }
+      }
       const t = temperatur();
       teil('Temp', zahl(t.wert, 0) + ' °C' + (t.quelle === 'angenommen' ? ' (ang.)' : ''));
       if (pos && pos.sim) teil('GPS', 'Sim.');

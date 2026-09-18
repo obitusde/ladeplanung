@@ -47,11 +47,13 @@ const pruefe = (bedingung, text) => { if (!bedingung) { fehler++; console.log('F
 gs.routenVorgabenUebernehmen();
 console.log(meldungen.join('\n'));
 const ids = blatt.daten.slice(1).map(z => z[0]);
-pruefe(JSON.stringify(ids) === JSON.stringify(['neuenrade', 'ingolstadt', 'savona_simplon', 'savona_bernhard']), 'Zeilen danach: ' + ids);
+pruefe(JSON.stringify(ids) === JSON.stringify(['neuenrade', 'ingolstadt', 'ingolstadt_augsburg', 'savona_simplon', 'savona_bernhard']), 'Zeilen danach: ' + ids);
 const zeile = id => blatt.daten.find(z => z[0] === id);
 pruefe(zeile('neuenrade')[5] === 716.4 && zeile('neuenrade')[7] === '15.09.2026 08:54', 'bestehende Route unberührt');
 pruefe(zeile('savona_simplon')[3] === '46.245838,8.02474' && zeile('savona_simplon')[1] === 'Morges – Savona (Simplon)', 'Simplon-Zeile: ' + zeile('savona_simplon'));
 pruefe(zeile('savona_bernhard')[3] === '45.85658,7.16605' && zeile('savona_bernhard')[4] === '44.3090500,8.4771500', 'Bernhard-Zeile: ' + zeile('savona_bernhard'));
+pruefe(zeile('ingolstadt')[1] === 'Morges – Ingolstadt (München)' && zeile('ingolstadt')[3] === '' && zeile('ingolstadt')[5] === 620.7, 'Ingolstadt nur umbenannt: ' + zeile('ingolstadt'));
+pruefe(zeile('ingolstadt_augsburg')[3] === '48.13813,10.83188;48.52578,11.23978' && zeile('ingolstadt_augsburg')[4] === '48.7650800,11.4237200', 'Augsburg-Zeile: ' + zeile('ingolstadt_augsburg'));
 pruefe(zeile('savona_simplon')[7] === '' && zeile('savona_bernhard')[5] === '', 'neue Zeilen ohne Länge/Stand → werden berechnet');
 
 // Zweiter Lauf ändert nichts
