@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const quelle = fs.readFileSync(path.join(__dirname, '..', 'apps-script', 'Code.js'), 'utf8');
-const gs = new Function(quelle + '; return { haversine_, kumuliere_, duenneAus_, koordinateAusEingabe_, formatiereDauer_, projiziere_, baueExport_, strassenAbschnitte_, strasseBeiKm_, istRaststaette_, kurzStrasse_, hoechsterPunkt_ };')();
+const gs = new Function(quelle + '; return { haversine_, kumuliere_, duenneAus_, koordinateAusEingabe_, formatiereDauer_, projiziere_, baueExport_, strassenAbschnitte_, strasseBeiKm_, istRaststaette_, kurzStrasse_, hoechsterPunkt_, waehleStrasse_ };')();
 
 let fehler = 0;
 const pruefe = (bedingung, text) => { if (!bedingung) { fehler++; console.log('FEHLER ' + text); } };
@@ -119,8 +119,8 @@ pruefe(exp.version === '1.2' && exp.erzeugt === '2026-09-15T08:00:00Z', 'Kopf vo
 pruefe(exp.routen[0].laenge_km === 15.47 && exp.routen[0].hm_hin === 100 && exp.routen[0].hm_rueck === 20, 'Routen-Summen: ' + JSON.stringify(exp.routen[0]).slice(0, 80));
 pruefe(exp.punkte.length === 6, 'alle Punkte exportiert');
 const p005 = exp.punkte[4].zuordnung[0], p006 = exp.punkte[5].zuordnung[0];
-pruefe(p005 && p005.quer_km === 3.3 && p005.strasse === 'A 1' && p005.raststaette === false, '3,3 km abseits zugeordnet mit Straße: ' + JSON.stringify(p005));
-pruefe(p006 && p006.quer_km === 0.1 && p006.raststaette === true && p006.strasse === 'A 1', 'Raststätte direkt an A 1: ' + JSON.stringify(p006));
+pruefe(p005 && p005.quer_km === 3.3 && p005.strasse === 'A1' && p005.raststaette === false, '3,3 km abseits zugeordnet mit Straße: ' + JSON.stringify(p005));
+pruefe(p006 && p006.quer_km === 0.1 && p006.raststaette === true && p006.strasse === 'A1', 'Raststätte direkt an A 1: ' + JSON.stringify(p006));
 pruefe(exp.punkte[0].zuordnung[0].strasse === 'Route de Genève' && exp.punkte[1].zuordnung[0].raststaette === false, 'Straße vor km 8; 1,1 km abseits keine Raststätte');
 pruefe(exp.punkte[0].zuordnung.length === 1 && exp.punkte[0].lat === 46 && exp.punkte[0].lon === 6.05123, 'Punkt auf Linie zugeordnet und gerundet: ' + JSON.stringify(exp.punkte[0]));
 pruefe(exp.punkte[1].zuordnung.length === 1 && exp.punkte[1].richtung === 'hin', '1,1 km abseits zugeordnet');
@@ -141,7 +141,8 @@ const exp2 = gs.baueExport_(
   '2026-09-18T08:00:00Z'
 );
 const str = i => exp2.punkte[i].zuordnung[0].strasse;
-pruefe(str(0) === 'Route de Genève' && str(1) === 'A 96' && str(2) === 'A 7' && str(3) === 'A 96', 'Straßen im Titel: ' + [0, 1, 2, 3].map(str));
+pruefe(str(0) === 'Route de Genève' && str(1) === 'A96' && str(2) === 'A7' && str(3) === 'A96', 'Straßen im Titel: ' + [0, 1, 2, 3].map(str));
+pruefe(gs.waehleStrasse_('A96/A99', 'A 99') === 'A99' && gs.waehleStrasse_('A 96, A 99', '') === 'A96', 'Schreibweise ohne Leerzeichen, / als Trenner');
 pruefe(exp2.routen[0].dauer_s === 600 && exp2.routen[0].hoechster[1] === 800, 'Fahrzeit und höchster Punkt exportiert');
 pruefe(JSON.stringify(gs.hoechsterPunkt_([[0, 0, 0, 0, 0, 400], [0, 0, 12.34, 0, 0, 2005.4], [0, 0, 20, 0, 0, 900]])) === '[12.3,2005]', 'höchster Punkt');
 

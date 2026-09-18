@@ -1,6 +1,6 @@
 # Ladeplanung Cupra Born — Projektstand für Claude
 
-**Stand 18.09.2026** · App (`index.html`) v0.16.1 · Apps Script (`apps-script/Code.js`) v0.16.1 · Veröffentlichen per GitHub Action (`.github/workflows/apps-script.yml`) v1.0.0
+**Stand 18.09.2026** · App (`index.html`) v0.16.1 · Apps Script (`apps-script/Code.js`) v0.16.2 · Veröffentlichen per GitHub Action (`.github/workflows/apps-script.yml`) v1.0.0
 Ursprünglicher Auftrag: [`docs/Umsetzungsbrief_v5.0.md`](docs/Umsetzungsbrief_v5.0.md). Diese Datei beschreibt den **tatsächlichen** Stand inklusive aller späteren Entscheidungen und hat Vorrang vor dem Brief.
 
 ---
@@ -124,7 +124,7 @@ Christof pflegt über die App; Rechenschritte stößt er über **Wartung & Statu
 
 ## 7. Datenformate
 
-**Blatt `Ladepunkte`** (Reihenfolge seit v0.16.1: von Hand gepflegt vorne): `id | Maps-Link | Name | Straße | Notiz | kW | Anzahl | Richtung (hin/rueck/beide) | Favorit (ja) | Betreiber | Adresse | Lat | Lon | Status`. Das Script arbeitet nach Spaltennamen; `ordneSpalten_()` ordnet beim Export ein abweichendes Blatt um (eigene Zusatzspalten bleiben rechts). `Straße` pflegt Christof selbst (auch im Formular): „A 8", mehrere „A 96, A 7" (Titel zeigt die, auf der die Route dort fährt), „–" = keine; leer → Straße der Route aus den ORS-Namen (`waehleStrasse_`). Spalte wird bei Bedarf angelegt (`spalteSicherstellen_`). Das Script schreibt nur leere Felder; `Notiz` nur beim Zusammenführen von Dubletten. `Richtung` bezieht sich auf die Route: `hin` = nur auf der Fahrt ab Morges erreichbar.
+**Blatt `Ladepunkte`** (Reihenfolge seit v0.16.1: von Hand gepflegt vorne): `id | Maps-Link | Name | Straße | Notiz | kW | Anzahl | Richtung (hin/rueck/beide) | Favorit (ja) | Betreiber | Adresse | Lat | Lon | Status`. Das Script arbeitet nach Spaltennamen; `ordneSpalten_()` ordnet beim Export ein abweichendes Blatt um (eigene Zusatzspalten bleiben rechts). `Straße` pflegt Christof selbst (auch im Formular), **Nummern immer ohne Leerzeichen** („A96"; `ohneLeerzeichen_` gleicht auch ORS-Namen an, Trenner `,` `/` `;`): „A 8", mehrere „A 96, A 7" (Titel zeigt die, auf der die Route dort fährt), „–" = keine; leer → Straße der Route aus den ORS-Namen (`waehleStrasse_`). Spalte wird bei Bedarf angelegt (`spalteSicherstellen_`). Das Script schreibt nur leere Felder; `Notiz` nur beim Zusammenführen von Dubletten. `Richtung` bezieht sich auf die Route: `hin` = nur auf der Fahrt ab Morges erreichbar.
 
 **Blatt `Routen`:** `id | Name | Start | Via (;-getrennt) | Ziel | Länge km | Fahrzeit | Stand`. Start/Via/Ziel als `lat,lon` (als Text schreiben, deutsches Gebietsschema!) oder Maps-Link.
 

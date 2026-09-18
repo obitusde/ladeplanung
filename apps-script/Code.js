@@ -1,6 +1,7 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.16.2 — Straßennamen ohne Leerzeichen („A 96" → „A96"), in „Straße" auch „/" als Trenner.
  * Version 0.16.1 — Spalten im Blatt Ladepunkte nach Handarbeit geordnet (id, Link, Name, Straße, Notiz, kW, Anzahl,
  *                  Richtung, Favorit, dann Betreiber, Adresse, Lat, Lon, Status); ordnet sich beim Veröffentlichen selbst.
  *                  Blatt „Gelöscht" nach Spaltennamen befüllt.
@@ -34,7 +35,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.16.1';
+const VERSION = '0.16.2';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -1937,12 +1938,18 @@ function hoechsterPunkt_(voll) {
 
 const STRASSE_KEINE = '–';             // im Blatt: bewusst keine Straße
 
+/** Straßennummer ohne Leerzeichen (Christof, 18.09.2026): „A 96" → „A96", „B 17" → „B17", „SS 33" → „SS33". */
+function ohneLeerzeichen_(name) {
+  return String(name || '').trim().replace(/\b([A-Z]{1,3})\s+(\d)/g, '$1$2');
+}
+
 /** Straße für den Titel: die der Route an dieser Stelle, wenn sie bei der Station liegt; sonst die erste der Station. */
 function waehleStrasse_(stationsStrassen, routenStrasse) {
-  const liste = String(stationsStrassen || '').split(',').map(function (x) { return x.trim(); })
+  const liste = String(stationsStrassen || '').split(/[,\/;]/).map(ohneLeerzeichen_)
     .filter(function (x) { return x !== '' && x !== STRASSE_KEINE && x !== '-'; });
-  if (routenStrasse && liste.indexOf(routenStrasse) !== -1) return routenStrasse;
-  return liste[0] || routenStrasse || '';
+  const route = ohneLeerzeichen_(routenStrasse);
+  if (route && liste.indexOf(route) !== -1) return route;
+  return liste[0] || route || '';
 }
 
 /** Straße für eine Zuordnung: Straße(n) der Station abgestimmt mit der Straße der Route an dieser Stelle. */
