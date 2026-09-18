@@ -1,6 +1,6 @@
 # Ladeplanung Cupra Born — Projektstand für Claude
 
-**Stand 18.09.2026** · App (`index.html`) v0.16.0 · Apps Script (`apps-script/Code.js`) v0.16.0 · Veröffentlichen per GitHub Action (`.github/workflows/apps-script.yml`) v1.0.0
+**Stand 18.09.2026** · App (`index.html`) v0.16.1 · Apps Script (`apps-script/Code.js`) v0.16.1 · Veröffentlichen per GitHub Action (`.github/workflows/apps-script.yml`) v1.0.0
 Ursprünglicher Auftrag: [`docs/Umsetzungsbrief_v5.0.md`](docs/Umsetzungsbrief_v5.0.md). Diese Datei beschreibt den **tatsächlichen** Stand inklusive aller späteren Entscheidungen und hat Vorrang vor dem Brief.
 
 ---
@@ -115,7 +115,7 @@ Christof pflegt über die App; Rechenschritte stößt er über **Wartung & Statu
 | `apps-script/Vergleich.html` | Vergleichswert aus ABRP / My CUPRA |
 | `apps-script/appsscript.json` | Zeitzone Europe/Zurich, V8, `webapp` MYSELF |
 | `.github/workflows/apps-script.yml` | Veröffentlicht Apps Script bei Push auf `main` (nur bei Änderungen unter `apps-script/`) |
-| `tests/test-*.js` | links, routen, bereinigung, routen-vorgaben, formular, modell, vergleich |
+| `tests/test-*.js` | links, routen, bereinigung, routen-vorgaben, formular, modell, vergleich, spalten |
 | `tests/formular-vorschau.js`, `tests/erzeuge-testdaten.js`, `tests/server.js`, `tests/analyse-routen.js` | Werkzeuge |
 | `tests/fixtures/` | aufgelöste Maps-Links, synthetische Routen, generierte Vorschauseiten |
 | `docs/Umsetzungsbrief_v5.0.md` | ursprünglicher Auftrag |
@@ -124,7 +124,7 @@ Christof pflegt über die App; Rechenschritte stößt er über **Wartung & Statu
 
 ## 7. Datenformate
 
-**Blatt `Ladepunkte`:** `id | Maps-Link | Name | Adresse | Lat | Lon | Betreiber | kW | Anzahl | Richtung (hin/rueck/beide) | Favorit (ja) | Notiz | Status | Straße`. `Straße` pflegt Christof selbst (auch im Formular): „A 8", mehrere „A 96, A 7" (Titel zeigt die, auf der die Route dort fährt), „–" = keine; leer → Straße der Route aus den ORS-Namen (`waehleStrasse_`). Spalte wird bei Bedarf angelegt (`spalteSicherstellen_`). Das Script schreibt nur leere Felder; `Notiz` nur beim Zusammenführen von Dubletten. `Richtung` bezieht sich auf die Route: `hin` = nur auf der Fahrt ab Morges erreichbar.
+**Blatt `Ladepunkte`** (Reihenfolge seit v0.16.1: von Hand gepflegt vorne): `id | Maps-Link | Name | Straße | Notiz | kW | Anzahl | Richtung (hin/rueck/beide) | Favorit (ja) | Betreiber | Adresse | Lat | Lon | Status`. Das Script arbeitet nach Spaltennamen; `ordneSpalten_()` ordnet beim Export ein abweichendes Blatt um (eigene Zusatzspalten bleiben rechts). `Straße` pflegt Christof selbst (auch im Formular): „A 8", mehrere „A 96, A 7" (Titel zeigt die, auf der die Route dort fährt), „–" = keine; leer → Straße der Route aus den ORS-Namen (`waehleStrasse_`). Spalte wird bei Bedarf angelegt (`spalteSicherstellen_`). Das Script schreibt nur leere Felder; `Notiz` nur beim Zusammenführen von Dubletten. `Richtung` bezieht sich auf die Route: `hin` = nur auf der Fahrt ab Morges erreichbar.
 
 **Blatt `Routen`:** `id | Name | Start | Via (;-getrennt) | Ziel | Länge km | Fahrzeit | Stand`. Start/Via/Ziel als `lat,lon` (als Text schreiben, deutsches Gebietsschema!) oder Maps-Link.
 
@@ -166,7 +166,7 @@ kWh     = max(0, gesamt·(k_fahrt·fahrt + k_hoehe·hoehe + k_heizung·heiz));  
 ```
 Startwerte abgeglichen mit EV Database (Born 150 kW 58 kWh, 110 km/h): **18,1 kWh/100 km bei 23 °C**, **23,2 bei −10 °C mit Heizung**.
 
-**Prognose in der App:** Bedarf je Station = Strecke ab Position (+ `quer_km` als Umweg) mit Einstellungen Tempo/Zusatzgewicht/Temperatur. Temperatur: Eingabe, sonst Open-Meteo am Standort (Mittel aus jetzt und +3 h, max. 30 min/30 km alt), sonst 15 °C. Mit **„Losfahren"** (Akku %) → „jetzt ≈" = Start − Bedarf(Start→Position), je Station „Ankunft ≈ x %", **rot unter der Reserve**, unter 0 „nicht erreichbar (fehlen ≈ x %)"; Marke **„letzte vor Reserve"**. Je Station „danach x km bis zur nächsten" bzw. „letzte Station, danach x km bis zum Ziel". Fußzeile: Ziel-km und „braucht ≈" bzw. nach Los „am Ziel ≈". Höhenmeter nur in den Details (v0.16.0). **„Angekommen"** öffnet `?seite=kalibrieren` mit vorbefüllten Werten.
+**Prognose in der App:** Bedarf je Station = Strecke ab Position (+ `quer_km` als Umweg) mit Einstellungen Tempo/Zusatzgewicht/Temperatur. Temperatur: Eingabe, sonst Open-Meteo am Standort (Mittel aus jetzt und +3 h, max. 30 min/30 km alt), sonst 15 °C. Mit **„Losfahren"** (Akku %) → „jetzt ≈" = Start − Bedarf(Start→Position), je Station „Ankunft ≈ x %", **rot unter der Reserve**, unter 0 „nicht erreichbar (fehlen ≈ x %)"; Marke **„letzte vor Reserve"**. Je Station „danach x km bis zur nächsten" bzw. „letzte Station, danach x km bis zum Ziel". Nur volle km. Notiz-Kasten über die ganze Zeilenbreite. Fußzeile: Ziel-km und „braucht ≈" bzw. nach Los „am Ziel ≈". Höhenmeter nur in den Details (v0.16.0). **„Angekommen"** öffnet `?seite=kalibrieren` mit vorbefüllten Werten.
 
 **Kalibrierung** (`kalibriereZeilen_` rein rechnerisch → `kalibriere_`), nach jeder gespeicherten Fahrt/jedem Vergleichswert und per Wartung:
 1. Gewicht: gemessen mit Bordcomputer-Tempo 1, ohne 0,5; ABRP/My CUPRA mit Fahrzeit 0,3, **ohne Fahrzeit 0** (nicht verwendet). Gültig ab 10 km und gesunkenem Akku; `verwenden = nein` respektieren.

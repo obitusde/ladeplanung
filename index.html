@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.16.1 — Nur volle Kilometer; Notiz-Kasten über die ganze Breite.
   Version 0.16.0 — Liste ohne Höhenmeter (nur noch in den Details); „nicht erreichbar" statt negativer Ankunft;
                    Hinweis „letzte vor Reserve"; je Station die Lücke bis zur nächsten; Akku am Ziel in der Fußzeile.
   Version 0.15.0 — Hauptansicht kompakter: Route größer, Akku beim Start direkt oben mit „▶ Los", Akku eindeutig
@@ -137,7 +138,7 @@
     .eintrag .luecke { color: var(--leise); font-size: 14px; }
     .eintrag .marke { justify-self: start; margin-top: 2px; padding: 0 8px; border-radius: 6px; background: var(--akzent); color: var(--akzent-text); font-weight: 700; font-size: 14px; }
     .eintrag .notiz {
-      justify-self: start; margin-top: 3px; padding: 0 8px; border-radius: 6px;
+      grid-column: 1 / -1; margin-top: 4px; padding: 0 8px; border-radius: 6px;
       background: var(--flaeche); border: 1px solid var(--linie); overflow-wrap: anywhere;
     }
     .rot, .eintrag .rot { color: var(--rot); }
@@ -330,7 +331,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.16.0';
+    const APP_VERSION = '0.16.1';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -594,7 +595,7 @@
     // -----------------------------------------------------------------------
 
     const zahl = (x, stellen) => x.toLocaleString('de-DE', { minimumFractionDigits: stellen, maximumFractionDigits: stellen });
-    const fmtKm = km => zahl(km, km < 10 ? 1 : 0);
+    const fmtKm = km => zahl(km, 0); // nur volle Kilometer (Christof, 18.09.2026)
     const uhrzeit = ms => { const d = new Date(ms); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
 
     function el(tag, klasse, text) {

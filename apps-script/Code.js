@@ -1,6 +1,9 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.16.1 — Spalten im Blatt Ladepunkte nach Handarbeit geordnet (id, Link, Name, Straße, Notiz, kW, Anzahl,
+ *                  Richtung, Favorit, dann Betreiber, Adresse, Lat, Lon, Status); ordnet sich beim Veröffentlichen selbst.
+ *                  Blatt „Gelöscht" nach Spaltennamen befüllt.
  * Version 0.16.0 — Ingolstadt als zwei Routen (über München / über Augsburg); Spalte „Straße" je Ladepunkt (von Hand,
  *                  Vorrang im Titel; mehrere mit Komma → die, auf der die Route fährt); Linienformat 4 mit höchstem Punkt;
  *                  Export 1.2 mit Fahrzeit; „Routen berechnen" übernimmt vorher die Routen-Vorgaben.
@@ -31,7 +34,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.16.0';
+const VERSION = '0.16.1';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -51,7 +54,15 @@ const NAEHE_WARNUNG_M = 300;
 // Sammelt Meldungen, während die Wartungsseite Schritte ausführt (sonst null).
 let MELDUNGS_PUFFER = null;
 
-const SPALTEN_PUNKTE = ['id', 'Maps-Link', 'Name', 'Adresse', 'Lat', 'Lon', 'Betreiber', 'kW', 'Anzahl', 'Richtung', 'Favorit', 'Notiz', 'Status', 'Straße'];
+// Reihenfolge im Blatt (Christof, 18.09.2026): was er von Hand pflegt vorne, was das Script füllt hinten.
+// Das Script liest und schreibt nach Spaltennamen; ordneSpalten_() bringt ein älteres Blatt in diese Reihenfolge.
+const SPALTEN_PUNKTE = ['id', 'Maps-Link', 'Name', 'Straße', 'Notiz', 'kW', 'Anzahl', 'Richtung', 'Favorit',
+  'Betreiber', 'Adresse', 'Lat', 'Lon', 'Status'];
+
+/** Zeile in der Reihenfolge von SPALTEN_PUNKTE aus einem Objekt { Spaltenname: Wert }. */
+function punkteZeile_(werte) {
+  return SPALTEN_PUNKTE.map(function (k) { return werte[k] === undefined ? '' : werte[k]; });
+}
 const SPALTEN_ROUTEN = ['id', 'Name', 'Start', 'Via', 'Ziel', 'Länge km', 'Fahrzeit', 'Stand'];
 
 const RICHTUNGEN = ['hin', 'rueck', 'beide'];
@@ -310,7 +321,18 @@ function loeschePunkt(id) {
       archiv.setFrozenRows(1);
     }
     const werte = t.blatt.getRange(zeile, 1, 1, koepfe.length).getValues()[0];
-    archiv.appendRow(werte.concat([new Date()]));
+    // nach Spaltennamen, weil sich die Reihenfolge im Blatt Ladepunkte ändern kann; fehlende Köpfe hinten anhängen
+    let archivKoepfe = archiv.getRange(1, 1, 1, archiv.getLastColumn()).getValues()[0];
+    koepfe.forEach(function (k) {
+      if (k === '' || archivKoepfe.indexOf(k) !== -1) return;
+      archiv.getRange(1, archivKoepfe.length + 1).setValue(k).setFontWeight('bold');
+      archivKoepfe = archivKoepfe.concat([k]);
+    });
+    archiv.appendRow(archivKoepfe.map(function (k) {
+      if (k === 'gelöscht am') return new Date();
+      const i = koepfe.indexOf(k);
+      return i === -1 ? '' : werte[i];
+    }));
     t.blatt.deleteRow(zeile);
     SpreadsheetApp.flush();
 
@@ -963,6 +985,23 @@ function punkteBlattMitIndex_() {
   return { blatt: blatt, sp: spaltenIndex_(blatt) };
 }
 
+/**
+ * Bringt die Spalten in die Reihenfolge von SPALTEN_PUNKTE (ganze Spalten verschieben, Inhalte und
+ * Prüfregeln wandern mit). Unbekannte eigene Spalten bleiben rechts. Gibt true zurück, wenn verschoben wurde.
+ */
+function ordneSpalten_(blatt) {
+  let verschoben = false;
+  for (let ziel = 1; ziel <= SPALTEN_PUNKTE.length; ziel++) {
+    const koepfe = blatt.getRange(1, 1, 1, blatt.getLastColumn()).getValues()[0];
+    const ist = koepfe.indexOf(SPALTEN_PUNKTE[ziel - 1]) + 1;
+    if (ist === 0 || ist === ziel) continue;
+    blatt.moveColumns(blatt.getRange(1, ist, blatt.getMaxRows(), 1), ziel);
+    verschoben = true;
+  }
+  if (verschoben) SpreadsheetApp.flush();
+  return verschoben;
+}
+
 /** Hängt eine fehlende Spalte mit Kopf rechts an (z. B. „Straße" ab v0.16.0). */
 function spalteSicherstellen_(blatt, name) {
   const breite = blatt.getLastColumn();
@@ -1106,7 +1145,7 @@ function setup() {
     if (anzahl > 0) {
       meldungen.push(anzahl + ' Ladepunkte aus dem alten Blatt übernommen, altes Blatt heißt jetzt „' + BLATT_SICHERUNG + '".');
     } else {
-      punkte.appendRow(['p001', '', 'Beispiel – Zeile löschen oder überschreiben', '', '', '', 'Ionity', 350, 6, 'beide', '', 'Coop, McDonald\'s', '']);
+      punkte.appendRow(punkteZeile_({ id: 'p001', Name: 'Beispiel – Zeile löschen oder überschreiben', Betreiber: 'Ionity', kW: 350, Anzahl: 6, Richtung: 'beide', Notiz: 'Coop, McDonald\'s' }));
       meldungen.push('Beispielzeile in „' + BLATT_PUNKTE + '" angelegt.');
     }
   }
@@ -1217,7 +1256,7 @@ function importiereAltblatt_(ss, punkte) {
       const richtungText = String(w[2]).trim();
       const richtung = richtungAusAltText_(richtungText);
       const status = (richtungText && richtung === 'beide') ? 'Richtung unklar: ' + richtungText : '';
-      zeilen.push([id, link, '', '', '', '', '', '', '', richtung, '', String(w[1]).trim(), status, '']);
+      zeilen.push(punkteZeile_({ id: id, 'Maps-Link': link, Richtung: richtung, Notiz: String(w[1]).trim(), Status: status }));
     });
 
     if (zeilen.length === 0) continue;
@@ -1965,6 +2004,7 @@ function exportJson() {
     if (routen.length === 0) throw new Error('keine berechnete Route vorhanden');
 
     spalteSicherstellen_(punkteBlatt, 'Straße');
+    if (ordneSpalten_(punkteBlatt)) meldungen.push('Spalten im Blatt „' + BLATT_PUNKTE + '" neu geordnet');
     const spP = spaltenIndex_(punkteBlatt);
     const punkte = [];
     const statusZeilen = [];
@@ -2206,8 +2246,9 @@ function formatiereDauer_(sekunden) {
 
 function setzeValidierungen_(punkte) {
   const zeilen = punkte.getMaxRows() - 1;
-  const spalteRichtung = SPALTEN_PUNKTE.indexOf('Richtung') + 1;
-  const spalteFavorit = SPALTEN_PUNKTE.indexOf('Favorit') + 1;
+  const sp = spaltenIndex_(punkte);
+  const spalteRichtung = sp.Richtung;
+  const spalteFavorit = sp.Favorit;
 
   punkte.getRange(2, spalteRichtung, zeilen, 1).setDataValidation(
     SpreadsheetApp.newDataValidation().requireValueInList(RICHTUNGEN, true).setAllowInvalid(false).build()
