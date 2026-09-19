@@ -1,6 +1,8 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.19.0 — Reisetempo kommt aus der Route (Fahrzeit des Routendienstes); sobald echte Fahrten mit
+ *                  Bordcomputer-Tempo vorliegen, wird daraus ein Faktor je Route gelernt (modell.json: tempo).
  * Version 0.18.2 — Vergleichsformular: Fahrzeit-Feld mit normaler Tastatur („:“ war nicht eingebbar).
  * Version 0.18.1 — Preise: Tesla nur Fremdfahrzeug ohne Mitgliedschaft, AMAG inkl. Porsche Zentren (Feld „auch").
  * Version 0.18.0 — Routen-Link: ganze Adresse geokodieren (vorher nur die Straße → falscher Ort), Name und id aus den
@@ -44,7 +46,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.18.2';
+const VERSION = '0.19.0';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -509,6 +511,11 @@ function energieKwh_(modell, a) {
   return Math.max(0, k.gesamt * (k.fahrt * a.fahrt + k.hoehe * a.hoehe + k.heizung * a.heiz));
 }
 
+// Tempo (Christof, 19.09.2026): Grundlage ist der Schnitt der Route aus der Fahrzeit des Routendienstes.
+// Echte Fahrten (Quelle „gemessen", Ø km/h Bordcomputer) ergeben einen Faktor darauf — fährt Christof
+// schneller als der Router rechnet, steigt er über 1. ABRP-Werte zählen hier nicht, die haben ihr eigenes Tempo.
+const TEMPO_FAKTOR_MIN = 0.6, TEMPO_FAKTOR_MAX = 1.4;
+
 const AUSREISSER_ABWEICHUNG = 0.35;  // Verhältnis Wert/Physik mehr als 35 % neben dem Median → nicht verwenden
 const MIN_TEMPERATURSPANNE_C = 10;    // darunter lässt sich der Heizungsanteil nicht von den übrigen Anteilen trennen
 
@@ -612,7 +619,28 @@ function loese3_(A, b) { return loeseLGS_(A, b); }
  * zeilen: [{ km, hmAuf, hmAb, kmh, temp, zusatzKg, start, ende, quelle, bordcomputer, dauer, verwenden, notiz }]
  * Gibt { modell, zeilen: [{ real, a, gueltig, verwenden, ausreisser, modellKwh, abweichung, status }], text } zurück.
  */
-function kalibriereZeilen_(zeilen) {
+/**
+ * Faktor zwischen gefahrenem und geplantem Tempo aus echten Fahrten. zeilen: { route, km, bordcomputer, quelle, verwenden },
+ * routenTempo: { routeId: km/h }. Gewichtet nach Kilometern. Ohne brauchbare Fahrt: Faktor 1, fahrten 0.
+ */
+function tempoFaktor_(zeilen, routenTempo) {
+  let summe = 0, gewicht = 0, n = 0;
+  (zeilen || []).forEach(function (z) {
+    const quelle = String(z.quelle || '').trim() || 'gemessen';
+    const bord = Number(z.bordcomputer);
+    const geplant = Number((routenTempo || {})[z.route]);
+    const km = Number(z.km);
+    if (quelle !== 'gemessen' || !(bord > 20) || !(geplant > 20) || !(km >= 10)) return;
+    if (String(z.verwenden || '').trim().toLowerCase() === 'nein') return;
+    summe += bord / geplant * km;
+    gewicht += km;
+    n++;
+  });
+  if (!gewicht) return { faktor: 1, fahrten: 0 };
+  return { faktor: runde_(Math.max(TEMPO_FAKTOR_MIN, Math.min(TEMPO_FAKTOR_MAX, summe / gewicht)), 3), fahrten: n };
+}
+
+function kalibriereZeilen_(zeilen, routenTempo) {
   const kap = MODELL_STANDARD.fahrzeug.kapazitaet_kwh;
   const fahrten = [];
   const erg = zeilen.map(function (z) {
@@ -621,7 +649,7 @@ function kalibriereZeilen_(zeilen) {
     const a = energieAnteile_(MODELL_STANDARD, Number(z.km), Number(z.hmAuf), Number(z.hmAb), Number(z.kmh) || 120, temp, Number(z.zusatzKg) || 0);
     const real = (Number(z.start) - Number(z.ende)) / 100 * kap;
     const gueltig = isFinite(a.fahrt) && isFinite(real) && real > 0.5 && Number(z.km) >= 10;
-    const gewicht = gewichtFuer_(quelle, !!z.bordcomputer, !!z.dauer);
+    const gewicht = gewichtFuer_(quelle, z.bordcomputer !== '' && z.bordcomputer !== undefined && z.bordcomputer !== null, !!z.dauer);
     const abgewaehlt = String(z.verwenden || '').trim().toLowerCase() === 'nein';
     const e = { a: a, real: real, quelle: quelle, notiz: String(z.notiz || ''), gueltig: gueltig, gewicht: gewicht,
       verwenden: gueltig && gewicht > 0 && !abgewaehlt, ausreisser: false, modellKwh: null, abweichung: null, status: '' };
@@ -650,6 +678,9 @@ function kalibriereZeilen_(zeilen) {
     else if (e.verwenden) e.status = 'verwendet (Gewicht ' + String(e.gewicht).replace('.', ',') + ')';
   });
 
+  modell.tempo = tempoFaktor_(zeilen, routenTempo); // { faktor, fahrten } – die App rechnet damit das Reisetempo
+  modell.tempo.stand = modell.erzeugt;
+
   const verwendet = erg.filter(function (e) { return e.verwenden; });
   modell.kalibrierung = {
     fahrten: verwendet.length, abweichung_prozent: kal.abweichung, stand: modell.erzeugt, methode: kal.methode,
@@ -662,6 +693,9 @@ function kalibriereZeilen_(zeilen) {
     text += '\nKorrektur: gesamt ' + runde_(k.gesamt, 2) + ', Fahrt ' + runde_(k.fahrt, 2) + ', Höhe ' + runde_(k.hoehe, 2) + ', Heizung ' + runde_(k.heizung, 2) +
       '\nØ Abweichung: ' + String(kal.abweichung).replace('.', ',') + ' % Akku je Wert.';
   }
+  text += '\nTempo: ' + (modell.tempo.fahrten
+    ? 'Faktor ' + String(modell.tempo.faktor).replace('.', ',') + ' auf den Schnitt der Route (aus ' + modell.tempo.fahrten + ' echten Fahrt(en))'
+    : 'Schnitt der Route (noch keine echte Fahrt mit Bordcomputer-Tempo)');
   const ausreisser = erg.filter(function (e) { return e.ausreisser; });
   if (ausreisser.length) text += '\nNicht verwendet (Ausreißer): ' + ausreisser.map(function (e) { return e.notiz || '–'; }).join('; ');
   const q = modell.kalibrierung.quellen;
@@ -975,15 +1009,25 @@ function kalibriereUndVeroeffentliche_() {
   const werte = blatt.getLastRow() >= 2 ? blatt.getRange(2, 1, blatt.getLastRow() - 1, SPALTEN_FAHRTEN.length).getValues() : [];
   const feld = function (z, name) { return sp[name] ? z[sp[name] - 1] : ''; };
 
+  // Schnitt je Route aus der Fahrzeit des Routendienstes (routes.json) – Grundlage fürs Reisetempo
+  const routenTempo = {};
+  try {
+    const text = githubLies_('routes.json');
+    if (text) JSON.parse(text).routen.forEach(function (r) {
+      if (r.dauer_s > 0 && r.laenge_km > 0) routenTempo[r.id] = runde_(r.laenge_km / (r.dauer_s / 3600), 1);
+    });
+  } catch (e) { /* ohne Routen: Faktor bleibt 1 */ }
+
   const erg = kalibriereZeilen_(werte.map(function (z) {
     return {
+      route: String(feld(z, 'Route')).trim(),
       km: feld(z, 'km'), hmAuf: feld(z, 'hm auf'), hmAb: feld(z, 'hm ab'), kmh: feld(z, 'km/h verwendet'),
       temp: feld(z, 'Temp Ø') === '' ? null : Number(feld(z, 'Temp Ø')), zusatzKg: feld(z, 'Zusatzgewicht kg'),
       start: feld(z, 'Akku Start %'), ende: feld(z, 'Akku Ende %'), quelle: feld(z, 'Quelle'),
-      bordcomputer: feld(z, 'Ø km/h Bordcomputer') !== '', dauer: feld(z, 'Dauer h') !== '',
+      bordcomputer: feld(z, 'Ø km/h Bordcomputer'), dauer: feld(z, 'Dauer h') !== '',
       verwenden: feld(z, 'verwenden'), notiz: feld(z, 'Notiz'),
     };
-  }));
+  }), routenTempo);
 
   if (werte.length > 0) {
     blatt.getRange(2, sp['Verbrauch kWh'], erg.zeilen.length, 6).setValues(erg.zeilen.map(function (e) {

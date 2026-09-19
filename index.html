@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.18.0 — Reisetempo nicht mehr aus den Einstellungen, sondern aus der gewählten Route (Fahrzeit des
+                   Routendienstes), korrigiert um den aus echten Fahrten gelernten Faktor (modell.json: tempo).
   Version 0.17.1 — Ladepreise: kleiner, Tarifname und Preis sauber in zwei Spalten, Link zur Android-App je Anbieter
                    (auch in den Details); Porsche nutzt den AMAG-Preis.
   Version 0.17.0 — Auswahl „von" / „nach" (/ „über") statt Routenliste; Menü ☰ mit allen Punkten; Simulation mit
@@ -289,8 +291,9 @@
     </ul>
 
     <h3>Akku-Prognose</h3>
-    <p>Der Akkubedarf bis zu jeder Station wird aus Strecke, Höhenmetern, deiner <b>Reisegeschwindigkeit</b>, dem <b>Zusatzgewicht</b> (beides unter ⚙) und der <b>Außentemperatur</b> geschätzt. Die Temperatur ist der Durchschnitt aus jetzt und in drei Stunden am Standort – oder dein eigener Wert unter ⚙.</p>
-    <p>Die Geschwindigkeit hat den größten Einfluss: 130 statt 110 km/h brauchen rund ein Viertel mehr. 1000 Höhenmeter bergauf kosten etwa 11 % Akku, bergab kommt gut ein Drittel davon zurück.</p>
+    <p>Der Akkubedarf bis zu jeder Station wird aus Strecke, Höhenmetern, dem <b>Reisetempo</b>, dem <b>Zusatzgewicht</b> (Menü → Einstellungen) und der <b>Außentemperatur</b> geschätzt. Die Temperatur ist der Durchschnitt aus jetzt und in drei Stunden am Standort – oder dein eigener Wert.</p>
+    <p><b>Das Reisetempo</b> stellst du nicht mehr selbst ein: Es ist der Schnitt der gewählten Route laut Routendienst (inklusive Kurven und Ortsdurchfahrten), also z. B. 103 km/h nach Ingolstadt und 87 km/h über den Simplon. Sobald du echte Fahrten mit dem Ø-Tempo des Bordcomputers kalibriert hast, passt die App diesen Schnitt an deine Fahrweise an; unten steht dann „(gemessen)" statt „(Route)".</p>
+    <p>Das Tempo hat den größten Einfluss: 130 statt 110 km/h brauchen rund ein Viertel mehr. 1000 Höhenmeter bergauf kosten etwa 11 % Akku, bergab kommt gut ein Drittel davon zurück.</p>
     <p><b>Optional:</b> Trägst du oben „Akku jetzt" ein und tippst <b>✓</b>, rechnet die Liste mit diesem Stand und zieht unterwegs den Verbrauch ab. „Angekommen" öffnet ein kurzes Formular: echter Akkustand rein, fertig – daraus lernt das Modell und wird mit jeder Fahrt genauer. Ohne Eintrag rechnet die App mit vollem Akku.</p>
     <p><b>Vergleichswerte:</b> In den Details einer Station „Vergleichswert eintragen" – Strecke in ABRP oder My CUPRA planen und die beiden Akkuwerte abschreiben. Das hilft dem Modell schon vor der ersten Fahrt; echte Fahrten zählen aber mehr.</p>
     <p id="info-modell" class="klein-hinweis"></p>
@@ -369,14 +372,12 @@
 
       <h3>Akku-Prognose</h3>
       <div class="zwei">
-        <label>Reisegeschw. (km/h) <input type="number" id="e-geschwindigkeit" inputmode="numeric" min="60" max="180" step="5"></label>
         <label>Zusatzgewicht (kg) <input type="number" id="e-zusatzgewicht" inputmode="numeric" min="0" max="1000" step="10"></label>
-      </div>
-      <div class="zwei">
-        <label>Temperatur (°C) <input type="number" id="e-temperatur" inputmode="decimal" min="-30" max="45" placeholder="automatisch"></label>
         <label>Reserve (%) <input type="number" id="e-reserve" inputmode="numeric" min="0" max="50"></label>
       </div>
+      <label>Temperatur (°C) <input type="number" id="e-temperatur" inputmode="decimal" min="-30" max="45" placeholder="automatisch"></label>
       <p class="klein">Temperatur leer lassen = automatisch vom Wetter. Stationen mit Ankunft unter der Reserve erscheinen rot.</p>
+      <p class="klein" id="e-tempo"></p>
       <p class="klein" id="version"></p>
       <button class="knopf haupt" value="ok" style="width:100%">Fertig</button>
     </form>
@@ -387,7 +388,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.17.1';
+    const APP_VERSION = '0.18.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -752,11 +753,25 @@
       return { wert: TEMPERATUR_ERSATZ_C, quelle: 'angenommen' };
     }
 
+    /**
+     * Reisetempo: Schnitt der Route aus der Fahrzeit des Routendienstes, mal dem aus echten Fahrten gelernten
+     * Faktor (modell.tempo). Ohne beides 110 km/h. Nicht mehr in den Einstellungen (Christof, 19.09.2026).
+     */
+    function tempo(route) {
+      const r = route || (daten && aktuelleRoute());
+      const basis = r && r.dauer_s > 0 && r.laenge_km > 0 ? r.laenge_km / (r.dauer_s / 3600) : 110;
+      const t = modell.tempo || {};
+      return {
+        wert: Math.round(basis * (t.faktor > 0 ? t.faktor : 1)),
+        quelle: !r || !(r.dauer_s > 0) ? 'angenommen' : t.fahrten ? 'gemessen' : 'Route',
+      };
+    }
+
     /** Akkubedarf zwischen zwei Linienpositionen in Fahrtrichtung, plus Umweg zu einer abseits liegenden Station. */
     function bedarf(richtung, von, bis, umwegKm) {
       const w = streckenwerte(richtung, von, bis);
       const a = energieAnteile(modell, w.km + (umwegKm || 0), w.auf, w.ab,
-        zustand.einst.geschwindigkeit, temperatur().wert, zustand.einst.zusatzgewicht);
+        tempo().wert, temperatur().wert, zustand.einst.zusatzgewicht);
       const kwh = energieKwh(modell, a);
       return { kwh, prozent: kwh / modell.fahrzeug.kapazitaet_kwh * 100, strecke: w };
     }
@@ -1010,7 +1025,8 @@
       if (pos && pos.sim) teil('GPS', 'Sim.');
       else if (pos && pos.alt) teil('GPS', 'letzter');
       else teil('GPS', pos ? '± ' + Math.round(pos.genauigkeit) + ' m' : '–');
-      teil('Tempo', zustand.einst.geschwindigkeit + ' km/h');
+      const tp = tempo(route);
+      teil('Tempo', tp.wert + ' km/h (' + tp.quelle + ')');
     }
 
     function zeigeDetail(e, modus) {
@@ -1026,7 +1042,7 @@
       const felder = [
         ['Lage', lageText(e.z) || '–'],
         ['Akkubedarf', pg ? '≈ ' + zahl(pg.kwh, 1) + ' kWh = ' + Math.round(pg.prozent) + ' %' : '–'],
-        ['Annahmen', zustand.einst.geschwindigkeit + ' km/h · ' + zahl(t.wert, 0) + ' °C (' + t.quelle + ')' +
+        ['Annahmen', tempo().wert + ' km/h (' + tempo().quelle + ') · ' + zahl(t.wert, 0) + ' °C (' + t.quelle + ')' +
           (Number(zustand.einst.zusatzgewicht) ? ' · +' + zustand.einst.zusatzgewicht + ' kg' : '')],
         ['Adresse', p.adresse || '–'],
         ['Betreiber', p.betreiber || '–'],
@@ -1121,7 +1137,7 @@
         start_soc: f.start_soc, km: Math.round(b.strecke.km * 10) / 10,
         hm_auf: Math.round(b.strecke.auf), hm_ab: Math.round(b.strecke.ab),
         erwartet: Math.round((f.start_soc - b.prozent) * 10) / 10,
-        geschwindigkeit: Number(zustand.einst.geschwindigkeit), zusatzgewicht: Number(zustand.einst.zusatzgewicht) || 0,
+        geschwindigkeit: tempo(route).wert, zusatzgewicht: Number(zustand.einst.zusatzgewicht) || 0,
         quer_warnung: f.start.q > 2 || pr.q > 2,
       };
       const url = FORMULAR_URL + '?seite=kalibrieren&fahrt=' + encodeURIComponent(JSON.stringify(fahrt));
@@ -1216,7 +1232,11 @@
     }
 
     function oeffneEinstellungen() {
-      $('e-geschwindigkeit').value = zustand.einst.geschwindigkeit;
+      const tp = tempo();
+      $('e-tempo').textContent = 'Reisetempo: ' + tp.wert + ' km/h – ' + (tp.quelle === 'gemessen'
+        ? 'Schnitt dieser Route, angepasst an deine bisherigen Fahrten.'
+        : tp.quelle === 'Route' ? 'Schnitt dieser Route laut Routendienst. Sobald echte Fahrten vorliegen, wird daraus gelernt.'
+        : 'angenommen, weil für diese Route keine Fahrzeit vorliegt.');
       $('e-zusatzgewicht').value = zustand.einst.zusatzgewicht;
       $('e-temperatur').value = zustand.einst.temperatur;
       $('e-reserve').value = zustand.einst.reserve;
@@ -1232,7 +1252,6 @@
       if (!einstellungenOffen) return;
       einstellungenOffen = false;
       const zahlOder = (id, min, max, ersatz) => { const n = Number($(id).value); return $(id).value.trim() !== '' && n >= min && n <= max ? n : ersatz; };
-      zustand.einst.geschwindigkeit = zahlOder('e-geschwindigkeit', 60, 180, 120);
       zustand.einst.zusatzgewicht = zahlOder('e-zusatzgewicht', 0, 1000, 0);
       zustand.einst.reserve = zahlOder('e-reserve', 0, 50, 10);
       const temp = $('e-temperatur').value.trim();
@@ -1409,7 +1428,7 @@
     // Für automatisierte Tests zugänglich machen
     window.ladeplanung = {
       berechneListe, projiziere, haversine, punktBeiKm, mapsUrl, abrpUrl, energieAnteile, energieKwh, streckenwerte, bedarf,
-      routenTeile, routenZwischen, zieleVon, simPunkte, preisKurz, preisEintrag, landVon, prognose,
+      routenTeile, routenZwischen, zieleVon, simPunkte, preisKurz, preisEintrag, landVon, prognose, tempo,
       get preise() { return preise; },
       get daten() { return daten; }, get modell() { return modell; }, get zustand() { return zustand; },
     };

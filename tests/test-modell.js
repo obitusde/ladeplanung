@@ -6,7 +6,7 @@ const path = require('path');
 
 const wurzel = path.join(__dirname, '..');
 const quelle = fs.readFileSync(path.join(wurzel, 'apps-script', 'Code.js'), 'utf8');
-const gs = new Function(quelle + '; return { energieAnteile_, energieKwh_, kalibriere_, kalibriereZeilen_, loese3_, pruefeFahrt_, MODELL_STANDARD };')();
+const gs = new Function(quelle + '; return { energieAnteile_, energieKwh_, kalibriere_, kalibriereZeilen_, loese3_, pruefeFahrt_, tempoFaktor_, MODELL_STANDARD };')();
 const M = gs.MODELL_STANDARD;
 
 let fehler = 0;
@@ -103,5 +103,20 @@ if (block) {
 }
 
 console.log('Beispiele: 110 km/h 23 °C ' + pro100(110, 23).toFixed(1) + ' · 120 km/h 10 °C ' + pro100(120, 10).toFixed(1) + ' · 130 km/h 0 °C ' + pro100(130, 0).toFixed(1) + ' kWh/100 km');
+// Reisetempo: Faktor aus echten Fahrten auf den Schnitt der Route
+const routenTempo = { neuenrade: 109, savona_simplon: 87 };
+const tempoZeilen = [
+  { route: 'neuenrade', km: 300, bordcomputer: 120, quelle: 'gemessen' },
+  { route: 'savona_simplon', km: 100, bordcomputer: 87, quelle: 'gemessen' },
+  { route: 'neuenrade', km: 200, bordcomputer: 150, quelle: 'ABRP' },          // ABRP zählt nicht
+  { route: 'neuenrade', km: 200, bordcomputer: '', quelle: 'gemessen' },       // ohne Bordcomputer
+  { route: 'neuenrade', km: 200, bordcomputer: 130, quelle: 'gemessen', verwenden: 'nein' },
+  { route: 'unbekannt', km: 200, bordcomputer: 130, quelle: 'gemessen' },      // Route ohne Fahrzeit
+];
+const tf = gs.tempoFaktor_(tempoZeilen, routenTempo);
+pruefe(tf.fahrten === 2 && Math.abs(tf.faktor - ((120 / 109 * 300 + 1 * 100) / 400)) < 0.002, 'Tempo-Faktor: ' + JSON.stringify(tf));
+pruefe(JSON.stringify(gs.tempoFaktor_([], routenTempo)) === '{"faktor":1,"fahrten":0}', 'ohne echte Fahrt Faktor 1');
+pruefe(gs.tempoFaktor_([{ route: 'neuenrade', km: 300, bordcomputer: 300, quelle: 'gemessen' }], routenTempo).faktor === 1.4, 'Faktor begrenzt');
+
 console.log(fehler === 0 ? 'Alle Prüfungen bestanden.' : fehler + ' Prüfungen fehlgeschlagen.');
 process.exit(fehler === 0 ? 0 : 1);
