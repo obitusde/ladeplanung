@@ -1,6 +1,6 @@
 # Ladeplanung Cupra Born — Projektstand für Claude
 
-**Stand 18.09.2026** · App (`index.html`) v0.16.1 · Apps Script (`apps-script/Code.js`) v0.17.1 · Veröffentlichen per GitHub Action (`.github/workflows/apps-script.yml`) v1.0.0
+**Stand 19.09.2026** · App (`index.html`) v0.17.0 · Apps Script (`apps-script/Code.js`) v0.18.0 · Veröffentlichen per GitHub Action (`.github/workflows/apps-script.yml`) v1.0.0
 Ursprünglicher Auftrag: [`docs/Umsetzungsbrief_v5.0.md`](docs/Umsetzungsbrief_v5.0.md). Diese Datei beschreibt den **tatsächlichen** Stand inklusive aller späteren Entscheidungen und hat Vorrang vor dem Brief.
 
 ---
@@ -19,9 +19,9 @@ Ursprünglicher Auftrag: [`docs/Umsetzungsbrief_v5.0.md`](docs/Umsetzungsbrief_v
 
 ## 2. Was die App ist
 
-PWA für lange Fahrten mit dem **Cupra Born 58 kWh (2021)**. Zeigt die Ladepunkte **voraus** auf einer Stammstrecke: Entfernung entlang der Straße, Anstieg, **Akku-Prognose**, Leistung, Lage (Straße, Raststätte, „x km abseits"), Notiz. Keine Navigation, kein Belegt-Status, keine Preise – Christof entscheidet selbst.
+PWA für lange Fahrten mit dem **Cupra Born 58 kWh (2021)**. Zeigt die Ladepunkte **voraus** auf einer Stammstrecke: Entfernung entlang der Straße, **Akku-Prognose**, Leistung, Lage (Straße, Raststätte, „x km abseits"), **Ladepreis des Betreibers**, Notiz. Keine Navigation, kein Belegt-Status – Christof entscheidet selbst.
 
-Stammstrecken (je Hin/Rück): `neuenrade` (Morges–Neuenrade), `ingolstadt` (Ingolstadt über München, ohne Via), `ingolstadt_augsburg` (Via B 17 Hurlach `48.13813,10.83188` + B 300 Aichach `48.52578,11.23978` → A 8 Friedberg-Derching), `savona_simplon`, `savona_bernhard`; weitere per Maps-Link (z. B. Brig). Ulm-Variante bewusst nicht. **Neue Routen (seit v0.17.0) per geteiltem Google-Maps-Routenlink**: Wartung → „Route hinzufügen" (Feld) oder im Blatt Routen nur die Spalte `Maps-Link` füllen und „Routen berechnen". Das Script füllt Start/Via/Ziel, Name („Morges – Ziel (Via-Orte)"), id (aus dem Zielort, `routenId_`); Start ≤ 3 km von `START_MORGES` → genau dieser. Parser `routenpunkteAusUrl_`: Pfadsegmente nach `/maps/dir/` = Wegpunkte, im data-Block `!2m2!1d<lon>!2d<lat>` je benanntem Punkt; Anzahl passt nicht → Fehler (gezogene Umwege), keine Koordinaten → Geocoder. Getestet nur mit einem echten Link ohne Zwischenziel (Morges → Brig-Glis) – Zwischenziele beim ersten echten Link prüfen.
+Stammstrecken (je Hin/Rück): `neuenrade` (Morges–Neuenrade), `ingolstadt` (Ingolstadt über München, ohne Via), `ingolstadt_augsburg` (Via B 17 Hurlach `48.13813,10.83188` + B 300 Aichach `48.52578,11.23978` → A 8 Friedberg-Derching), `savona_simplon`, `savona_bernhard`; weitere per Maps-Link (z. B. Brig). Ulm-Variante bewusst nicht. **Neue Routen (seit v0.17.0) per geteiltem Google-Maps-Routenlink**: Wartung → „Route hinzufügen" (Feld) oder im Blatt Routen nur die Spalte `Maps-Link` füllen und „Routen berechnen". Das Script füllt Start/Via/Ziel, Name („Morges – Ziel (Via-Orte)"), id (aus dem Zielort, `routenId_`); Start ≤ 3 km von `START_MORGES` → genau dieser. Parser `routenpunkteAusUrl_`: Pfadsegmente nach `/maps/dir/` = Wegpunkte, im data-Block `!2m2!1d<lon>!2d<lat>` je benanntem Punkt; Anzahl passt nicht → Fehler (gezogene Umwege), keine Koordinaten → Geocoder. Die ganze Adresse wird geokodiert (v0.18.0; vorher nur die Straße → „Dahler Str. 6b" landete in Wuppertal, Ziel in Wien); Name/id aus den Orten (Geocoder-`locality`, sonst `ortAusText_` „58809 Neuenrade" → Neuenrade), id `start_ziel` wenn der Start nicht Morges ist. Getestet mit echtem Link Morges → Brig-Glis; Zwischenziele beim ersten echten Link prüfen.
 
 App: **https://obitusde.github.io/ladeplanung/** (auf dem Pixel installiert).
 
@@ -52,13 +52,13 @@ Kein Backend zur Laufzeit der App: sie lädt `routes.json` + `modell.json` (mit 
 | Sheet „Ladestationen" | ID `1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE` |
 | Apps Script (gebunden) | scriptId `1paeATvOfJWWUunRDfUEgsEjFdGPIirbhS9wd4JivvFKhnjhDa0b585_w`, Editor https://script.google.com/d/1paeATvOfJWWUunRDfUEgsEjFdGPIirbhS9wd4JivvFKhnjhDa0b585_w/edit |
 | Web-App | Deployment-ID `AKfycbzTwwwZcQBuUdfmyoniHH5-gALKnrMlvl50VWtuM_JjZ7tBn7nk-AUwPO37bpPNBjsmuw`, URL `https://script.google.com/macros/s/<ID>/exec` (steht als `FORMULAR_URL` in `index.html`). `access: MYSELF`, `executeAs: USER_DEPLOYING` → ohne Google-Login 302 auf accounts.google.com |
-| Script Properties | `ORS_API_KEY` (openrouteservice, Basic), `GITHUB_TOKEN` (fine-grained, Contents Read/Write nur dieses Repo). **Nie ins Repo, nie im Frontend. Claude trägt keine Schlüssel ein.** |
+| Script Properties | `ORS_API_KEY` (openrouteservice, Basic), `GITHUB_TOKEN` (fine-grained, Contents Read/Write nur dieses Repo), `OPENROUTER_API_KEY` (Christof hat Konto mit Guthaben; für Preise), optional `PREIS_MODELL` (Standard `google/gemini-3.8-flash`). **Nie ins Repo, nie im Frontend. Claude trägt keine Schlüssel ein.** |
 | GitHub-Secret `CLASPRC_JSON` | Inhalt von `~/.clasprc.json` (clasp-Login). Nutzt die Action zum Veröffentlichen. **Nie ausgeben, nie ins Repo.** Erneuern: am PC `clasp login`, dann `gh secret set CLASPRC_JSON -R obitusde/ladeplanung < ~/.clasprc.json` |
 | gh CLI (PC) | als `obitusde` angemeldet |
 | clasp (PC) | angemeldet (`~/.clasprc.json`) – nur noch für Diagnose und zum Erneuern des Secrets, **nicht** zum Veröffentlichen |
 
 Web-App-Seiten (`doGet`):
-`?id=p023` Bearbeiten/Löschen · `?neu=1` Hinzufügen · `?seite=wartung` Wartung & Status (auch „Route hinzufügen" per Link) · `?seite=kalibrieren&fahrt=<JSON>` Fahrt kalibrieren · `?seite=vergleich[&route=…&richtung=hin|rueck&nach=p041]` Vergleichswert.
+`?id=p023` Bearbeiten/Löschen · `?neu=1` Hinzufügen · `?seite=wartung[&fokus=route]` Wartung & Status (auch „Route hinzufügen" per Link) · `?seite=preise` Ladepreise · `?seite=kalibrieren&fahrt=<JSON>` Fahrt kalibrieren · `?seite=vergleich[&route=…&richtung=hin|rueck&nach=p041]` Vergleichswert.
 
 ---
 
@@ -103,19 +103,22 @@ Christof pflegt über die App; Rechenschritte stößt er über **Wartung & Statu
 
 | Datei | Inhalt |
 |---|---|
-| `index.html` | Die PWA (CSS+JS eingebettet, keine Bibliotheken, kein Service Worker). Rechenkern `projiziere`, `haversine`, `streckenwerte`, Energieblock zwischen `// ENERGIE-START` und `// ENERGIE-ENDE` (muss identisch zu Code.js bleiben – Test prüft das). `window.ladeplanung` für Tests. |
+| `index.html` | Die PWA (CSS+JS eingebettet, keine Bibliotheken). Rechenkern `projiziere`, `haversine`, `streckenwerte`, Energieblock zwischen `// ENERGIE-START` und `// ENERGIE-ENDE` (muss identisch zu Code.js bleiben – Test prüft das). `window.ladeplanung` für Tests. |
 | `manifest.json`, `icon-*.png` | Installierbarkeit (Blitz-Icon) |
-| `routes.json` | vom Script exportiert, Format 1.1 |
-| `linien/<route>.json` | vom Script, eine Datei je Route (Format 3) |
+| `routes.json` | vom Script exportiert, Format 1.2 |
+| `preise.json` | Ladepreise je Betreiber und Land (Direktangebote), `stand` = Datum; Pflege über `?seite=preise` |
+| `sw.js` | Service Worker nur für offline: Netz zuerst, sonst zuletzt geladene Fassung (Abfrage `?t=` ignoriert) |
+| `linien/<route>.json` | vom Script, eine Datei je Route (Format 4) |
 | `modell.json` | Verbrauchsmodell mit Kalibrierung, vom Script (oder lokal mit `kalibriereZeilen_` erzeugt) |
 | `apps-script/Code.js` | gesamte Server-Logik (siehe §8) |
 | `apps-script/Formular.html` | Bearbeiten / Löschen / Hinzufügen |
 | `apps-script/Wartung.html` | Wartung & Status (Knöpfe mit „Wann"-Erklärung) |
 | `apps-script/Kalibrieren.html` | Fahrt kalibrieren (nach „Angekommen") |
 | `apps-script/Vergleich.html` | Vergleichswert aus ABRP / My CUPRA |
+| `apps-script/Preise.html` | Ladepreise ansehen, über OpenRouter neu suchen, je Anbieter bestätigen |
 | `apps-script/appsscript.json` | Zeitzone Europe/Zurich, V8, `webapp` MYSELF |
 | `.github/workflows/apps-script.yml` | Veröffentlicht Apps Script bei Push auf `main` (nur bei Änderungen unter `apps-script/`) |
-| `tests/test-*.js` | links, routen, bereinigung, routen-vorgaben, formular, modell, vergleich, spalten, routenlink |
+| `tests/test-*.js` | links, routen, bereinigung, routen-vorgaben, formular, modell, vergleich, spalten, routenlink, preise |
 | `tests/formular-vorschau.js`, `tests/erzeuge-testdaten.js`, `tests/server.js`, `tests/analyse-routen.js` | Werkzeuge |
 | `tests/fixtures/` | aufgelöste Maps-Links, synthetische Routen, generierte Vorschauseiten |
 | `docs/Umsetzungsbrief_v5.0.md` | ursprünglicher Auftrag |
@@ -142,7 +145,9 @@ Christof pflegt über die App; Rechenschritte stößt er über **Wartung & Statu
 **`linien/<id>.json`:** `{ version, id, name, eingabe ("Start|Via|Ziel"), erzeugt, ors_distanz_km, ors_dauer_s, laenge_km, hm_hin, hm_rueck, stuetzpunkte_voll, format: 4, strassen: [[km_ab, name]], hoechster: [km, m], linie }`.
 **`modell.json`:** `{ version, fahrzeug {kapazitaet_kwh 58, masse_kg 1811, fahrer_kg 80}, physik {cda 0.63, crr 0.008, eta 0.78, rekuperation 0.6, hilfsleistung_kw 0.3, heiz_kw_pro_grad 0.14, heiz_schwelle_c 18}, korrektur {gesamt, fahrt, hoehe, heizung}, erzeugt, kalibrierung {fahrten, abweichung_prozent, stand, methode, quellen {Quelle: {n, abweichung, tendenz}}} }`.
 
-**App-Zustand** `localStorage['ladeplanung.v1']`: `route, richtung, sim {aktiv, lat, lon, label}, einst {geschwindigkeit 120, zusatzgewicht 0, temperatur '' (=auto), reserve 10}, wetter {temp, zeit, lat, lon}, fahrt {start_soc, start_zeit, start_lat, start_lon, route, route_name, richtung, start {km, hm_hin, hm_rueck, q}}, ankunft {url, zeit}`.
+**App-Zustand** `localStorage['ladeplanung.v1']`: `route, richtung, sim {aktiv, lat, lon, label}, einst {geschwindigkeit 120, zusatzgewicht 0, temperatur '' (=auto), reserve 10}, wetter {temp, zeit, lat, lon}, fahrt {start_soc, start_zeit, start_lat, start_lon, route, route_name, richtung, start {km, hm_hin, hm_rueck, q}}, ankunft {url, zeit}, letzterStandort {lat, lon, genauigkeit, zeit}`.
+
+**`preise.json`:** `{ version 1, stand "JJJJ-MM-TT", anbieter: [{ betreiber, land (CH/DE/AT/IT), waehrung, suche (offizielle URL als Hinweis fürs Modell), tarife: [{ name, kwh, kwh_bis?, grund_monat, minute?, kw_bis? }], hinweis }] }`. Zuordnung in der App: Betreiber der Station (leer → Name enthält Betreiber) + Land aus dem letzten Teil der Adresse. `kw_bis` wählt bei Migrol den Tarif zur kW der Station. Liste: Spanne über alle Tarife (EnBW S–L), Tesla nur Fremdfahrzeug.
 
 ---
 
@@ -166,7 +171,7 @@ kWh     = max(0, gesamt·(k_fahrt·fahrt + k_hoehe·hoehe + k_heizung·heiz));  
 ```
 Startwerte abgeglichen mit EV Database (Born 150 kW 58 kWh, 110 km/h): **18,1 kWh/100 km bei 23 °C**, **23,2 bei −10 °C mit Heizung**.
 
-**Prognose in der App:** Bedarf je Station = Strecke ab Position (+ `quer_km` als Umweg) mit Einstellungen Tempo/Zusatzgewicht/Temperatur. Temperatur: Eingabe, sonst Open-Meteo am Standort (Mittel aus jetzt und +3 h, max. 30 min/30 km alt), sonst 15 °C. Mit **„Losfahren"** (Akku %) → „jetzt ≈" = Start − Bedarf(Start→Position), je Station „Ankunft ≈ x %", **rot unter der Reserve**, unter 0 „nicht erreichbar (fehlen ≈ x %)"; Marke **„letzte vor Reserve"**. Je Station „danach x km bis zur nächsten" bzw. „letzte Station, danach x km bis zum Ziel". Nur volle km. Notiz-Kasten über die ganze Zeilenbreite. Fußzeile: Ziel-km und „braucht ≈" bzw. nach Los „am Ziel ≈". Höhenmeter nur in den Details (v0.16.0). **„Angekommen"** öffnet `?seite=kalibrieren` mit vorbefüllten Werten.
+**Prognose in der App:** Bedarf je Station = Strecke ab Position (+ `quer_km` als Umweg) mit Einstellungen Tempo/Zusatzgewicht/Temperatur. Temperatur: Eingabe, sonst Open-Meteo am Standort (Mittel aus jetzt und +3 h, max. 30 min/30 km alt), sonst 15 °C. Oben **„Akku jetzt __ % ✓"** (intern weiter `fahrt`, früher „Losfahren") → „jetzt ≈" = Eingabe − Bedarf(Eingabe-Position→Position), je Station „Rest bei Ankunft ≈ x %", **rot unter der Reserve**, unter 0 „nicht erreichbar (fehlen ≈ x %)". **Ohne Eingabe wird voller Akku (100 %) angenommen** (v0.17.0): Markierungen erscheinen trotzdem, Text „braucht ≈ x %" bzw. „nicht erreichbar, braucht ≈ x %". Marke **„letzte vor Reserve"**. Je Station „danach x km bis zur nächsten" bzw. „letzte Station, danach x km bis zum Ziel". Nur volle km. Notiz-Kasten über die ganze Zeilenbreite. Preiszeile je Station. Fußzeile: Ziel-km und „braucht ≈" bzw. nach Los „am Ziel ≈". Höhenmeter nur in den Details (v0.16.0). **„Angekommen"** öffnet `?seite=kalibrieren` mit vorbefüllten Werten.
 
 **Kalibrierung** (`kalibriereZeilen_` rein rechnerisch → `kalibriere_`), nach jeder gespeicherten Fahrt/jedem Vergleichswert und per Wartung:
 1. Gewicht: gemessen mit Bordcomputer-Tempo 1, ohne 0,5; ABRP/My CUPRA mit Fahrzeit 0,3, **ohne Fahrzeit 0** (nicht verwendet). Gültig ab 10 km und gesunkenem Akku; `verwenden = nein` respektieren.
@@ -194,7 +199,10 @@ Startwerte abgeglichen mit EV Database (Born 150 kW 58 kWh, 110 km/h): **18,1 kW
 - **My CUPRA:** Teilen geht nicht → „Adresse kopieren" und dort einfügen.
 - Schreibender Endpunkt (eigentlich Stufe 4): Web-App nur für Christofs Konto – Bearbeiten, Löschen, Hinzufügen, Wartung, Kalibrieren, Vergleich.
 - **Akku-Prognose mit roter Schrift** (bewusst gegen das Nicht-Ziel „Farblogik"). Alles optional; **keine Dauermessung, Handy muss nicht an bleiben**.
-- Mehrere Varianten je Stammstrecke erlaubt (Savona).
+- Mehrere Varianten je Stammstrecke erlaubt (Savona, Ingolstadt).
+- **Bedienung seit App v0.17.0:** oben „von" ⇄ „nach" (nur Orte mit Route; Orte = Start/Ziel aus dem Routennamen „A – B (Variante)"), bei mehreren Routen „über"; Menü ☰ (Ladepunkt/Route hinzufügen, Einstellungen, Simulation, Ladepreise, Preise aktualisieren, Wartung & Status, Info). Simulation: je Route Start, km 25/50/75 % (mit nächster Station), Ziel.
+- **Ladepreise:** nur Direktangebote der Betreiber, kein Roaming; EnBW nur S/M/L (kein Ad hoc), alle drei immer zeigen; Tesla für Fremdfahrzeuge; nur Datum als Stand anzeigen. Aktualisieren über OpenRouter mit Websuche (`plugins: [{id:'web'}]`), Vorschlag alt/neu, Übernahme nur nach Bestätigung. Schweizer Ladepreiskarte (`api.chargeprice.app/v1/opendata/charging_prices_ch`) braucht eigenen Schlüssel → nicht genutzt.
+- **Offline** per Service Worker (Brief-Stufe 4 vorgezogen) und letzter Standort bis GPS da ist.
 
 Weiter gültig aus dem Brief: keine Google Directions/Distance Matrix/Places API, kein Ziel-Versand ans Auto, keine eigene Belegt-/Preis-Logik.
 
@@ -219,7 +227,8 @@ Weiter gültig aus dem Brief: keine Google Directions/Distance Matrix/Places API
 - Straßennamen der Route fehlen, wo ORS keine liefert (A 96, A 45) – im Titel hilft die Spalte „Straße".
 - A5/A67 bei Neuenrade: Route läuft über A5, Raststätten an der A67 mit ~4 km Querabstand (akzeptiert durch 10-km-Korridor).
 - **OBD-Adapter Veepeak OBDCheck BLE+**: Web Bluetooth geht auf dem Pixel. Community-PIDs (MEB, unbestätigt): SoC `22028C` (Header `ATSP7;ATAT1;ATST96`), Kilometerstand `2202BD` (Header `ATSHFC007B`, `ATCRA17FE007B`). Idee: Live-Akkustand statt Eingabe bei „Losfahren"/„Angekommen" – ausdrücklich **ohne Daueraufzeichnung**. Erst mit einer kleinen Testseite prüfen.
-- Aus dem Brief noch nicht gebaut: Stufe 2 (geteilte Google-Maps-Routen, „Route ab hier"), Stufe 3 (Registerdaten BNetzA/ich-tanke-strom.ch), Stufe 4 (Filter, Service Worker, onChange-Trigger).
+- Aus dem Brief noch nicht gebaut: Stufe 2 teilweise (Routen per Link ja, „Route ab hier"/Teilen-Ziel nein), Stufe 3 (Registerdaten BNetzA/ich-tanke-strom.ch), Stufe 4 (Filter, onChange-Trigger).
+- **Preis-Aktualisierung noch nicht echt getestet** (nur mit nachgebautem `google.script.run`): braucht `OPENROUTER_API_KEY` in den Skripteigenschaften. Erstes echtes Ergebnis prüfen (Modell, JSON, Kosten).
 
 ---
 
@@ -240,4 +249,6 @@ Weiter gültig aus dem Brief: keine Google Directions/Distance Matrix/Places API
 - Die Action startet nur bei Änderungen unter `apps-script/` (Pfadfilter) – sonst würde jede Kalibrierung/jeder Export des Scripts neu veröffentlichen.
 - Jede Veröffentlichung legt eine neue Apps-Script-Version an; Google begrenzt die Anzahl je Projekt (vermutlich 200, nicht geprüft). Daher nicht für Kleinigkeiten mehrfach hintereinander veröffentlichen.
 - **Overpass (OpenStreetMap) lehnt Apps Script ab**: HTTP 406 bei der Kennung „Google-Apps-Script", UA nicht änderbar. Von PC/Action mit eigener Kennung geht es; große Abfragen in kleinen Stücken (≈ 8 × 20-km-Rechtecke) mit Pausen, sonst „Dispatcher timeout"/Drosselung.
+- Geocoder mit nur Straße + Hausnummer findet irgendeine gleichnamige Straße (Wuppertal statt Neuenrade) → immer die ganze Adresse.
+- Dialoge: Übernahme im `submit`-Handler, `close` nur als Rückfall mit Sperre (gilt für Einstellungen und Simulation).
 - Action rot bei „clasp show-authorized-user"/`invalid_grant` → Secret abgelaufen oder widerrufen (z. B. nach `clasp logout` am PC). Erneuern siehe §4.

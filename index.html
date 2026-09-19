@@ -1,6 +1,10 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.17.0 — Auswahl „von" / „nach" (/ „über") statt Routenliste; Menü ☰ mit allen Punkten; Simulation mit
+                   Vorlagen je Route (Start, Ziel, drei Punkte unterwegs); Markierungen auch ohne Akku-Eingabe (voller Akku
+                   angenommen); „Akku jetzt"; Ladepreise (preise.json) in Liste, Details und eigener Seite; offline
+                   nutzbar (Service Worker, zuletzt geladene Daten); letzter Standort bis das GPS da ist.
   Version 0.16.1 — Nur volle Kilometer; Notiz-Kasten über die ganze Breite.
   Version 0.16.0 — Liste ohne Höhenmeter (nur noch in den Details); „nicht erreichbar" statt negativer Ankunft;
                    Hinweis „letzte vor Reserve"; je Station die Lücke bis zur nächsten; Akku am Ziel in der Fußzeile.
@@ -17,7 +21,7 @@
   Version 0.9.1 — Straße im Titel; ABRP-Link mit aktueller Position als Start.
   Version 0.9.0 — Lage je Station: Raststätte, Straße, Querabstand („3,2 km abseits · A 5").
   Version 0.8.0 — Etappe 7/8: Liste, Projektion, Simulationsmodus, Detailansicht, drei Ausgabewege.
-  Grundlage: Umsetzungsbrief v5.0, Stufe 1. Keine externen Bibliotheken, kein Service Worker.
+  Grundlage: Umsetzungsbrief v5.0, Stufe 1. Keine externen Bibliotheken. Service Worker (sw.js) seit v0.17.0 nur für offline.
 -->
 <html lang="de">
 <head>
@@ -77,11 +81,14 @@
       display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px;
     }
     .zeile { display: flex; gap: 6px; align-items: stretch; }
-    select#route {
-      flex: 1; min-width: 0; min-height: 48px; padding: 0 8px;
+    select.ort {
+      flex: 1; min-width: 0; min-height: 48px; padding: 0 2px 0 6px;
       background: var(--flaeche); border: 2px solid var(--linie); border-radius: 10px;
-      font-size: 21px; font-weight: 800;
+      font-size: 17px; font-weight: 800;
     }
+    header #tausch { width: 38px; }
+    select#ueber { flex: 2; font-size: 17px; font-weight: 700; }
+    header #standort { flex: 1; }
     header .knopf { min-height: 48px; }
     header .knopf.icon { width: 46px; padding: 0; flex: none; }
     .knopf {
@@ -128,6 +135,7 @@
       padding: 8px 12px; cursor: pointer;
     }
     .eintrag.favorit { background: var(--favorit); border-left: 6px solid var(--akzent); padding-left: 6px; }
+    .eintrag > :not(.km):not(.notiz) { grid-column: 2; }
     .eintrag .lage { font-weight: 600; color: var(--leise); }
     .eintrag .lage.rast { color: var(--akzent); }
     .eintrag .km { grid-row: 1 / span 4; font-size: 28px; font-weight: 800; line-height: 1; align-self: center; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -152,11 +160,18 @@
     footer b { color: var(--text); }
 
     .klein-hinweis { margin: -4px 0 6px; font-size: 15px; color: var(--leise); }
-    #info-seite h2 { margin: 12px 0 6px; font-size: 26px; }
+    #info-seite h2, #preise-seite h2 { margin: 12px 0 6px; font-size: 26px; }
+    #preise-seite h3 { margin: 20px 0 6px; font-size: 21px; }
+    .preiskarte { border: 2px solid var(--linie); border-radius: 12px; padding: 8px 12px; margin-bottom: 10px; }
+    .preiskarte .tarif { display: flex; justify-content: space-between; gap: 10px; font-variant-numeric: tabular-nums; }
+    .eintrag .preis { color: var(--leise); font-size: 15px; font-variant-numeric: tabular-nums; }
+    .menue { display: grid; gap: 8px; }
+    .menue .knopf { display: flex; align-items: center; justify-content: flex-start; gap: 10px; text-decoration: none; color: var(--text); font-size: 19px; }
+    .menue .knopf.haupt { justify-content: center; color: var(--akzent-text); }
     #info-seite h3 { margin: 22px 0 6px; font-size: 20px; }
     #info-seite p, #info-seite li { margin: 0 0 8px; }
     #info-seite ol, #info-seite ul { padding-left: 22px; margin: 0 0 8px; }
-    #detail, #info-seite {
+    #detail, #info-seite, #preise-seite {
       position: fixed; inset: 0; z-index: 5; overflow-y: auto;
       background: var(--grund); padding: calc(env(safe-area-inset-top) + 10px) 14px 24px;
     }
@@ -164,7 +179,7 @@
     #detail .gross { font-size: 22px; font-weight: 700; margin: 0 0 12px; }
     dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0 0 18px; }
     dt { color: var(--leise); }
-    dd { margin: 0; overflow-wrap: anywhere; }
+    dd { margin: 0; overflow-wrap: anywhere; white-space: pre-line; }
     .aktionen { display: grid; gap: 10px; }
     .aktionen .knopf { display: flex; align-items: center; justify-content: center; text-decoration: none; min-height: 60px; font-size: 20px; }
 
@@ -195,23 +210,23 @@
 <body>
   <header>
     <div class="zeile">
-      <select id="route" aria-label="Route"></select>
-      <a id="neu" class="knopf icon" href="#" target="_blank" rel="noopener" aria-label="Ladepunkt hinzufügen">＋</a>
-      <button id="einstellungen" class="knopf icon" aria-label="Einstellungen">⚙</button>
-      <button id="info" class="knopf icon" aria-label="Info: was die App macht">ⓘ</button>
+      <select id="von" class="ort" aria-label="von"></select>
+      <button id="tausch" class="knopf icon" type="button" aria-label="von und nach tauschen">⇄</button>
+      <select id="nach" class="ort" aria-label="nach"></select>
+      <button id="menue" class="knopf icon" type="button" aria-label="Menü">☰</button>
     </div>
     <div class="zeile">
-      <button id="richtung" class="richtung" type="button" aria-label="Fahrtrichtung wechseln">nach …</button>
+      <select id="ueber" class="ort" aria-label="über" hidden></select>
       <button id="standort" class="knopf haupt" type="button">Standort</button>
     </div>
   </header>
 
   <div id="fahrt" class="fahrt" hidden></div>
   <form id="los" class="fahrt" hidden>
-    <label for="los-soc" class="text">Akku beim Start</label>
+    <label for="los-soc" class="text">Akku jetzt <span class="klein">(leer = voll angenommen)</span></label>
     <input type="number" id="los-soc" inputmode="numeric" min="1" max="100" required>
     <span>%</span>
-    <button class="knopf" type="submit">▶ Los</button>
+    <button class="knopf" type="submit" aria-label="Akkustand übernehmen">✓</button>
   </form>
   <div id="hinweis" hidden></div>
   <main id="liste"><p class="leer">Lade Daten …</p></main>
@@ -253,11 +268,12 @@
     <h3>Was die Angaben bedeuten</h3>
     <ul>
       <li><b>Große Zahl:</b> Kilometer entlang der Route bis auf Höhe des Ladepunkts. Liegt er abseits, kommt der Weg von der Ausfahrt noch dazu („3,2 km abseits").</li>
-      <li><b>braucht ≈ 23 %</b>: so viel Akku kostet der Weg bis dorthin. <b>Rest bei Ankunft ≈ 34 %</b>: so viel ist dort noch übrig – nur nach „▶ Los". <span class="rot"><b>Rot</b></span> = Rest unter deiner Reserve, <b>nicht erreichbar</b> = Akku reicht nicht bis dorthin.</li>
+      <li><b>braucht ≈ 23 %</b>: so viel Akku kostet der Weg bis dorthin. <b>Rest bei Ankunft ≈ 34 %</b>: so viel ist dort noch übrig – wenn oben „Akku jetzt" eingetragen ist. Ohne Eintrag rechnet die App mit vollem Akku (100 %). <span class="rot"><b>Rot</b></span> = Rest unter deiner Reserve, <b>nicht erreichbar</b> = Akku reicht nicht bis dorthin.</li>
       <li><b>letzte vor Reserve</b>: die letzte Station, die du noch über deiner Reserve erreichst.</li>
       <li><b>danach 38 km bis zur nächsten</b>: Abstand zur nächsten Station voraus – so siehst du lange Lücken.</li>
       <li><b>4 × 150 kW:</b> Anzahl Ladepunkte × Leistung, sofern eingetragen.</li>
-      <li><b>Unten:</b> Kilometer bis zum Ziel und Akku dafür („braucht", nach „▶ Los" „am Ziel ≈").</li>
+      <li><b>0,39–0,56 €</b>: Ladepreis des Betreibers (Direktangebot, kein Roaming), alle Tarife unter Menü → Ladepreise.</li>
+      <li><b>Unten:</b> Kilometer bis zum Ziel und Akku dafür („braucht", mit „Akku jetzt" „am Ziel ≈").</li>
       <li><b>Hinterlegter Text</b> („Raststätte", „McDo"): deine Notiz.</li>
       <li><b>+ hm</b> (in den Details): Summe der Anstiege bis dorthin, geglättet.</li>
       <li><b>(A5):</b> Straße, an der der Punkt liegt – aus der Spalte „Straße" (Bearbeiten), sonst aus der Route. <b>Raststätte:</b> direkt an der Autobahn, oft nur in einer Fahrtrichtung erreichbar.</li>
@@ -267,12 +283,12 @@
     <h3>Akku-Prognose</h3>
     <p>Der Akkubedarf bis zu jeder Station wird aus Strecke, Höhenmetern, deiner <b>Reisegeschwindigkeit</b>, dem <b>Zusatzgewicht</b> (beides unter ⚙) und der <b>Außentemperatur</b> geschätzt. Die Temperatur ist der Durchschnitt aus jetzt und in drei Stunden am Standort – oder dein eigener Wert unter ⚙.</p>
     <p>Die Geschwindigkeit hat den größten Einfluss: 130 statt 110 km/h brauchen rund ein Viertel mehr. 1000 Höhenmeter bergauf kosten etwa 11 % Akku, bergab kommt gut ein Drittel davon zurück.</p>
-    <p><b>Optional:</b> Trägst du oben „Akku beim Start" ein und drückst <b>▶ Los</b>, zeigt die Liste den <b>Rest bei Ankunft</b>. „Angekommen" öffnet ein kurzes Formular: echter Akkustand rein, fertig – daraus lernt das Modell und wird mit jeder Fahrt genauer. Ohne diese Eingaben siehst du nur den Bedarf.</p>
+    <p><b>Optional:</b> Trägst du oben „Akku jetzt" ein und tippst <b>✓</b>, rechnet die Liste mit diesem Stand und zieht unterwegs den Verbrauch ab. „Angekommen" öffnet ein kurzes Formular: echter Akkustand rein, fertig – daraus lernt das Modell und wird mit jeder Fahrt genauer. Ohne Eintrag rechnet die App mit vollem Akku.</p>
     <p><b>Vergleichswerte:</b> In den Details einer Station „Vergleichswert eintragen" – Strecke in ABRP oder My CUPRA planen und die beiden Akkuwerte abschreiben. Das hilft dem Modell schon vor der ersten Fahrt; echte Fahrten zählen aber mehr.</p>
     <p id="info-modell" class="klein-hinweis"></p>
 
-    <h3>Richtung</h3>
-    <p>„nach Neuenrade ⇄" wechselt beim Antippen. Punkte, die nur in einer Richtung erreichbar sind, erscheinen nur dort.</p>
+    <h3>Strecke wählen</h3>
+    <p>Oben <b>von</b> und <b>nach</b> wählen – angeboten werden nur Orte, zwischen denen es eine Route gibt. <b>⇄</b> tauscht die Richtung. Gibt es mehrere Wege (z. B. über München oder Augsburg), erscheint darunter <b>über</b>. Punkte, die nur in einer Richtung erreichbar sind, erscheinen nur dort.</p>
 
     <h3>Abseits der Route</h3>
     <p>Bist du mehr als 10 km von der Linie entfernt, zeigt die App Luftlinie ohne Höhenmeter und ohne Akku-Prognose – ein Notbehelf, bis du wieder auf der Route bist. Die GPS-Genauigkeit steht unten; bei mehreren hundert Metern ist die Position unzuverlässig.</p>
@@ -282,7 +298,8 @@
 
     <h3>Daten pflegen</h3>
     <ul>
-      <li><b>＋</b> neue Station per Google-Maps-Link. Gibt es sie schon (oder eine in der Nähe), wirst du gewarnt.</li>
+      <li>Menü → <b>Ladepunkt hinzufügen</b>: neue Station per Google-Maps-Link. Gibt es sie schon (oder eine in der Nähe), wirst du gewarnt.</li>
+      <li>Menü → <b>Route hinzufügen</b>: Route in Google Maps planen (Umwege als Stopp), teilen, Link einfügen.</li>
       <li><b>Bearbeiten</b> in den Details – dort auch <b>Löschen</b>.</li>
       <li>Beides veröffentlicht automatisch; die App zeigt es nach 1–2 Minuten.</li>
       <li>Alles andere – Routen ändern, direkt im Sheet bearbeiten, Modell neu kalibrieren – unter <b>Wartung &amp; Status</b>. Dort steht auch, wann was zu tun ist.</li>
@@ -290,13 +307,53 @@
     <a id="info-wartung" class="knopf haupt" href="#" target="_blank" rel="noopener" style="font-size:20px">Wartung &amp; Status öffnen</a>
 
     <h3>Was sie nicht macht</h3>
-    <p>Keine Navigation, kein Belegt-Status, keine Preise. Die Akku-Prognose ist eine Schätzung – maßgeblich bleibt die Anzeige im Auto.</p>
+    <p>Keine Navigation, kein Belegt-Status. Preise sind Richtwerte der Betreiber mit Datum – maßgeblich ist die Anzeige an der Säule bzw. in der App des Betreibers. Die Akku-Prognose ist eine Schätzung – maßgeblich bleibt die Anzeige im Auto.</p>
+
+    <h3>Ohne Netz</h3>
+    <p>Die App startet auch ohne Internet mit den zuletzt geladenen Daten. Bis das GPS antwortet, nutzt sie den letzten Standort.</p>
 
     <h3>Testen ohne Fahrt</h3>
-    <p>⚙ → Simulationsmodus: Position von Hand setzen, z. B. „Mitte der Route".</p>
+    <p>Menü → Simulation: Route und Punkt wählen (Start, Ziel oder unterwegs).</p>
 
     <p id="info-stand" class="klein-hinweis" style="margin-top:20px"></p>
   </section>
+
+  <section id="preise-seite" hidden>
+    <button id="preise-zurueck" class="knopf" type="button">← Zurück</button>
+    <h2>Ladepreise</h2>
+    <p id="preise-stand" class="klein-hinweis"></p>
+    <div id="preise-inhalt"></div>
+    <a id="preise-aktualisieren" class="knopf" href="#" target="_blank" rel="noopener" style="display:flex;align-items:center;justify-content:center;text-decoration:none">Preise aktualisieren</a>
+  </section>
+
+  <dialog id="menue-dlg">
+    <form method="dialog" class="menue">
+      <h2>Menü</h2>
+      <a id="m-neu" class="knopf" href="#" target="_blank" rel="noopener">＋ Ladepunkt hinzufügen</a>
+      <a id="m-route" class="knopf" href="#" target="_blank" rel="noopener">＋ Route hinzufügen</a>
+      <button type="button" class="knopf" data-m="einstellungen">⚙ Einstellungen</button>
+      <button type="button" class="knopf" data-m="simulation">⌖ Simulation</button>
+      <button type="button" class="knopf" data-m="preise">€ Ladepreise</button>
+      <a id="m-preise" class="knopf" href="#" target="_blank" rel="noopener">↻ Preise aktualisieren</a>
+      <a id="m-wartung" class="knopf" href="#" target="_blank" rel="noopener">🔧 Wartung &amp; Status</a>
+      <button type="button" class="knopf" data-m="info">ⓘ So funktioniert die App</button>
+      <button class="knopf haupt" value="zu">Schließen</button>
+    </form>
+  </dialog>
+
+  <dialog id="sim-dlg">
+    <form method="dialog">
+      <h2>Simulation</h2>
+      <label class="schalter"><input type="checkbox" id="sim-aktiv" aria-label="Simulationsmodus"> Simulationsmodus</label>
+      <label>Route <select id="sim-route"></select></label>
+      <label>Punkt <select id="sim-punkt"></select></label>
+      <label>Position (lat,lon)
+        <input type="text" id="sim-koord" inputmode="decimal" autocomplete="off" placeholder="46.50432,6.49127">
+      </label>
+      <p class="klein">Einen Punkt wählen schaltet die Simulation ein und stellt die Route oben passend ein.</p>
+      <button class="knopf haupt" value="ok" style="width:100%">Fertig</button>
+    </form>
+  </dialog>
 
   <dialog id="dlg">
     <form method="dialog">
@@ -312,15 +369,6 @@
         <label>Reserve (%) <input type="number" id="e-reserve" inputmode="numeric" min="0" max="50"></label>
       </div>
       <p class="klein">Temperatur leer lassen = automatisch vom Wetter. Stationen mit Ankunft unter der Reserve erscheinen rot.</p>
-
-      <h3>Simulation</h3>
-      <label class="schalter"><input type="checkbox" id="sim-aktiv" aria-label="Simulationsmodus"> Simulationsmodus</label>
-      <label>Vorlage
-        <select id="sim-vorlage"></select>
-      </label>
-      <label>Position (lat,lon)
-        <input type="text" id="sim-koord" inputmode="decimal" autocomplete="off" placeholder="46.50432,6.49127">
-      </label>
       <p class="klein" id="version"></p>
       <button class="knopf haupt" value="ok" style="width:100%">Fertig</button>
     </form>
@@ -331,7 +379,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.16.1';
+    const APP_VERSION = '0.17.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -496,6 +544,8 @@
     let gpsFehler = '';
     let gpsLaeuft = false;
     let detailPunkt = null;
+    let preise = null;       // preise.json (Ladepreise je Betreiber und Land)
+    const LETZTER_STANDORT_MAX_MS = 24 * 3600e3;
 
     const zustand = (() => {
       const standard = {
@@ -505,6 +555,7 @@
         wetter: null,    // { temp, zeit, lat, lon }
         fahrt: null,     // { start_soc, start_zeit, start_lat, start_lon, route, route_name, richtung, start: {km, hm_hin, hm_rueck, q} }
         ankunft: null,   // { url, zeit } — Kalibrierung geöffnet, zur Erinnerung
+        letzterStandort: null, // { lat, lon, genauigkeit, zeit } — gilt, bis das GPS antwortet
       };
       try {
         const g = JSON.parse(localStorage.getItem(SPEICHER) || '{}');
@@ -524,7 +575,154 @@
       if (zustand.sim.aktiv) {
         return zustand.sim.lat !== null ? { lat: zustand.sim.lat, lon: zustand.sim.lon, genauigkeit: null, sim: true } : null;
       }
-      return gps;
+      if (gps) return gps;
+      // bis das GPS antwortet (oder ohne GPS): letzter bekannter Standort, höchstens 24 h alt
+      const l = zustand.letzterStandort;
+      if (l && Date.now() - l.zeit < LETZTER_STANDORT_MAX_MS) return { lat: l.lat, lon: l.lon, genauigkeit: l.genauigkeit, alt: true, zeit: l.zeit };
+      return null;
+    }
+
+    // -----------------------------------------------------------------------
+    // Strecke: „von" / „nach" / „über" aus den Routennamen („Morges – Ingolstadt (Augsburg)")
+    // -----------------------------------------------------------------------
+
+    /** { start, ziel, variante } aus dem Routennamen. */
+    function routenTeile(r) {
+      const [a, ...rest] = String(r.name).split(/\s+[–-]\s+/);
+      const b = rest.join(' – ');
+      const m = b.match(/^(.*?)\s*\((.*)\)\s*$/);
+      return { start: a.trim(), ziel: (m ? m[1] : b).trim() || r.id, variante: m ? m[2].trim() : '' };
+    }
+
+    /** Routen zwischen zwei Orten mit Richtung: [{ route, richtung }]. */
+    function routenZwischen(von, nach) {
+      const erg = [];
+      for (const r of daten.routen) {
+        const t = routenTeile(r);
+        if (t.start === von && t.ziel === nach) erg.push({ route: r, richtung: 'hin' });
+        else if (t.ziel === von && t.start === nach) erg.push({ route: r, richtung: 'rueck' });
+      }
+      return erg;
+    }
+
+    function alleOrte() {
+      const orte = [];
+      for (const r of daten.routen) { const t = routenTeile(r); for (const o of [t.start, t.ziel]) if (!orte.includes(o)) orte.push(o); }
+      return orte;
+    }
+
+    /** Orte, die von „von" aus erreichbar sind. */
+    function zieleVon(von) {
+      const orte = [];
+      for (const r of daten.routen) {
+        const t = routenTeile(r);
+        const ziel = t.start === von ? t.ziel : t.ziel === von ? t.start : null;
+        if (ziel && !orte.includes(ziel)) orte.push(ziel);
+      }
+      return orte;
+    }
+
+    function setzeStrecke(von, nach, bevorzugt) {
+      const moeglich = routenZwischen(von, nach);
+      if (!moeglich.length) return;
+      const w = moeglich.find(x => x.route.id === bevorzugt) || moeglich[0];
+      zustand.route = w.route.id;
+      zustand.richtung = w.richtung;
+      speichere();
+      render();
+    }
+
+    function fuelle(sel, werte, wert) {
+      sel.replaceChildren();
+      for (const [v, text] of werte) { const o = el('option', '', text); o.value = v; sel.append(o); }
+      sel.value = wert;
+    }
+
+    function renderAuswahl(route) {
+      const t = routenTeile(route);
+      const von = zustand.richtung === 'hin' ? t.start : t.ziel;
+      const nach = zustand.richtung === 'hin' ? t.ziel : t.start;
+      fuelle($('von'), alleOrte().map(o => [o, o]), von);
+      fuelle($('nach'), zieleVon(von).map(o => [o, o]), nach);
+      const varianten = routenZwischen(von, nach);
+      $('ueber').hidden = varianten.length < 2;
+      fuelle($('ueber'), varianten.map(x => [x.route.id, 'über ' + (routenTeile(x.route).variante || x.route.name)]), route.id);
+    }
+
+    // -----------------------------------------------------------------------
+    // Ladepreise (preise.json): nur Direktangebote der Betreiber
+    // -----------------------------------------------------------------------
+
+    const LAENDER = { Schweiz: 'CH', Deutschland: 'DE', Österreich: 'AT', Italien: 'IT' };
+    const LAND_NAME = { CH: 'Schweiz', DE: 'Deutschland', AT: 'Österreich', IT: 'Italien' };
+
+    function landVon(p) {
+      const letzter = String(p.adresse || '').split(',').pop().trim();
+      return LAENDER[letzter] || '';
+    }
+
+    /** Preis-Eintrag des Betreibers im Land der Station (Betreiber leer → aus dem Namen). */
+    function preisEintrag(p) {
+      if (!preise || !preise.anbieter) return null;
+      const land = landVon(p);
+      const name = String(p.betreiber || '').toLowerCase();
+      const titel = String(p.name || '').toLowerCase();
+      return preise.anbieter.find(a => a.land === land && (a.betreiber.toLowerCase() === name || (!name && titel.includes(a.betreiber.toLowerCase())))) || null;
+    }
+
+    const geldZahl = x => zahl(x, 2);
+    const waehrung = w => w === 'EUR' ? '€' : w;
+
+    /** Passende Tarife: bei leistungsabhängigen Preisen (Migrol) nur der zur kW der Station. */
+    function tarifeFuer(a, p) {
+      const mitKw = a.tarife.filter(t => t.kw_bis);
+      if (!mitKw.length || !p.kw) return a.tarife;
+      const passend = a.tarife.filter(t => !t.kw_bis || p.kw <= t.kw_bis).sort((x, y) => (x.kw_bis || 1e9) - (y.kw_bis || 1e9));
+      return passend.length ? [passend[0]] : a.tarife;
+    }
+
+    /** Kurzform für die Liste: „0,39–0,56 €" (EnBW S–L), „0,28 CHF", Tesla: Fremdfahrzeug-Preis. */
+    function preisKurz(p) {
+      const a = preisEintrag(p);
+      if (!a || !a.tarife.length) return '';
+      let tarife = tarifeFuer(a, p);
+      if (a.betreiber === 'Tesla') tarife = tarife.slice(0, 1);
+      const von = Math.min(...tarife.map(t => t.kwh));
+      const bis = Math.max(...tarife.map(t => t.kwh_bis || t.kwh));
+      const minute = tarife.find(t => t.minute);
+      return (von === bis ? geldZahl(von) : geldZahl(von) + '–' + geldZahl(bis)) + ' ' + waehrung(a.waehrung) + '/kWh' +
+        (minute ? ' + ' + geldZahl(minute.minute) + '/min' : '');
+    }
+
+    function tarifText(t, w) {
+      let s = (t.kwh_bis ? geldZahl(t.kwh) + '–' + geldZahl(t.kwh_bis) : geldZahl(t.kwh)) + ' ' + waehrung(w) + '/kWh';
+      if (t.minute) s += ' + ' + geldZahl(t.minute) + ' ' + waehrung(w) + '/min';
+      if (t.grund_monat) s += ' · ' + geldZahl(t.grund_monat) + ' ' + waehrung(w) + '/Monat';
+      return s;
+    }
+
+    const datumText = iso => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + '.' + m[2] + '.' + m[1] : '–'; };
+
+    function zeigePreise() {
+      const box = $('preise-inhalt');
+      box.replaceChildren();
+      $('preise-stand').textContent = preise ? 'Stand ' + datumText(preise.stand) + ' · nur Direktangebote der Betreiber, kein Roaming' : 'Preise konnten nicht geladen werden.';
+      for (const land of ['CH', 'DE', 'AT', 'IT']) {
+        const eintraege = (preise && preise.anbieter || []).filter(a => a.land === land);
+        if (!eintraege.length) continue;
+        box.append(el('h3', '', LAND_NAME[land]));
+        for (const a of eintraege) {
+          const k = el('div', 'preiskarte');
+          k.append(el('b', '', a.betreiber));
+          if (!a.tarife.length) k.append(el('div', 'klein', 'kein Preis hinterlegt'));
+          for (const t of a.tarife) { const z = el('div', 'tarif'); z.append(el('span', '', t.name), el('span', '', tarifText(t, a.waehrung))); k.append(z); }
+          if (a.hinweis) k.append(el('div', 'klein', a.hinweis));
+          box.append(k);
+        }
+      }
+      $('preise-seite').hidden = false;
+      $('preise-seite').scrollTop = 0;
+      history.pushState({ preise: true }, '');
     }
 
     // -----------------------------------------------------------------------
@@ -560,8 +758,11 @@
       if (!pos) return null;
       const umweg = e.z && e.z.quer_km > 1 ? e.z.quer_km : 0;
       const b = bedarf(zustand.richtung, pos, e.z, umweg);
-      const ankunft = jetzt === null ? null : jetzt - b.prozent;
-      return { kwh: b.kwh, prozent: b.prozent, ankunft, unerreichbar: ankunft !== null && ankunft < Number(zustand.einst.reserve || 0) };
+      // ohne „Akku jetzt" mit vollem Akku rechnen – mehr als 100 % gibt es nicht, also ist alles darüber sicher unerreichbar
+      const angenommen = jetzt === null;
+      const ankunft = (angenommen ? 100 : jetzt) - b.prozent;
+      return { kwh: b.kwh, prozent: b.prozent, ankunft, angenommen, nichtErreichbar: ankunft < 0,
+        unterReserve: ankunft < Number(zustand.einst.reserve || 0) };
     }
 
     let wetterLaeuft = false;
@@ -632,8 +833,8 @@
 
     function akkuText(pg) {
       if (!pg) return '';
-      if (pg.ankunft === null) return 'braucht ≈ ' + Math.round(pg.prozent) + ' %';
-      if (pg.ankunft < 0) return 'nicht erreichbar (fehlen ≈ ' + Math.round(-pg.ankunft) + ' %)';
+      if (pg.angenommen) return (pg.nichtErreichbar ? 'nicht erreichbar, braucht ≈ ' : 'braucht ≈ ') + Math.round(pg.prozent) + ' %';
+      if (pg.nichtErreichbar) return 'nicht erreichbar (fehlen ≈ ' + Math.round(-pg.ankunft) + ' %)';
       return 'Rest bei Ankunft ≈ ' + Math.round(pg.ankunft) + ' %';
     }
 
@@ -652,9 +853,7 @@
       const route = aktuelleRoute();
       zustand.route = route.id;
 
-      const [start, ziel] = route.name.split(/\s+[–-]\s+/);
-      $('richtung').textContent = 'nach ' + (zustand.richtung === 'hin' ? (ziel || 'Ziel') : (start || 'Start')) + '  ⇄';
-      $('route').value = route.id;
+      renderAuswahl(route);
 
       const pos = aktuellePosition();
       const liste = $('liste');
@@ -664,7 +863,7 @@
       hinweis.className = '';
 
       if (!pos) {
-        const text = zustand.sim.aktiv ? 'Simulation aktiv, aber keine Position gesetzt — ⚙ öffnen.'
+        const text = zustand.sim.aktiv ? 'Simulation aktiv, aber keine Position gesetzt — Menü → Simulation.'
           : gpsLaeuft ? 'Standort wird abgefragt …'
           : gpsFehler ? 'Standort nicht verfügbar: ' + gpsFehler
           : 'Standort drücken.';
@@ -680,11 +879,12 @@
 
       const hinweise = [];
       if (pos.sim) hinweise.push('Simulation: ' + (zustand.sim.label || zahl(pos.lat, 5) + ', ' + zahl(pos.lon, 5)));
+      if (pos.alt) hinweise.push('Letzter Standort von ' + uhrzeit(pos.zeit) + (gpsLaeuft ? ' – aktueller wird gesucht …' : gpsFehler ? ' – GPS: ' + gpsFehler : ''));
       if (erg.modus === 'luftlinie') hinweise.push('Abseits der Route (' + fmtKm(erg.q) + ' km) — Luftlinie, keine Höhendaten');
       if (hinweise.length) {
         hinweis.textContent = hinweise.join(' · ');
         hinweis.hidden = false;
-        if (pos.sim && erg.modus !== 'luftlinie') hinweis.className = 'sim';
+        if ((pos.sim || pos.alt) && erg.modus !== 'luftlinie') hinweis.className = 'sim';
       }
 
       if (erg.eintraege.length === 0) {
@@ -693,23 +893,26 @@
       // Prognosen vorab: „letzte vor Reserve" = letzte Station über der Reserve, wenn danach eine darunter liegt
       for (const e of erg.eintraege) e.prognose = erg.modus === 'strecke' ? prognose(e, erg.pos, jetzt) : null;
       let letzteVorReserve = null;
-      if (erg.eintraege.some(e => e.prognose && e.prognose.unerreichbar)) {
-        for (const e of erg.eintraege) if (e.prognose && e.prognose.ankunft !== null && !e.prognose.unerreichbar) letzteVorReserve = e;
+      if (erg.eintraege.some(e => e.prognose && e.prognose.unterReserve)) {
+        for (const e of erg.eintraege) if (e.prognose && !e.prognose.unterReserve) letzteVorReserve = e;
       }
       erg.eintraege.forEach((e, i) => {
         const pg = e.prognose;
         const zeile = el('button', 'eintrag' + (e.punkt.favorit ? ' favorit' : ''));
         zeile.type = 'button';
-        const km = el('span', 'km' + (pg && pg.unerreichbar ? ' rot' : ''), fmtKm(e.km));
+        const rot = pg && pg.unterReserve ? ' rot' : '';
+        const km = el('span', 'km' + rot, fmtKm(e.km));
         km.append(el('small', '', 'km'));
         const strasse = e.z && e.z.strasse ? ' (' + e.z.strasse + ')' : '';
-        zeile.append(km, el('span', 'name' + (pg && pg.unerreichbar ? ' rot' : ''), (e.punkt.favorit ? '★ ' : '') + kurzname(e.punkt.name) + strasse));
-        if (pg) zeile.append(el('span', 'akku' + (pg.unerreichbar ? ' rot' : ''), akkuText(pg)));
+        zeile.append(km, el('span', 'name' + rot, (e.punkt.favorit ? '★ ' : '') + kurzname(e.punkt.name) + strasse));
+        if (pg) zeile.append(el('span', 'akku' + rot, akkuText(pg)));
         const meta = el('span', 'meta');
         const lage = lageKurz(e.z);
         if (lage) meta.append(el('span', 'lage' + (e.z.raststaette && !(e.z.quer_km > 1) ? ' rast' : ''), lage), ' · ');
         meta.append(metaZeile(e));
         zeile.append(meta);
+        const preis = preisKurz(e.punkt);
+        if (preis) zeile.append(el('span', 'preis', preis));
         if (erg.modus === 'strecke') {
           // Lücke bis zur nächsten Station weiter vorne (gleicher Standort, z. B. beide Raststätten-Seiten, zählt nicht)
           const naechste = erg.eintraege.slice(i + 1).find(n => n.km - e.km > AUSBLENDEN_KM);
@@ -746,10 +949,10 @@
       if (f) {
         leiste.className = 'fahrt laeuft';
         const jetzt = erg && erg.modus === 'strecke' ? akkuJetzt(route.id, erg.pos) : null;
-        let text = 'Start ' + uhrzeit(new Date(f.start_zeit).getTime()) + ' mit ' + f.start_soc + ' %';
+        let text = uhrzeit(new Date(f.start_zeit).getTime()) + ' mit ' + f.start_soc + ' %';
         if (jetzt !== null) text += ' · jetzt ≈ ' + Math.max(0, Math.round(jetzt)) + ' %';
         else if (f.route !== route.id || f.richtung !== zustand.richtung) text += ' (' + f.route_name + ', ' + (f.richtung === 'hin' ? 'Hinfahrt' : 'Rückfahrt') + ')';
-        leiste.append(el('span', 'text', text), knopf('Angekommen', 'haupt', angekommen), knopf('✕', '', verwerfeFahrt, 'Fahrt verwerfen'));
+        leiste.append(el('span', 'text', text), knopf('Angekommen', 'haupt', angekommen), knopf('✕', '', verwerfeFahrt, 'Akkustand verwerfen'));
         return;
       }
       const a = zustand.ankunft;
@@ -776,8 +979,11 @@
         const l = route.linie, ende = zustand.richtung === 'hin' ? l[l.length - 1] : l[0];
         const b = bedarf(zustand.richtung, erg.pos, { km: ende[2], hm_hin: ende[3], hm_rueck: ende[4] }, 0);
         const jetzt = akkuJetzt(route.id, erg.pos);
-        if (jetzt === null) teil('braucht', '≈ ' + Math.round(b.prozent) + ' %');
-        else {
+        if (jetzt === null) {
+          const s = el('span', 100 - b.prozent < Number(zustand.einst.reserve || 0) ? 'rot' : '', 'braucht ');
+          s.append(el('b', '', '≈ ' + Math.round(b.prozent) + ' %'));
+          fuss.append(s);
+        } else {
           const rest = jetzt - b.prozent;
           const s = el('span', rest < Number(zustand.einst.reserve || 0) ? 'rot' : '', 'am Ziel ');
           s.append(el('b', '', rest < 0 ? 'nicht erreichbar' : '≈ ' + Math.round(rest) + ' %'));
@@ -787,6 +993,7 @@
       const t = temperatur();
       teil('Temp', zahl(t.wert, 0) + ' °C' + (t.quelle === 'angenommen' ? ' (ang.)' : ''));
       if (pos && pos.sim) teil('GPS', 'Sim.');
+      else if (pos && pos.alt) teil('GPS', 'letzter');
       else teil('GPS', pos ? '± ' + Math.round(pos.genauigkeit) + ' m' : '–');
       teil('Tempo', zustand.einst.geschwindigkeit + ' km/h');
     }
@@ -798,7 +1005,7 @@
       $('d-name').textContent = (p.favorit ? '★ ' : '') + kurzname(p.name);
       $('d-gross').textContent = fmtKm(e.km) + ' km ' + (modus === 'luftlinie' ? 'Luftlinie' : 'voraus') +
         (e.hm === null ? '' : ' · + ' + e.hm + ' hm') + (pg ? ' · ' + akkuText(pg) : '');
-      $('d-gross').className = 'gross' + (pg && pg.unerreichbar ? ' rot' : '');
+      $('d-gross').className = 'gross' + (pg && pg.unterReserve ? ' rot' : '');
 
       const t = temperatur();
       const felder = [
@@ -808,6 +1015,12 @@
           (Number(zustand.einst.zusatzgewicht) ? ' · +' + zustand.einst.zusatzgewicht + ' kg' : '')],
         ['Adresse', p.adresse || '–'],
         ['Betreiber', p.betreiber || '–'],
+        ['Preis', (() => {
+          const a = preisEintrag(p);
+          if (!a) return '–';
+          const zeilen = tarifeFuer(a, p).map(t => t.name + ': ' + tarifText(t, a.waehrung));
+          return (zeilen.length ? zeilen.join('\n') : 'kein Preis hinterlegt') + (a.hinweis ? '\n' + a.hinweis : '') + '\nStand ' + datumText(preise.stand);
+        })()],
         ['Leistung', p.kw ? p.kw + ' kW' : '–'],
         ['Ladepunkte', p.anzahl ? String(p.anzahl) : '–'],
         ['Richtung', { hin: 'nur Hinfahrt', rueck: 'nur Rückfahrt', beide: 'beide' }[p.richtung] || p.richtung],
@@ -921,6 +1134,8 @@
       navigator.geolocation.getCurrentPosition(
         p => {
           gps = { lat: p.coords.latitude, lon: p.coords.longitude, genauigkeit: p.coords.accuracy };
+          zustand.letzterStandort = { lat: gps.lat, lon: gps.lon, genauigkeit: gps.genauigkeit, zeit: Date.now() };
+          speichere();
           gpsLaeuft = false;
           render();
         },
@@ -965,30 +1180,24 @@
     // Einstellungen / Simulationsmodus
     // -----------------------------------------------------------------------
 
-    function simVorlagen() {
-      const erste = daten.routen[0].linie[0];
-      const v = [{ label: 'Morges (Start)', lat: erste[0], lon: erste[1] }];
-      for (const r of daten.routen) {
-        v.push({ label: 'Mitte ' + r.name, ...punktBeiKm(r, r.laenge_km / 2) });
-        v.push({ label: 'Kurz vor Ziel ' + r.name, ...punktBeiKm(r, Math.max(0, r.laenge_km - 15)) });
+    /** Simulationspunkte einer Route: Start, drei Punkte unterwegs (mit nächster Station als Orientierung), Ziel. */
+    function simPunkte(r) {
+      const t = routenTeile(r);
+      const l = r.linie;
+      const stationen = daten.punkte
+        .map(p => ({ p, z: (p.zuordnung || []).find(z => z.route === r.id) }))
+        .filter(x => x.z);
+      const v = [{ label: 'Start: ' + t.start, lat: l[0][0], lon: l[0][1] }];
+      for (const anteil of [0.25, 0.5, 0.75]) {
+        const km = r.laenge_km * anteil;
+        const naechste = stationen.sort((a, b) => Math.abs(a.z.km - km) - Math.abs(b.z.km - km))[0];
+        v.push({ label: 'km ' + fmtKm(km) + (naechste ? ' (bei ' + kurzname(naechste.p.name) + ')' : ''), ...punktBeiKm(r, km) });
       }
-      v.push(ABSEITS);
+      v.push({ label: 'Ziel: ' + t.ziel, lat: l[l.length - 1][0], lon: l[l.length - 1][1] });
       return v;
     }
 
     function oeffneEinstellungen() {
-      const vorlagen = simVorlagen();
-      const sel = $('sim-vorlage');
-      sel.replaceChildren(el('option', '', '— Vorlage wählen —'));
-      vorlagen.forEach((v, i) => { const o = el('option', '', v.label); o.value = String(i); sel.append(o); });
-      sel.onchange = sel.oninput = () => {
-        const v = vorlagen[Number(sel.value)];
-        if (v) { $('sim-koord').value = v.lat.toFixed(5) + ',' + v.lon.toFixed(5); $('sim-koord').dataset.label = v.label; }
-      };
-      $('sim-aktiv').checked = zustand.sim.aktiv;
-      $('sim-koord').value = zustand.sim.lat !== null ? zustand.sim.lat.toFixed(5) + ',' + zustand.sim.lon.toFixed(5) : '';
-      $('sim-koord').dataset.label = zustand.sim.label || '';
-      $('sim-koord').oninput = () => { $('sim-koord').dataset.label = ''; };
       $('e-geschwindigkeit').value = zustand.einst.geschwindigkeit;
       $('e-zusatzgewicht').value = zustand.einst.zusatzgewicht;
       $('e-temperatur').value = zustand.einst.temperatur;
@@ -1004,21 +1213,57 @@
     function schliesseEinstellungen() {
       if (!einstellungenOffen) return;
       einstellungenOffen = false;
-
       const zahlOder = (id, min, max, ersatz) => { const n = Number($(id).value); return $(id).value.trim() !== '' && n >= min && n <= max ? n : ersatz; };
       zustand.einst.geschwindigkeit = zahlOder('e-geschwindigkeit', 60, 180, 120);
       zustand.einst.zusatzgewicht = zahlOder('e-zusatzgewicht', 0, 1000, 0);
       zustand.einst.reserve = zahlOder('e-reserve', 0, 50, 10);
       const temp = $('e-temperatur').value.trim();
       zustand.einst.temperatur = temp !== '' && Number(temp) >= -30 && Number(temp) <= 45 ? Number(temp) : '';
+      speichere();
+      render();
+    }
 
+    let simOffen = false;
+    let simGewaehlt = null;   // { routeId, label } — beim Schließen übernehmen
+    function oeffneSimulation() {
+      const selRoute = $('sim-route'), selPunkt = $('sim-punkt');
+      fuelle(selRoute, daten.routen.map(r => [r.id, r.name]), aktuelleRoute().id);
+      const punkteZeigen = () => {
+        const r = daten.routen.find(x => x.id === selRoute.value);
+        const liste = [[-1, '— Punkt wählen —']].concat(simPunkte(r).map((v, i) => [i, v.label]));
+        if (r.id === daten.routen[0].id) liste.push([99, ABSEITS.label]);
+        fuelle(selPunkt, liste, -1);
+      };
+      selRoute.onchange = punkteZeigen;
+      selPunkt.onchange = () => {
+        const r = daten.routen.find(x => x.id === selRoute.value);
+        const v = Number(selPunkt.value) === 99 ? ABSEITS : simPunkte(r)[Number(selPunkt.value)];
+        if (!v) return;
+        $('sim-koord').value = v.lat.toFixed(5) + ',' + v.lon.toFixed(5);
+        $('sim-aktiv').checked = true;
+        simGewaehlt = { routeId: r.id, label: routenTeile(r).ziel + ': ' + v.label };
+      };
+      punkteZeigen();
+      simGewaehlt = null;
+      $('sim-aktiv').checked = zustand.sim.aktiv;
+      $('sim-koord').value = zustand.sim.lat !== null ? zustand.sim.lat.toFixed(5) + ',' + zustand.sim.lon.toFixed(5) : '';
+      $('sim-koord').oninput = () => { simGewaehlt = null; };
+      simOffen = true;
+      $('sim-dlg').showModal();
+    }
+
+    function schliesseSimulation() {
+      if (!simOffen) return;
+      simOffen = false;
       const warAktiv = zustand.sim.aktiv;
       zustand.sim.aktiv = $('sim-aktiv').checked;
       const m = $('sim-koord').value.match(/^\s*(-?\d+(?:[.]\d+)?)\s*,\s*(-?\d+(?:[.]\d+)?)\s*$/);
       if (m) {
+        const neu = Number(m[1]) !== zustand.sim.lat || Number(m[2]) !== zustand.sim.lon;
         zustand.sim.lat = Number(m[1]);
         zustand.sim.lon = Number(m[2]);
-        zustand.sim.label = $('sim-koord').dataset.label || '';
+        if (simGewaehlt) { zustand.sim.label = simGewaehlt.label; zustand.route = simGewaehlt.routeId; }
+        else if (neu) zustand.sim.label = '';
       } else if (zustand.sim.aktiv && $('sim-koord').value.trim() !== '') {
         toast('Position nicht erkannt — Format: 46.50432,6.49127');
       }
@@ -1037,23 +1282,39 @@
     }
 
     function bindeEreignisse() {
-      $('route').addEventListener('change', () => { zustand.route = $('route').value; speichere(); render(); });
-      $('richtung').addEventListener('click', () => {
+      $('von').addEventListener('change', () => {
+        const von = $('von').value;
+        const ziele = zieleVon(von);
+        const nach = ziele.includes($('nach').value) ? $('nach').value : ziele[0];
+        setzeStrecke(von, nach, zustand.route);
+      });
+      $('nach').addEventListener('change', () => setzeStrecke($('von').value, $('nach').value, zustand.route));
+      $('ueber').addEventListener('change', () => setzeStrecke($('von').value, $('nach').value, $('ueber').value));
+      $('tausch').addEventListener('click', () => {
         zustand.richtung = zustand.richtung === 'hin' ? 'rueck' : 'hin';
         speichere();
         render();
       });
       $('standort').addEventListener('click', holeStandort);
-      $('einstellungen').addEventListener('click', oeffneEinstellungen);
+      $('menue').addEventListener('click', () => $('menue-dlg').showModal());
+      $('menue-dlg').querySelectorAll('a.knopf').forEach(a => a.addEventListener('click', () => $('menue-dlg').close()));
+      $('menue-dlg').querySelectorAll('button[data-m]').forEach(k => k.addEventListener('click', () => {
+        $('menue-dlg').close();
+        ({ einstellungen: oeffneEinstellungen, simulation: oeffneSimulation, preise: zeigePreise, info: zeigeInfo })[k.dataset.m]();
+      }));
       $('dlg').querySelector('form').addEventListener('submit', schliesseEinstellungen);
       $('dlg').addEventListener('close', schliesseEinstellungen);
+      $('sim-dlg').querySelector('form').addEventListener('submit', schliesseSimulation);
+      $('sim-dlg').addEventListener('close', schliesseSimulation);
+      $('preise-zurueck').addEventListener('click', () => history.back());
       $('los').addEventListener('submit', starteFahrt);
       $('zurueck').addEventListener('click', () => history.back());
       window.addEventListener('popstate', () => {
         if (!$('detail').hidden) schliesseDetail();
         $('info-seite').hidden = true;
+        $('preise-seite').hidden = true;
       });
-      $('info').addEventListener('click', () => {
+      function zeigeInfo() {
         const d = daten && new Date(daten.erzeugt);
         $('info-stand').textContent = 'App v' + APP_VERSION + (d && !isNaN(d) ? ' · Daten vom ' + d.toLocaleString('de-CH') : '');
         const k = modell.kalibrierung || {};
@@ -1061,7 +1322,7 @@
         $('info-seite').hidden = false;
         $('info-seite').scrollTop = 0;
         history.pushState({ info: true }, '');
-      });
+      }
       $('info-zurueck').addEventListener('click', () => history.back());
       $('d-kopieren').addEventListener('click', kopiereAdresse);
       $('d-sim').addEventListener('click', () => {
@@ -1082,9 +1343,10 @@
     async function ladeDaten(still) {
       const mitZeit = url => url + (url.includes('?') ? '&' : '?') + 't=' + Date.now();
       try {
-        const [antwort, modellAntwort] = await Promise.all([
+        const [antwort, modellAntwort, preisAntwort] = await Promise.all([
           fetch(mitZeit(datenUrl()), { cache: 'no-store' }),
           fetch(mitZeit('modell.json'), { cache: 'no-store' }).catch(() => null),
+          fetch(mitZeit('preise.json'), { cache: 'no-store' }).catch(() => null),
         ]);
         if (!antwort.ok) throw new Error('HTTP ' + antwort.status);
         const neu = await antwort.json();
@@ -1097,21 +1359,24 @@
             if (m && m.physik && m.fahrzeug && m.korrektur) modell = m;
           } catch (e) { /* Startwerte behalten */ }
         }
+        if (preisAntwort && preisAntwort.ok) {
+          try { preise = await preisAntwort.json(); } catch (e) { /* ohne Preise weiter */ }
+        }
       } catch (e) {
         if (!still || !daten) $('liste').replaceChildren(el('p', 'leer', 'Daten konnten nicht geladen werden: ' + e.message));
         return false;
       }
-      const sel = $('route');
-      sel.replaceChildren();
-      // alle Routen beginnen in Morges – oben nur das Ziel, damit es groß lesbar bleibt
-      for (const r of daten.routen) { const o = el('option', '', r.name.split(/\s+[–-]\s+/).slice(1).join(' – ') || r.name); o.value = r.id; sel.append(o); }
       return true;
     }
 
     async function start() {
       bindeEreignisse();
-      $('neu').href = FORMULAR_URL + '?neu=1';
-      $('info-wartung').href = FORMULAR_URL + '?seite=wartung';
+      $('m-neu').href = FORMULAR_URL + '?neu=1';
+      $('m-route').href = FORMULAR_URL + '?seite=wartung&fokus=route';
+      $('m-preise').href = $('preise-aktualisieren').href = FORMULAR_URL + '?seite=preise';
+      $('m-wartung').href = $('info-wartung').href = FORMULAR_URL + '?seite=wartung';
+      // offline: zuletzt geladene Seite und Daten aus dem Zwischenspeicher des Service Workers
+      if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
       if (zustand.richtung !== 'hin' && zustand.richtung !== 'rueck') zustand.richtung = 'hin';
       if (!await ladeDaten(false)) return;
       render();
@@ -1126,6 +1391,8 @@
     // Für automatisierte Tests zugänglich machen
     window.ladeplanung = {
       berechneListe, projiziere, haversine, punktBeiKm, mapsUrl, abrpUrl, energieAnteile, energieKwh, streckenwerte, bedarf,
+      routenTeile, routenZwischen, zieleVon, simPunkte, preisKurz, preisEintrag, landVon, prognose,
+      get preise() { return preise; },
       get daten() { return daten; }, get modell() { return modell; }, get zustand() { return zustand; },
     };
 

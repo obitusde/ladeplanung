@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<!--
+  Ladeplanung — Seite „Ladepreise": zeigt preise.json und holt neue Werte über OpenRouter (mit Websuche).
+  Übernommen wird erst nach Bestätigung. Wird von doGet() in Code.js ausgeliefert (…/exec?seite=preise).
+  Version 0.18.0
+-->
+<html lang="de">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    :root {
+      --grund: #ffffff; --flaeche: #f2f2f2; --text: #000000; --leise: #3d3d3d; --linie: #c8c8c8;
+      --akzent: #9a4a00; --akzent-text: #ffffff; --fehler: #7a0000; --gut: #1d6b1d;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --grund: #000000; --flaeche: #161616; --text: #ffffff; --leise: #c4c4c4; --linie: #3a3a3a;
+        --akzent: #ffac4a; --akzent-text: #000000; --fehler: #ffb4b4; --gut: #8fdc8f;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--grund); color: var(--text); font: 18px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 620px; margin: 0 auto; padding: 16px; }
+    h1 { font-size: 26px; margin: 4px 0 6px; }
+    h2 { font-size: 21px; margin: 22px 0 8px; }
+    p { margin: 0 0 8px; }
+    .leise { color: var(--leise); overflow-wrap: anywhere; }
+    .karte { border: 2px solid var(--linie); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
+    .karte b { font-size: 19px; }
+    .tarif { display: flex; justify-content: space-between; gap: 10px; font-variant-numeric: tabular-nums; }
+    .neu { color: var(--gut); font-weight: 700; }
+    .fehler { color: var(--fehler); font-weight: 700; }
+    label.wahl { display: flex; gap: 10px; align-items: center; margin-top: 6px; font-weight: 700; }
+    label.wahl input { width: 24px; height: 24px; }
+    .knopf {
+      display: flex; align-items: center; justify-content: center; width: 100%; min-height: 54px; margin-top: 8px;
+      border-radius: 10px; border: 2px solid var(--linie); background: var(--flaeche); color: var(--text);
+      font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; text-align: center; padding: 0 12px;
+    }
+    .knopf.haupt { background: var(--akzent); border-color: var(--akzent); color: var(--akzent-text); }
+    .knopf:disabled { opacity: .6; }
+    #meldung { white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Ladepreise</h1>
+    <p class="leise" id="stand"></p>
+    <div id="liste"></div>
+
+    <h2>Aktualisieren</h2>
+    <p class="leise">Sucht für jeden Anbieter die aktuellen Direktpreise im Netz (Sprachmodell über OpenRouter, wenige Cent). Danach siehst du alt und neu und entscheidest je Anbieter.</p>
+    <button id="holen" class="knopf haupt">Neue Preise suchen (ca. 1 Minute)</button>
+    <p id="meldung" class="leise"></p>
+    <div id="vorschlaege"></div>
+    <button id="speichern" class="knopf haupt" hidden>Ausgewählte übernehmen</button>
+
+    <a id="zur-app" class="knopf" href="#">Zur App</a>
+    <p id="version" class="leise"></p>
+  </main>
+
+  <script>
+    'use strict';
+    const MODELL = <?!= modellJson ?>;
+    const $ = id => document.getElementById(id);
+    const LAND = { CH: 'Schweiz', DE: 'Deutschland', AT: 'Österreich', IT: 'Italien' };
+    let aktuell = MODELL.preise || { anbieter: [] };
+    let vorschlaege = [];
+
+    $('zur-app').href = MODELL.appUrl;
+    $('version').textContent = 'Apps Script v' + MODELL.version;
+
+    const zahl = x => x.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const geld = (x, w) => zahl(x) + ' ' + (w === 'EUR' ? '€' : w);
+    function tarifText(t, w) {
+      let s = (t.kwh_bis ? zahl(t.kwh) + '–' + geld(t.kwh_bis, w) : geld(t.kwh, w)) + '/kWh';
+      if (t.minute) s += ' + ' + geld(t.minute, w) + '/min';
+      if (t.grund_monat) s += ' · ' + geld(t.grund_monat, w) + '/Monat';
+      return s;
+    }
+    function datum(iso) { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + '.' + m[2] + '.' + m[1] : '–'; }
+    function el(tag, klasse, text) { const e = document.createElement(tag); if (klasse) e.className = klasse; if (text !== undefined) e.textContent = text; return e; }
+
+    function tarifBlock(tarife, w, klasse) {
+      const box = el('div');
+      if (!tarife.length) box.append(el('div', 'leise', 'kein Preis hinterlegt'));
+      for (const t of tarife) {
+        const z = el('div', 'tarif ' + (klasse || ''));
+        z.append(el('span', '', t.name), el('span', '', tarifText(t, w)));
+        box.append(z);
+      }
+      return box;
+    }
+
+    function zeige() {
+      $('stand').textContent = 'Stand ' + datum(aktuell.stand) + ' · nur Direktangebote, kein Roaming';
+      const liste = $('liste');
+      liste.replaceChildren();
+      for (const land of ['CH', 'DE', 'AT', 'IT']) {
+        const eintraege = aktuell.anbieter.filter(a => a.land === land);
+        if (!eintraege.length) continue;
+        liste.append(el('h2', '', LAND[land]));
+        for (const a of eintraege) {
+          const k = el('div', 'karte');
+          k.append(el('b', '', a.betreiber), tarifBlock(a.tarife, a.waehrung));
+          if (a.hinweis) k.append(el('p', 'leise', a.hinweis));
+          liste.append(k);
+        }
+      }
+    }
+
+    function zeigeVorschlaege() {
+      const box = $('vorschlaege');
+      box.replaceChildren();
+      vorschlaege.forEach((v, i) => {
+        const a = v.alt;
+        const k = el('div', 'karte');
+        k.append(el('b', '', a.betreiber + ' · ' + (LAND[a.land] || a.land)));
+        if (v.fehler) { k.append(el('p', 'fehler', 'Keine Antwort: ' + v.fehler)); box.append(k); return; }
+        const gleich = JSON.stringify(v.neu.tarife) === JSON.stringify(a.tarife);
+        k.append(el('p', 'leise', 'bisher:'), tarifBlock(a.tarife, a.waehrung));
+        k.append(el('p', 'leise', gleich ? 'neu: unverändert' : 'neu:'));
+        if (!gleich) k.append(tarifBlock(v.neu.tarife, a.waehrung, 'neu'));
+        if (v.neu.hinweis) k.append(el('p', 'leise', v.neu.hinweis));
+        if (v.neu.quelle) { const q = el('a', 'leise', 'Quelle'); q.href = v.neu.quelle; q.target = '_blank'; q.rel = 'noopener'; k.append(q); }
+        if (!v.neu.sicher) k.append(el('p', 'fehler', 'Modell ist unsicher – lieber nicht übernehmen.'));
+        if (!gleich) {
+          const l = el('label', 'wahl');
+          const c = el('input'); c.type = 'checkbox'; c.checked = v.neu.sicher; c.dataset.i = i;
+          l.append(c, 'übernehmen');
+          k.append(l);
+        }
+        box.append(k);
+      });
+      $('speichern').hidden = !box.querySelector('input[type=checkbox]');
+    }
+
+    $('holen').addEventListener('click', () => {
+      if (!MODELL.schluessel) { $('meldung').textContent = '⚠ Der OpenRouter-Schlüssel ist noch nicht im Script hinterlegt.'; return; }
+      $('holen').disabled = true;
+      $('meldung').textContent = 'Suche läuft … bitte warten.';
+      $('vorschlaege').replaceChildren();
+      $('speichern').hidden = true;
+      google.script.run
+        .withSuccessHandler(erg => {
+          $('holen').disabled = false;
+          if (!erg.ok) { $('meldung').textContent = '⚠ ' + erg.text; return; }
+          vorschlaege = erg.vorschlaege;
+          $('meldung').textContent = 'Fertig (Modell ' + erg.modell + '). Grün = neuer Wert. Bitte prüfen und auswählen.';
+          zeigeVorschlaege();
+        })
+        .withFailureHandler(f => { $('holen').disabled = false; $('meldung').textContent = 'Fehler: ' + ((f && f.message) || f); })
+        .preiseVorschlagen();
+    });
+
+    $('speichern').addEventListener('click', () => {
+      const gewaehlt = new Set([...document.querySelectorAll('#vorschlaege input:checked')].map(c => Number(c.dataset.i)));
+      if (!gewaehlt.size) { $('meldung').textContent = 'Nichts ausgewählt.'; return; }
+      const neu = aktuell.anbieter.map((a, i) => {
+        const v = vorschlaege[i];
+        if (!gewaehlt.has(i) || !v || v.fehler) return a;
+        return Object.assign({}, a, { tarife: v.neu.tarife, hinweis: v.neu.hinweis || a.hinweis });
+      });
+      $('speichern').disabled = true;
+      google.script.run
+        .withSuccessHandler(erg => {
+          $('speichern').disabled = false;
+          $('meldung').textContent = (erg.ok ? '✓ ' : '⚠ ') + erg.text;
+          if (erg.ok) { aktuell = erg.preise; vorschlaege = []; zeige(); $('vorschlaege').replaceChildren(); $('speichern').hidden = true; }
+        })
+        .withFailureHandler(f => { $('speichern').disabled = false; $('meldung').textContent = 'Fehler: ' + ((f && f.message) || f); })
+        .preiseSpeichern(neu);
+    });
+
+    zeige();
+  </script>
+</body>
+</html>

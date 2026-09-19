@@ -27,6 +27,12 @@ const attrappe = `<script>
       speichereVergleich(d) { __aufrufe.push(['speichereVergleich', d]); antwort(this, { ok: true, warnung: '',
         meldung: d.quelle + ': 35 % Akku für 205 km.', kalibrierung: 'Verbrauchsmodell: Gesamtfaktor aus 1 Fahrt(en).\\nABRP: 1 × Ø 0 % Abweichung (Modell im Schnitt +0 %)',
         zeile: { von: d.von, nach: d.nach, km: 205, referenz: d.start_soc - d.ende_soc, modell: 38, quelle: d.quelle } }); },
+      preiseVorschlagen() { __aufrufe.push(['preiseVorschlagen']);
+        const alt = window.__preise.anbieter;
+        antwort(this, { ok: true, modell: 'google/gemini-3.8-flash', vorschlaege: alt.map((a, i) => i === 0
+          ? { alt: a, neu: { tarife: [{ name: 'S', kwh: 0.59, grund_monat: 0 }, { name: 'M', kwh: 0.49, grund_monat: 5.99 }, { name: 'L', kwh: 0.42, grund_monat: 11.99 }], hinweis: 'ab 1.10.2026', quelle: 'https://www.enbw.com', sicher: true } }
+          : i === 1 ? { alt: a, fehler: 'OpenRouter HTTP 429: Rate limit' } : { alt: a, neu: { tarife: a.tarife, hinweis: a.hinweis, quelle: '', sicher: true } }) }); },
+      preiseSpeichern(anbieter) { __aufrufe.push(['preiseSpeichern', anbieter]); antwort(this, { ok: true, text: 'Gespeichert – in der App nach 1–2 Minuten sichtbar.', preise: { stand: '2026-09-20', anbieter } }); },
       wartungAusfuehren(aktion) { __aufrufe.push(['wartungAusfuehren', aktion]);
         const texte = { bereinigen_vorschau: 'Punkte bereinigen v0.12.0 — Vorschau, nichts geändert\\nZusammenführen: p032 → p010 (EnBW Ladestation Haiger)', routen: 'Routen berechnen v0.12.0\\nneuenrade: unverändert, übersprungen\\n\\nExport v0.12.0\\nneuenrade: 26 Punkte, 716.36 km' };
         antwort(this, { ok: true, text: texte[aktion] || 'Export v0.12.0\\n41 Punkte exportiert', status: Object.assign({}, window.__status, { routen: window.__status.routen.map(x => Object.assign({}, x, { aktuell: true, stand: '15.09.2026 11:40' })) }) }); },
@@ -56,6 +62,7 @@ const seiten = {
   'formular-bearbeiten.html': ['Formular.html', Object.assign({ modus: 'bearbeiten',
     punkt: { id: 'p023', link: 'https://maps.app.goo.gl/dnLiHt5op9KaWodL9', Adresse: 'JHV2+5W, 64653 Lorsch, Deutschland', Name: 'EnBW Ladestation Lorsch', Betreiber: 'EnBW', kW: '', Anzahl: '', Richtung: 'rueck', Favorit: false, Notiz: 'Raststätte </script><b>x</b>' } }, basis)],
   'wartung.html': ['Wartung.html', Object.assign({ status: status }, basis)],
+  'preise.html': ['Preise.html', Object.assign({ preise: JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'preise.json'), 'utf8')), schluessel: true }, basis)],
   'kalibrieren.html': ['Kalibrieren.html', Object.assign({ fahrt: {
     route: 'neuenrade', route_name: 'Morges – Neuenrade', richtung: 'hin', start_zeit: '2026-09-15T08:05:00Z', ende_zeit: '2026-09-15T10:20:00Z',
     start_lat: 46.50432, start_lon: 6.49127, ende_lat: 47.59857, ende_lon: 7.60339, start_soc: 82, km: 205.3, hm_auf: 640, hm_ab: 590,
@@ -64,7 +71,7 @@ const seiten = {
 
 for (const [ziel, [quelle, modell]] of Object.entries(seiten)) {
   const html = fs.readFileSync(path.join(ordner, quelle), 'utf8')
-    .replace('<base target="_top">', '<base target="_top">\n  <meta name="viewport" content="width=device-width, initial-scale=1">\n  <script>window.__status = ' + JSON.stringify(status) + ';</script>\n  ' + attrappe)
+    .replace('<base target="_top">', '<base target="_top">\n  <meta name="viewport" content="width=device-width, initial-scale=1">\n  <script>window.__status = ' + JSON.stringify(status) + '; window.__preise = ' + fs.readFileSync(path.join(__dirname, '..', 'preise.json'), 'utf8').replace(/\s+/g, ' ') + ';</script>\n  ' + attrappe)
     .replace('<?!= modellJson ?>', JSON.stringify(modell).replace(/</g, '\\u003c'));
   fs.writeFileSync(path.join(__dirname, 'fixtures', ziel), html);
   console.log('geschrieben: tests/fixtures/' + ziel);

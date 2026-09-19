@@ -2,6 +2,7 @@
 <!--
   Ladeplanung — Seite „Wartung & Status": zeigt den Zustand und stößt Rechenschritte samt Folgeschritten an.
   Wird von doGet() in Code.js ausgeliefert (…/exec?seite=wartung).
+  Version 0.18.0 — Aus dem App-Menü direkt zu „Route hinzufügen" (?fokus=route).
   Version 0.17.0 — Route hinzufügen per Google-Maps-Link.
   Version 0.12.0
 -->
@@ -60,7 +61,7 @@
 
     <h2>Was ist wann zu tun?</h2>
 
-    <div class="karte">
+    <div class="karte" id="karte-route">
       <h3>Route hinzufügen</h3>
       <p><b>Wann:</b> für eine neue Strecke. In Google Maps die Route planen – Umwege als <b>Stopp hinzufügen</b>, nicht mit dem Finger ziehen – dann „Teilen" → „Link kopieren" und hier einfügen.</p>
       <p class="leise">Name, Start, Zwischenziele und Ziel übernimmt das Script; danach wird berechnet und veröffentlicht (1–2 Minuten).</p>
@@ -198,6 +199,7 @@
 
     document.querySelectorAll('button[data-aktion]').forEach(k => k.addEventListener('click', () => starte(k)));
     zeigeStatus(MODELL.status || {});
+    if (MODELL.fokus === 'route') { $('karte-route').scrollIntoView({ block: 'start' }); $('route-link').focus(); }
   </script>
 </body>
 </html>

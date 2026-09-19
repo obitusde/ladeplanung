@@ -1,6 +1,9 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.18.0 — Routen-Link: ganze Adresse geokodieren (vorher nur die Straße → falscher Ort), Name und id aus den
+ *                  Orten („Neuenrade – Ingolstadt"); falsche Route nach Wien entfernt. Ladepreise: preise.json,
+ *                  Seite „Preise" (?seite=preise) mit Aktualisieren über OpenRouter (Websuche) und Bestätigen.
  * Version 0.17.1 — Brig nicht mehr fest eingetragen (kommt per Link, sonst doppelt).
  * Version 0.17.0 — Routen per geteiltem Google-Maps-Link: Spalte „Maps-Link" im Blatt Routen, Feld in der Wartung;
  *                  Start/Via/Ziel, Name und id füllt das Script (Stufe 2 teilweise).
@@ -39,7 +42,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.17.1';
+const VERSION = '0.18.0';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -100,7 +103,8 @@ const STAMMSTRECKEN = [
   ['savona_bernhard', 'Morges – Savona (Gr. St. Bernhard)', START_MORGES, VIA_GR_ST_BERNHARD, ZIEL_SAVONA],
   // Weitere Routen legt Christof seit v0.17.0 per Google-Maps-Link an (Wartung → „Route hinzufügen").
 ];
-const ROUTEN_ENTFERNT = ['savona']; // Mont-Blanc-Variante
+// savona: Mont-Blanc-Variante; markomannenstrasse_2a: am 19.09.2026 falsch aus einem Link erzeugt (Wuppertal → Wien)
+const ROUTEN_ENTFERNT = ['savona', 'markomannenstrasse_2a'];
 
 // ---------------------------------------------------------------------------
 // Menü
@@ -187,8 +191,19 @@ function doGet(e) {
       .setTitle('Ladeplanung – Fahrt kalibrieren')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
   }
+  if (p.seite === 'preise') {
+    const text = githubLies_(PREISE_DATEI);
+    modell.preise = text ? JSON.parse(text) : { anbieter: [] };
+    modell.schluessel = !!PropertiesService.getScriptProperties().getProperty('OPENROUTER_API_KEY');
+    const seite = HtmlService.createTemplateFromFile('Preise');
+    seite.modellJson = JSON.stringify(modell).replace(/</g, '\\u003c');
+    return seite.evaluate()
+      .setTitle('Ladeplanung – Ladepreise')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  }
   if (p.seite === 'wartung') {
     modell.status = wartungStatus_();
+    modell.fokus = p.fokus === 'route' ? 'route' : ''; // aus dem App-Menü „Route hinzufügen"
     const seite = HtmlService.createTemplateFromFile('Wartung');
     seite.modellJson = JSON.stringify(modell).replace(/</g, '\\u003c');
     return seite.evaluate()
@@ -1301,7 +1316,7 @@ const BETREIBER_MUSTER = [
   ['fastned', 'Fastned'], ['allego', 'Allego'], ['aral', 'Aral pulse'], ['shell', 'Shell Recharge'],
   ['gofast', 'GOFAST'], ['swisscharge', 'Swisscharge'], ['electra', 'Electra'], ['atlante', 'Atlante'],
   ['free to x', 'Free To X'], ['ewiva', 'Ewiva'], ['be charge', 'Be Charge'], ['e.on', 'E.ON'],
-  ['totalenergies', 'TotalEnergies'], ['lidl', 'Lidl'], ['kaufland', 'Kaufland'], ['ewe go', 'EWE Go'],
+  ['totalenergies', 'TotalEnergies'], ['lidl', 'Lidl'], ['kaufland', 'Kaufland'], ['ewe go', 'EWE Go'], ['migrol', 'Migrol'],
 ];
 
 const STATUS_FEHLER_PRAEFIX = 'nicht auflösbar';
@@ -1788,7 +1803,7 @@ function routenpunkteAusUrl_(url) {
 
   const punkte = segmente.map(function (x) {
     const k = x.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
-    return k ? { name: '', lat: Number(k[1]), lon: Number(k[2]) } : { name: x.split(',')[0].trim(), lat: null, lon: null };
+    return k ? { name: '', text: '', lat: Number(k[1]), lon: Number(k[2]) } : { name: ortAusText_(x), text: x, lat: null, lon: null };
   });
   const benannt = punkte.filter(function (p) { return p.lat === null; });
   if (paare.length === punkte.length) {
@@ -1800,6 +1815,19 @@ function routenpunkteAusUrl_(url) {
       'Bitte stattdessen Zwischenziele als Stopp hinzufügen');
   }
   return punkte;
+}
+
+/**
+ * Ort aus einem Wegpunkt-Text: „Dahler Str. 6b, 58809 Neuenrade" → „Neuenrade", „Morges, 1110" → „Morges",
+ * „Brig-Glis" → „Brig-Glis". Nur eine Vermutung; routeAusLink_ nimmt, wenn möglich, den Ort vom Geocoder.
+ */
+function ortAusText_(text) {
+  const teile = String(text).split(',').map(function (t) { return t.trim(); }).filter(function (t) { return t; });
+  for (let i = 0; i < teile.length; i++) {
+    const m = teile[i].match(/^(?:[A-Z]{1,2}-)?\d{4,5}\s+(.+)$/);
+    if (m) return m[1].replace(/\s+\(.*\)$/, '').replace(/\s+[A-Z]{2}$/, '').trim(); // „Savona SV" → „Savona"
+  }
+  return teile[0] || '';
 }
 
 /** Kennung aus einem Ortsnamen: „Brig-Glis" → „brig_glis", „Zürich" → „zuerich". */
@@ -1822,7 +1850,7 @@ function routenZeileAusPunkten_(punkte) {
   const namen = via.map(function (p) { return p.name; }).filter(function (x) { return x; });
   return {
     Name: (amStart ? 'Morges' : start.name || 'Start') + ' – ' + (ziel.name || 'Ziel') + (namen.length ? ' (' + namen.join(', ') + ')' : ''),
-    Ort: ziel.name || 'route',
+    Ort: (amStart ? '' : (start.name || 'start') + ' ') + (ziel.name || 'route'), // für die id: „neuenrade_ingolstadt"
     Start: amStart ? START_MORGES : text(start),
     Via: via.map(text).join(';'),
     Ziel: text(ziel),
@@ -1834,19 +1862,23 @@ function routeAusLink_(link) {
   const url = folgeWeiterleitungen_(String(link).trim());
   const punkte = routenpunkteAusUrl_(url);
   const geocoder = Maps.newGeocoder().setLanguage('de');
+  const ortAus = function (ergebnis) {
+    const teile = (ergebnis && ergebnis.address_components) || [];
+    const ort = teile.filter(function (t) { return t.types.indexOf('locality') !== -1 || t.types.indexOf('postal_town') !== -1; })[0];
+    return ort ? ort.long_name : '';
+  };
   punkte.forEach(function (p) {
     if (p.lat === null) {
-      const r = geocoder.geocode(p.name);
+      // die ganze Adresse suchen – nur die Straße („Dahler Str. 6b") fand am 19.09.2026 Wuppertal statt Neuenrade
+      const r = geocoder.geocode(p.text);
       const erstes = r.status === 'OK' && r.results && r.results[0];
-      if (!erstes) throw new Error('Ort „' + p.name + '" nicht gefunden');
+      if (!erstes) throw new Error('Ort „' + p.text + '" nicht gefunden');
       p.lat = erstes.geometry.location.lat;
       p.lon = erstes.geometry.location.lng;
-    }
-    if (!p.name) {
+      p.name = ortAus(erstes) || p.name;
+    } else {
       const r = geocoder.reverseGeocode(p.lat, p.lon);
-      const teile = (r.results && r.results[0] && r.results[0].address_components) || [];
-      const ort = teile.filter(function (t) { return t.types.indexOf('locality') !== -1; })[0];
-      p.name = ort ? ort.long_name : '';
+      p.name = ortAus(r.results && r.results[0]) || p.name;
     }
   });
   return routenZeileAusPunkten_(punkte);
@@ -2423,4 +2455,106 @@ function setzeValidierungen_(punkte) {
   punkte.getRange(2, spalteFavorit, zeilen, 1).setDataValidation(
     SpreadsheetApp.newDataValidation().requireValueInList(['ja'], true).setAllowInvalid(false).build()
   );
+}
+
+
+// ---------------------------------------------------------------------------
+// Ladepreise (Christof, 19.09.2026): nur Direktangebote der Betreiber, kein Roaming. EnBW nur S/M/L,
+// Tesla für Fremdfahrzeuge. preise.json im Repo, die App zeigt je Station den Preis ihres Betreibers.
+// Aktualisieren: je Anbieter und Land ein Sprachmodell über OpenRouter mit Websuche (Plugin „web"),
+// Hinweis auf die offizielle Preisseite. Nichts wird ohne Bestätigung auf der Seite „Preise" übernommen.
+// Die Schweizer Ladepreiskarte (api.chargeprice.app/v1/opendata/charging_prices_ch) braucht einen
+// eigenen Schlüssel (geprüft 19.09.2026) – daher auch für die Schweiz dieser Weg.
+// ---------------------------------------------------------------------------
+
+const PREISE_DATEI = 'preise.json';
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const PREIS_MODELL_STANDARD = 'google/gemini-3.8-flash'; // änderbar über die Skripteigenschaft PREIS_MODELL
+const LAENDER = { CH: 'Schweiz', DE: 'Deutschland', AT: 'Österreich', IT: 'Italien' };
+
+/** Frage an das Modell für einen Anbieter-Eintrag. Rein rechnerisch (testbar). */
+function preisFrage_(a) {
+  const land = LAENDER[a.land] || a.land;
+  const besonders = a.betreiber === 'EnBW' ? ' Nur die Tarife S, M und L der EnBW mobility+ App an EnBW-eigenen Ladesäulen, keinen Ad-hoc-Preis.'
+    : a.betreiber === 'Tesla' ? ' Preise für Fremdfahrzeuge (Nicht-Tesla), ohne und mit Supercharger-Mitgliedschaft; Spanne von–bis, weil je Standort verschieden.'
+    : '';
+  return 'Aktuelle Ladepreise des Betreibers ' + a.betreiber + ' in ' + land + ' an seinen eigenen Ladestationen, ' +
+    'nur Direktangebote des Betreibers (App oder Ladekarte des Betreibers), kein Roaming über andere Anbieter.' + besonders +
+    '\nOffizielle Quelle, wenn möglich: ' + (a.suche || '–') +
+    '\nBisherige Werte (' + a.waehrung + '): ' + JSON.stringify({ tarife: a.tarife, hinweis: a.hinweis }) +
+    '\nAntworte NUR mit JSON in genau dieser Form: {"tarife":[{"name":"…","kwh":0.00,"kwh_bis":0.00,"grund_monat":0,"minute":0,"kw_bis":0}],' +
+    '"hinweis":"kurz, deutsch","quelle":"URL","sicher":true}. kwh in ' + a.waehrung + ' je kWh, kwh_bis nur bei Spannen, minute nur bei ' +
+    'Minutenpreisen, kw_bis nur bei leistungsabhängigen Preisen. Findest du keine verlässliche aktuelle Quelle, gib die bisherigen Werte ' +
+    'zurück und setze "sicher":false. Nichts erfinden.';
+}
+
+/** Antwort des Modells → { tarife, hinweis, quelle, sicher } oder Fehler. Rein rechnerisch (testbar). */
+function preisAntwortLesen_(text) {
+  const m = String(text || '').match(/\{[\s\S]*\}/);
+  if (!m) throw new Error('keine JSON-Antwort');
+  const j = JSON.parse(m[0]);
+  if (!Array.isArray(j.tarife)) throw new Error('tarife fehlen');
+  const zahl = function (v) { return v === undefined || v === null || v === '' ? undefined : Number(v); };
+  const tarife = j.tarife.map(function (t) {
+    const e = { name: String(t.name || '').slice(0, 40), kwh: zahl(t.kwh), grund_monat: zahl(t.grund_monat) || 0 };
+    if (!(e.kwh >= 0.05 && e.kwh <= 2)) throw new Error('unplausibler Preis ' + t.kwh + ' bei ' + e.name);
+    ['kwh_bis', 'minute', 'kw_bis'].forEach(function (k) { const v = zahl(t[k]); if (v > 0) e[k] = v; });
+    if (e.kwh_bis !== undefined && !(e.kwh_bis > e.kwh && e.kwh_bis <= 2)) delete e.kwh_bis;
+    return e;
+  });
+  return { tarife: tarife, hinweis: String(j.hinweis || '').slice(0, 200), quelle: String(j.quelle || '').slice(0, 300), sicher: j.sicher !== false };
+}
+
+/** Seite „Preise": Vorschläge für alle Anbieter holen (parallel). Übernimmt nichts. */
+function preiseVorschlagen() {
+  const schluessel = PropertiesService.getScriptProperties().getProperty('OPENROUTER_API_KEY');
+  if (!schluessel) return { ok: false, text: 'OPENROUTER_API_KEY fehlt in den Skripteigenschaften.' };
+  const modell = PropertiesService.getScriptProperties().getProperty('PREIS_MODELL') || PREIS_MODELL_STANDARD;
+  const preise = JSON.parse(githubLies_(PREISE_DATEI) || '{"anbieter":[]}');
+  const anfragen = preise.anbieter.map(function (a) {
+    return {
+      url: OPENROUTER_URL, method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { Authorization: 'Bearer ' + schluessel, 'HTTP-Referer': APP_URL, 'X-Title': 'Ladeplanung' },
+      payload: JSON.stringify({
+        model: modell, temperature: 0,
+        plugins: [{ id: 'web', max_results: 5 }],
+        messages: [
+          { role: 'system', content: 'Du recherchierst Ladepreise für Elektroautos. Antworte nur mit gültigem JSON.' },
+          { role: 'user', content: preisFrage_(a) },
+        ],
+      }),
+    };
+  });
+  const antworten = UrlFetchApp.fetchAll(anfragen);
+  const vorschlaege = preise.anbieter.map(function (a, i) {
+    try {
+      const code = antworten[i].getResponseCode();
+      const j = JSON.parse(antworten[i].getContentText());
+      if (code !== 200) throw new Error('OpenRouter HTTP ' + code + ': ' + ((j.error && j.error.message) || '').slice(0, 150));
+      return { alt: a, neu: preisAntwortLesen_(j.choices[0].message.content) };
+    } catch (e) {
+      return { alt: a, fehler: e.message };
+    }
+  });
+  return { ok: true, modell: modell, vorschlaege: vorschlaege };
+}
+
+/** Seite „Preise": bestätigte Werte übernehmen → preise.json mit neuem Stand (Datum). */
+function preiseSpeichern(anbieter) {
+  const sperre = LockService.getScriptLock();
+  sperre.waitLock(30000);
+  try {
+    if (!Array.isArray(anbieter) || anbieter.length === 0) return { ok: false, text: 'Keine Preise übergeben.' };
+    anbieter.forEach(function (a) {
+      if (!a.betreiber || !a.land || !Array.isArray(a.tarife)) throw new Error('unvollständiger Eintrag');
+      a.tarife.forEach(function (t) { if (!(t.kwh >= 0.05 && t.kwh <= 2)) throw new Error('unplausibler Preis bei ' + a.betreiber); });
+    });
+    const datei = { version: 1, stand: Utilities.formatDate(new Date(), 'Europe/Zurich', 'yyyy-MM-dd'), anbieter: anbieter };
+    githubSchreibe_(PREISE_DATEI, JSON.stringify(datei, null, 1), 'preise.json aktualisiert (Apps Script v' + VERSION + ')');
+    return { ok: true, text: 'Gespeichert – in der App nach 1–2 Minuten sichtbar.', preise: datei };
+  } catch (e) {
+    return { ok: false, text: 'Fehler: ' + e.message };
+  } finally {
+    sperre.releaseLock();
+  }
 }
