@@ -21,11 +21,11 @@
   "hoehe": 1.1578477438675763,
   "heizung": 0.9422059642431856
  },
- "erzeugt": "2026-09-19T21:19:24.586Z",
+ "erzeugt": "2026-09-19T21:23:35.068Z",
  "kalibrierung": {
   "fahrten": 6,
   "abweichung_prozent": 4.6,
-  "stand": "2026-09-19T21:19:24.586Z",
+  "stand": "2026-09-19T21:23:35.068Z",
   "methode": "Gesamt- und Einzelfaktoren aus 6 Werten",
   "quellen": {
    "ABRP": {
