@@ -1,6 +1,7 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.18.2 — Vergleichsformular: Fahrzeit-Feld mit normaler Tastatur („:“ war nicht eingebbar).
  * Version 0.18.1 — Preise: Tesla nur Fremdfahrzeug ohne Mitgliedschaft, AMAG inkl. Porsche Zentren (Feld „auch").
  * Version 0.18.0 — Routen-Link: ganze Adresse geokodieren (vorher nur die Straße → falscher Ort), Name und id aus den
  *                  Orten („Neuenrade – Ingolstadt"); falsche Route nach Wien entfernt. Ladepreise: preise.json,
@@ -43,7 +44,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.18.1';
+const VERSION = '0.18.2';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';

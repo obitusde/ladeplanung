@@ -2,6 +2,7 @@
 <!--
   Ladeplanung — Vergleichswert aus ABRP oder My CUPRA eintragen (Strecke Station X → Y, Akku Start/Ankunft).
   Wird von doGet() mit ?seite=vergleich[&route=…&richtung=…&nach=p023] ausgeliefert.
+  Version 0.18.2 — Fahrzeit mit normaler Tastatur (Doppelpunkt fehlte bei der Zifferntastatur).
   Version 0.14.1 — Fahrzeit ist Pflicht. Version 0.14.0 — erste Fassung.
 -->
 <html lang="de">
@@ -74,7 +75,7 @@
         <label>Akku Ankunft (%) <input name="ende_soc" type="number" inputmode="numeric" min="0" max="100"></label>
       </div>
       <div class="zwei">
-        <label>Fahrzeit laut App <small>nötig, z. B. 2:10 – ergibt das Tempo</small><input name="fahrzeit" inputmode="numeric" autocomplete="off" placeholder="h:mm"></label>
+        <label>Fahrzeit laut App <small>nötig, z. B. 2:10 oder 130 (Minuten) – ergibt das Tempo</small><input name="fahrzeit" inputmode="text" autocomplete="off" placeholder="2:10"></label>
         <label>Temperatur (°C) <small>optional, sonst Wetter heute</small><input name="temperatur" type="number" inputmode="decimal" min="-30" max="45"></label>
       </div>
       <div id="hinweis" class="hinweis" hidden></div>
