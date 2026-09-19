@@ -2,6 +2,7 @@
 <!--
   Ladeplanung — Seite „Wartung & Status": zeigt den Zustand und stößt Rechenschritte samt Folgeschritten an.
   Wird von doGet() in Code.js ausgeliefert (…/exec?seite=wartung).
+  Version 0.17.0 — Route hinzufügen per Google-Maps-Link.
   Version 0.12.0
 -->
 <html lang="de">
@@ -68,6 +69,7 @@
     .knopf.haupt { background: var(--akzent); border-color: var(--akzent); color: var(--akzent-text); }
     .knopf.gefahr { border-color: var(--fehler); color: var(--fehler); background: transparent; }
     .knopf:disabled { opacity: .6; }
+    .karte input { width: 100%; min-height: 50px; padding: 0 10px; font: inherit; color: var(--text); background: var(--flaeche); border: 2px solid var(--linie); border-radius: 10px; box-sizing: border-box; }
     details { margin-top: 8px; }
     summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
     pre {
@@ -85,6 +87,14 @@
     <div id="status"></div>
 
     <h2>Was ist wann zu tun?</h2>
+
+    <div class="karte">
+      <h3>Route hinzufügen</h3>
+      <p><b>Wann:</b> für eine neue Strecke. In Google Maps die Route planen – Umwege als <b>Stopp hinzufügen</b>, nicht mit dem Finger ziehen – dann „Teilen" → „Link kopieren" und hier einfügen.</p>
+      <p class="leise">Name, Start, Zwischenziele und Ziel übernimmt das Script; danach wird berechnet und veröffentlicht (1–2 Minuten).</p>
+      <input id="route-link" type="url" inputmode="url" autocomplete="off" placeholder="https://maps.app.goo.gl/…">
+      <button class="knopf haupt" data-aktion="route_link">Route anlegen und veröffentlichen</button>
+    </div>
 
     <div class="karte">
       <h3>Routen berechnen</h3>
@@ -191,6 +201,8 @@
 
     function starte(knopf) {
       const aktion = knopf.dataset.aktion;
+      const wert = aktion === 'route_link' ? $('route-link').value.trim() : undefined;
+      if (aktion === 'route_link' && !wert) { $('protokoll').textContent = '⚠ Bitte zuerst den Google-Maps-Link einfügen.'; $('route-link').focus(); return; }
       const alle = document.querySelectorAll('button[data-aktion]');
       const text = knopf.textContent;
       alle.forEach(k => { k.disabled = true; });
@@ -205,10 +217,11 @@
           if (erg.status) zeigeStatus(erg.status);
           if (aktion === 'bereinigen_vorschau') $('bereinigen-ja').hidden = !(erg.ok && !/Nichts zu tun/.test(erg.text));
           if (aktion === 'bereinigen') $('bereinigen-ja').hidden = true;
+          if (aktion === 'route_link' && erg.ok) $('route-link').value = '';
           $('protokoll').scrollIntoView({ behavior: 'smooth', block: 'start' });
         })
         .withFailureHandler(f => { fertig(); $('protokoll').textContent = 'Fehler: ' + ((f && f.message) || f); })
-        .wartungAusfuehren(aktion);
+        .wartungAusfuehren(aktion, wert);
     }
 
     document.querySelectorAll('button[data-aktion]').forEach(k => k.addEventListener('click', () => starte(k)));

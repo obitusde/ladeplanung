@@ -1,6 +1,6 @@
 # Ladeplanung Cupra Born — Projektstand für Claude
 
-**Stand 18.09.2026** · App (`index.html`) v0.16.1 · Apps Script (`apps-script/Code.js`) v0.16.3 · Veröffentlichen per GitHub Action (`.github/workflows/apps-script.yml`) v1.0.0
+**Stand 18.09.2026** · App (`index.html`) v0.16.1 · Apps Script (`apps-script/Code.js`) v0.17.0 · Veröffentlichen per GitHub Action (`.github/workflows/apps-script.yml`) v1.0.0
 Ursprünglicher Auftrag: [`docs/Umsetzungsbrief_v5.0.md`](docs/Umsetzungsbrief_v5.0.md). Diese Datei beschreibt den **tatsächlichen** Stand inklusive aller späteren Entscheidungen und hat Vorrang vor dem Brief.
 
 ---
@@ -21,7 +21,7 @@ Ursprünglicher Auftrag: [`docs/Umsetzungsbrief_v5.0.md`](docs/Umsetzungsbrief_v
 
 PWA für lange Fahrten mit dem **Cupra Born 58 kWh (2021)**. Zeigt die Ladepunkte **voraus** auf einer Stammstrecke: Entfernung entlang der Straße, Anstieg, **Akku-Prognose**, Leistung, Lage (Straße, Raststätte, „x km abseits"), Notiz. Keine Navigation, kein Belegt-Status, keine Preise – Christof entscheidet selbst.
 
-Stammstrecken (je Hin/Rück): `neuenrade` (Morges–Neuenrade), `ingolstadt` (Ingolstadt über München, ohne Via), `ingolstadt_augsburg` (Via B 17 Hurlach `48.13813,10.83188` + B 300 Aichach `48.52578,11.23978` → A 8 Friedberg-Derching), `savona_simplon`, `savona_bernhard`, `brig` (Morges – Brig, A9, Ziel `46.31740,7.98814`). Ulm-Variante bewusst nicht. Neue Routen am besten in `STAMMSTRECKEN` (Code.js) eintragen; „Routen berechnen" übernimmt sie ins Blatt. Von Hand im Blatt geht auch: id, Name, Start, Ziel (lat,lon oder Maps-Link) Pflicht.
+Stammstrecken (je Hin/Rück): `neuenrade` (Morges–Neuenrade), `ingolstadt` (Ingolstadt über München, ohne Via), `ingolstadt_augsburg` (Via B 17 Hurlach `48.13813,10.83188` + B 300 Aichach `48.52578,11.23978` → A 8 Friedberg-Derching), `savona_simplon`, `savona_bernhard`, `brig` (Morges – Brig, A9, Ziel `46.31740,7.98814`). Ulm-Variante bewusst nicht. **Neue Routen (seit v0.17.0) per geteiltem Google-Maps-Routenlink**: Wartung → „Route hinzufügen" (Feld) oder im Blatt Routen nur die Spalte `Maps-Link` füllen und „Routen berechnen". Das Script füllt Start/Via/Ziel, Name („Morges – Ziel (Via-Orte)"), id (aus dem Zielort, `routenId_`); Start ≤ 3 km von `START_MORGES` → genau dieser. Parser `routenpunkteAusUrl_`: Pfadsegmente nach `/maps/dir/` = Wegpunkte, im data-Block `!2m2!1d<lon>!2d<lat>` je benanntem Punkt; Anzahl passt nicht → Fehler (gezogene Umwege), keine Koordinaten → Geocoder. Getestet nur mit einem echten Link ohne Zwischenziel (Morges → Brig-Glis) – Zwischenziele beim ersten echten Link prüfen.
 
 App: **https://obitusde.github.io/ladeplanung/** (auf dem Pixel installiert).
 
@@ -58,7 +58,7 @@ Kein Backend zur Laufzeit der App: sie lädt `routes.json` + `modell.json` (mit 
 | clasp (PC) | angemeldet (`~/.clasprc.json`) – nur noch für Diagnose und zum Erneuern des Secrets, **nicht** zum Veröffentlichen |
 
 Web-App-Seiten (`doGet`):
-`?id=p023` Bearbeiten/Löschen · `?neu=1` Hinzufügen · `?seite=wartung` Wartung & Status · `?seite=kalibrieren&fahrt=<JSON>` Fahrt kalibrieren · `?seite=vergleich[&route=…&richtung=hin|rueck&nach=p041]` Vergleichswert.
+`?id=p023` Bearbeiten/Löschen · `?neu=1` Hinzufügen · `?seite=wartung` Wartung & Status (auch „Route hinzufügen" per Link) · `?seite=kalibrieren&fahrt=<JSON>` Fahrt kalibrieren · `?seite=vergleich[&route=…&richtung=hin|rueck&nach=p041]` Vergleichswert.
 
 ---
 
@@ -115,7 +115,7 @@ Christof pflegt über die App; Rechenschritte stößt er über **Wartung & Statu
 | `apps-script/Vergleich.html` | Vergleichswert aus ABRP / My CUPRA |
 | `apps-script/appsscript.json` | Zeitzone Europe/Zurich, V8, `webapp` MYSELF |
 | `.github/workflows/apps-script.yml` | Veröffentlicht Apps Script bei Push auf `main` (nur bei Änderungen unter `apps-script/`) |
-| `tests/test-*.js` | links, routen, bereinigung, routen-vorgaben, formular, modell, vergleich, spalten |
+| `tests/test-*.js` | links, routen, bereinigung, routen-vorgaben, formular, modell, vergleich, spalten, routenlink |
 | `tests/formular-vorschau.js`, `tests/erzeuge-testdaten.js`, `tests/server.js`, `tests/analyse-routen.js` | Werkzeuge |
 | `tests/fixtures/` | aufgelöste Maps-Links, synthetische Routen, generierte Vorschauseiten |
 | `docs/Umsetzungsbrief_v5.0.md` | ursprünglicher Auftrag |
@@ -126,7 +126,7 @@ Christof pflegt über die App; Rechenschritte stößt er über **Wartung & Statu
 
 **Blatt `Ladepunkte`** (Reihenfolge seit v0.16.1: von Hand gepflegt vorne): `id | Maps-Link | Name | Straße | Notiz | kW | Anzahl | Richtung (hin/rueck/beide) | Favorit (ja) | Betreiber | Adresse | Lat | Lon | Status`. Das Script arbeitet nach Spaltennamen; `ordneSpalten_()` ordnet beim Export ein abweichendes Blatt um (eigene Zusatzspalten bleiben rechts). `Straße` pflegt Christof selbst (auch im Formular), **Nummern immer ohne Leerzeichen** („A96"; `ohneLeerzeichen_` gleicht auch ORS-Namen an, Trenner `,` `/` `;`): „A 8", mehrere „A 96, A 7" (Titel zeigt die, auf der die Route dort fährt), „–" = keine; leer → Straße der Route aus den ORS-Namen (`waehleStrasse_`). Spalte wird bei Bedarf angelegt (`spalteSicherstellen_`). Das Script schreibt nur leere Felder; `Notiz` nur beim Zusammenführen von Dubletten. `Richtung` bezieht sich auf die Route: `hin` = nur auf der Fahrt ab Morges erreichbar.
 
-**Blatt `Routen`:** `id | Name | Start | Via (;-getrennt) | Ziel | Länge km | Fahrzeit | Stand`. Start/Via/Ziel als `lat,lon` (als Text schreiben, deutsches Gebietsschema!) oder Maps-Link.
+**Blatt `Routen`:** `id | Name | Start | Via (;-getrennt) | Ziel | Länge km | Fahrzeit | Stand | Maps-Link`. Start/Via/Ziel als `lat,lon` (als Text schreiben, deutsches Gebietsschema!) oder Maps-Link.
 
 **Blatt `Fahrten`** (32 Spalten): `erfasst | Route | Richtung | Start | Ende | Start Lat | Start Lon | Ende Lat | Ende Lon | km | hm auf | hm ab | Dauer h | Ø km/h Bordcomputer | km/h verwendet | Zusatzgewicht kg | Temp Start | Temp Ende | Temp Ø | Akku Start % | Akku Ende % | Akku erwartet % | Verbrauch kWh | Anteil Fahrt kWh | Anteil Höhe kWh | Anteil Heizung kWh | Modell kWh | Abweichung % | verwenden | Notiz | Quelle (gemessen/ABRP/My CUPRA) | Kalibrierung`. Christof darf Zeilen löschen oder `verwenden = nein` setzen, danach Wartung → „Neu kalibrieren".
 

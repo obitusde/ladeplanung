@@ -1,6 +1,8 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.17.0 — Routen per geteiltem Google-Maps-Link: Spalte „Maps-Link" im Blatt Routen, Feld in der Wartung;
+ *                  Start/Via/Ziel, Name und id füllt das Script (Stufe 2 teilweise).
  * Version 0.16.3 — Route Morges – Brig (A9 durchs Wallis); „Routen berechnen" meldet Zeilen ohne id, Start oder Ziel.
  * Version 0.16.2 — Straßennamen ohne Leerzeichen („A 96" → „A96"), in „Straße" auch „/" als Trenner.
  * Version 0.16.1 — Spalten im Blatt Ladepunkte nach Handarbeit geordnet (id, Link, Name, Straße, Notiz, kW, Anzahl,
@@ -36,7 +38,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.16.3';
+const VERSION = '0.17.0';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -65,7 +67,7 @@ const SPALTEN_PUNKTE = ['id', 'Maps-Link', 'Name', 'Straße', 'Notiz', 'kW', 'An
 function punkteZeile_(werte) {
   return SPALTEN_PUNKTE.map(function (k) { return werte[k] === undefined ? '' : werte[k]; });
 }
-const SPALTEN_ROUTEN = ['id', 'Name', 'Start', 'Via', 'Ziel', 'Länge km', 'Fahrzeit', 'Stand'];
+const SPALTEN_ROUTEN = ['id', 'Name', 'Start', 'Via', 'Ziel', 'Länge km', 'Fahrzeit', 'Stand', 'Maps-Link'];
 
 const RICHTUNGEN = ['hin', 'rueck', 'beide'];
 
@@ -355,8 +357,9 @@ function loeschePunkt(id) {
  * Wartungsseite: führt eine Aktion samt Folgeschritten aus, damit nichts in der falschen
  * Reihenfolge angestoßen wird (z. B. Routen berechnen → veröffentlichen).
  */
-function wartungAusfuehren(aktion) {
+function wartungAusfuehren(aktion, wert) {
   const ablaeufe = {
+    route_link: [function () { legeRouteAusLinkAn_(wert); }, berechneRouten, exportJson],
     export: [exportJson],
     links: [aufloeseLinks, exportJson],
     routen: [routenVorgabenUebernehmen, berechneRouten, exportJson],
@@ -1663,10 +1666,10 @@ function berechneRoutenIntern_(erzwingen) {
     return;
   }
 
+  const meldungen = ergaenzeRoutenAusLinks_(blatt); // Zeilen nur mit Maps-Link → Start/Via/Ziel, Name, id
   const sp = spaltenIndex_(blatt);
   const werte = blatt.getRange(2, 1, blatt.getLastRow() - 1, blatt.getLastColumn()).getValues();
   const start = Date.now();
-  const meldungen = [];
   let abgebrochen = false;
 
   for (let i = 0; i < werte.length; i++) {
@@ -1750,6 +1753,157 @@ function koordinateAusEingabe_(text) {
     return [info.lon, info.lat];
   }
   throw new Error('weder Koordinate noch Maps-Link: ' + text);
+}
+
+// ---------------------------------------------------------------------------
+// Routen aus geteilten Google-Maps-Links (Christof, 19.09.2026): Route in Google Maps planen,
+// Zwischenziele als Stopps, „Teilen" → Link. Geprüft mit einem echten Link vom 19.09.2026:
+//   https://www.google.ch/maps/dir/Morges,+1110/Brig-Glis/@…/data=!4m14!4m13!1m5!1m1!1s0x…!2m2!1d6.4961301!2d46.5088127!1m5…!3e0
+// Pfadsegmente = Wegpunkte in Reihenfolge (Name oder „lat,lon"), im data-Block je benanntem Punkt
+// „!2m2!1d<lon>!2d<lat>". Passt die Zuordnung nicht eindeutig (z. B. mit der Hand gezogene Umwege,
+// die zusätzliche Koordinaten erzeugen), wird sichtbar abgebrochen statt geraten.
+// ---------------------------------------------------------------------------
+
+const START_FANG_KM = 3; // Start so nah an Christofs Startpunkt → genau dieser (alle Stammstrecken beginnen dort)
+
+/** Rein rechnerisch: /maps/dir/-URL → [{ name, lat, lon }] (lat null = nur Name bekannt). Wirft bei Unklarem. */
+function routenpunkteAusUrl_(url) {
+  const teil = String(url).split('/maps/dir/')[1];
+  if (!teil) throw new Error('kein Routenlink – in Google Maps eine Route planen und „Teilen" → „Link kopieren"');
+  const pfad = teil.split(/[?#]/)[0].split('/');
+  const segmente = [];
+  for (let i = 0; i < pfad.length; i++) {
+    if (pfad[i].charAt(0) === '@' || pfad[i].indexOf('data=') === 0) break;
+    segmente.push(decodeURIComponent(pfad[i].replace(/\+/g, ' ')).trim());
+  }
+  while (segmente.length && segmente[segmente.length - 1] === '') segmente.pop();
+  if (segmente.length < 2) throw new Error('Route braucht mindestens Start und Ziel');
+  if (segmente.some(function (x) { return x === ''; })) throw new Error('ein Wegpunkt ist leer (z. B. „Mein Standort") – bitte einen Ort wählen');
+
+  const datenTeil = (teil.match(/data=([^?#]*)/) || [])[1] || '';
+  const paare = [];
+  const muster = /!1d(-?\d+(?:\.\d+)?)!2d(-?\d+(?:\.\d+)?)/g;
+  let m;
+  while ((m = muster.exec(datenTeil)) !== null) paare.push({ lat: Number(m[2]), lon: Number(m[1]) });
+
+  const punkte = segmente.map(function (x) {
+    const k = x.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+    return k ? { name: '', lat: Number(k[1]), lon: Number(k[2]) } : { name: x.split(',')[0].trim(), lat: null, lon: null };
+  });
+  const benannt = punkte.filter(function (p) { return p.lat === null; });
+  if (paare.length === punkte.length) {
+    punkte.forEach(function (p, i) { if (p.lat === null) { p.lat = paare[i].lat; p.lon = paare[i].lon; } });
+  } else if (paare.length === benannt.length) {
+    benannt.forEach(function (p, i) { p.lat = paare[i].lat; p.lon = paare[i].lon; });
+  } else if (paare.length > 0) {
+    throw new Error(punkte.length + ' Wegpunkte, aber ' + paare.length + ' Koordinaten im Link – wurde die Route mit dem Finger verschoben? ' +
+      'Bitte stattdessen Zwischenziele als Stopp hinzufügen');
+  }
+  return punkte;
+}
+
+/** Kennung aus einem Ortsnamen: „Brig-Glis" → „brig_glis", „Zürich" → „zuerich". */
+function routenId_(name, vorhandene) {
+  const basis = String(name || 'route').toLowerCase()
+    .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'route';
+  let id = basis, n = 2;
+  while (vorhandene.indexOf(id) !== -1) id = basis + '_' + n++;
+  return id;
+}
+
+/** Rein rechnerisch: Wegpunkte → Zeilenwerte { Name, Ort (Ziel), Start, Via, Ziel }. Start bei Morges → Christofs Startpunkt. */
+function routenZeileAusPunkten_(punkte) {
+  const text = function (p) { return runde_(p.lat, 6) + ',' + runde_(p.lon, 6); };
+  const s0 = START_MORGES.split(',').map(Number);
+  const start = punkte[0], ziel = punkte[punkte.length - 1], via = punkte.slice(1, -1);
+  const amStart = haversine_(start.lat, start.lon, s0[0], s0[1]) <= START_FANG_KM;
+  const namen = via.map(function (p) { return p.name; }).filter(function (x) { return x; });
+  return {
+    Name: (amStart ? 'Morges' : start.name || 'Start') + ' – ' + (ziel.name || 'Ziel') + (namen.length ? ' (' + namen.join(', ') + ')' : ''),
+    Ort: ziel.name || 'route',
+    Start: amStart ? START_MORGES : text(start),
+    Via: via.map(text).join(';'),
+    Ziel: text(ziel),
+  };
+}
+
+/** Link auflösen (Kurzlink folgen), Wegpunkte lesen, fehlende Koordinaten/Namen über den Google-Geocoder ergänzen. */
+function routeAusLink_(link) {
+  const url = folgeWeiterleitungen_(String(link).trim());
+  const punkte = routenpunkteAusUrl_(url);
+  const geocoder = Maps.newGeocoder().setLanguage('de');
+  punkte.forEach(function (p) {
+    if (p.lat === null) {
+      const r = geocoder.geocode(p.name);
+      const erstes = r.status === 'OK' && r.results && r.results[0];
+      if (!erstes) throw new Error('Ort „' + p.name + '" nicht gefunden');
+      p.lat = erstes.geometry.location.lat;
+      p.lon = erstes.geometry.location.lng;
+    }
+    if (!p.name) {
+      const r = geocoder.reverseGeocode(p.lat, p.lon);
+      const teile = (r.results && r.results[0] && r.results[0].address_components) || [];
+      const ort = teile.filter(function (t) { return t.types.indexOf('locality') !== -1; })[0];
+      p.name = ort ? ort.long_name : '';
+    }
+  });
+  return routenZeileAusPunkten_(punkte);
+}
+
+/**
+ * Zeilen im Blatt Routen mit Maps-Link, aber ohne Start oder Ziel: Start/Via/Ziel, leeren Namen und leere id
+ * aus dem Link füllen. Fehler landen in „Stand". Gibt Meldungen zurück.
+ */
+function ergaenzeRoutenAusLinks_(blatt) {
+  spalteSicherstellen_(blatt, 'Maps-Link');
+  const sp = spaltenIndex_(blatt);
+  const meldungen = [];
+  if (blatt.getLastRow() < 2) return meldungen;
+  const werte = blatt.getRange(2, 1, blatt.getLastRow() - 1, blatt.getLastColumn()).getValues();
+  const ids = werte.map(function (z) { return String(z[sp.id - 1]).trim(); }).filter(function (x) { return x; });
+  werte.forEach(function (z, i) {
+    const f = function (k) { return String(z[sp[k] - 1]).trim(); };
+    if (!f('Maps-Link') || (f('Start') && f('Ziel'))) return;
+    const zeile = i + 2;
+    try {
+      const r = routeAusLink_(f('Maps-Link'));
+      ['Start', 'Via', 'Ziel'].forEach(function (k) { schreibeText_(blatt, zeile, sp[k], r[k]); });
+      if (!f('Name')) blatt.getRange(zeile, sp.Name).setValue(r.Name);
+      let id = f('id');
+      if (!id) { id = routenId_(r.Ort, ids); ids.push(id); schreibeText_(blatt, zeile, sp.id, id); }
+      meldungen.push(id + ': aus dem Maps-Link übernommen – ' + (f('Name') || r.Name));
+    } catch (e) {
+      blatt.getRange(zeile, sp.Stand).setValue('Fehler: ' + e.message);
+      meldungen.push('Zeile ' + zeile + ': Maps-Link – ' + e.message);
+    }
+  });
+  if (meldungen.length) SpreadsheetApp.flush();
+  return meldungen;
+}
+
+/** Wartung: Route aus einem Link anlegen (vollständige Zeile anhängen; berechnen und veröffentlichen folgen). */
+function legeRouteAusLinkAn_(link) {
+  const ui = meldungsUi_();
+  if (!istMapsLink_(String(link || '').trim())) throw new Error('Bitte einen Google-Maps-Link einfügen (https://maps.app.goo.gl/…).');
+  const blatt = tabelle_().getSheetByName(BLATT_ROUTEN);
+  spalteSicherstellen_(blatt, 'Maps-Link');
+  const r = routeAusLink_(link);
+  const sp = spaltenIndex_(blatt);
+  const werte = blatt.getLastRow() >= 2 ? blatt.getRange(2, 1, blatt.getLastRow() - 1, blatt.getLastColumn()).getValues() : [];
+  const gleich = werte.filter(function (z) {
+    return ['Start', 'Via', 'Ziel'].every(function (k) { return String(z[sp[k] - 1]).trim() === r[k]; });
+  })[0];
+  if (gleich) throw new Error('Diese Route gibt es schon: ' + gleich[sp.Name - 1] + ' (' + gleich[sp.id - 1] + ')');
+  const id = routenId_(r.Ort, werte.map(function (z) { return String(z[sp.id - 1]).trim(); }));
+  const zeile = blatt.getLastRow() + 1;
+  schreibeText_(blatt, zeile, sp.id, id);
+  blatt.getRange(zeile, sp.Name).setValue(r.Name);
+  ['Start', 'Via', 'Ziel'].forEach(function (k) { schreibeText_(blatt, zeile, sp[k], r[k]); });
+  blatt.getRange(zeile, sp['Maps-Link']).setValue(String(link).trim());
+  SpreadsheetApp.flush();
+  ui.alert('Route angelegt', id + ': ' + r.Name + (r.Via ? '\nVia: ' + r.Via : ''), ui.ButtonSet.OK);
 }
 
 function holeRoute_(punkte, schluessel) {
