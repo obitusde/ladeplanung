@@ -23,7 +23,11 @@ pruefe(enbw && enbw.tarife.map(t => t.name).join() === 'S,M,L', 'EnBW nur S, M, 
 // Frage an das Modell
 const frage = gs.preisFrage_(enbw);
 pruefe(/Deutschland/.test(frage) && /S, M und L/.test(frage) && /kein Roaming/.test(frage) && /enbw\.com/.test(frage), 'Frage EnBW');
-pruefe(/Fremdfahrzeuge/.test(gs.preisFrage_({ betreiber: 'Tesla', land: 'CH', waehrung: 'CHF', tarife: [] })), 'Frage Tesla');
+const frageTesla = gs.preisFrage_({ betreiber: 'Tesla', land: 'CH', waehrung: 'CHF', tarife: [] });
+pruefe(/Fremdfahrzeuge/.test(frageTesla) && /ohne Mitgliedschaft/.test(frageTesla), 'Frage Tesla');
+pruefe(/Porsche/.test(gs.preisFrage_(preise.anbieter.find(a => a.betreiber === 'AMAG'))), 'Frage AMAG mit Porsche');
+pruefe(preise.anbieter.every(a => a.app && /^https:\/\/play\.google\.com\/store\/apps\/details\?id=/.test(a.app.url)), 'App-Link je Anbieter');
+pruefe(!preise.anbieter.some(a => a.betreiber === 'Tesla' && a.tarife.length !== 1), 'Tesla nur Fremdfahrzeug');
 
 // Antwort lesen
 const a = gs.preisAntwortLesen_('Hier: ```json\n{"tarife":[{"name":"S","kwh":"0.56","grund_monat":0},{"name":"L","kwh":0.39,"grund_monat":11.99,"kwh_bis":0.2}],"hinweis":"x","quelle":"https://enbw.com","sicher":true}\n```');

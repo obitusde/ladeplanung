@@ -1,6 +1,7 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.18.1 — Preise: Tesla nur Fremdfahrzeug ohne Mitgliedschaft, AMAG inkl. Porsche Zentren (Feld „auch").
  * Version 0.18.0 — Routen-Link: ganze Adresse geokodieren (vorher nur die Straße → falscher Ort), Name und id aus den
  *                  Orten („Neuenrade – Ingolstadt"); falsche Route nach Wien entfernt. Ladepreise: preise.json,
  *                  Seite „Preise" (?seite=preise) mit Aktualisieren über OpenRouter (Websuche) und Bestätigen.
@@ -42,7 +43,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.18.0';
+const VERSION = '0.18.1';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -2476,7 +2477,8 @@ const LAENDER = { CH: 'Schweiz', DE: 'Deutschland', AT: 'Österreich', IT: 'Ital
 function preisFrage_(a) {
   const land = LAENDER[a.land] || a.land;
   const besonders = a.betreiber === 'EnBW' ? ' Nur die Tarife S, M und L der EnBW mobility+ App an EnBW-eigenen Ladesäulen, keinen Ad-hoc-Preis.'
-    : a.betreiber === 'Tesla' ? ' Preise für Fremdfahrzeuge (Nicht-Tesla), ohne und mit Supercharger-Mitgliedschaft; Spanne von–bis, weil je Standort verschieden.'
+    : a.betreiber === 'Tesla' ? ' Nur der Preis für Fremdfahrzeuge (Nicht-Tesla) ohne Mitgliedschaft, als ein Tarif „Fremdfahrzeug" mit Spanne von–bis, weil je Standort verschieden.'
+    : a.auch && a.auch.length ? ' Gilt auch für ' + a.auch.join(', ') + ' (gleiches Netz).'
     : '';
   return 'Aktuelle Ladepreise des Betreibers ' + a.betreiber + ' in ' + land + ' an seinen eigenen Ladestationen, ' +
     'nur Direktangebote des Betreibers (App oder Ladekarte des Betreibers), kein Roaming über andere Anbieter.' + besonders +

@@ -5,6 +5,7 @@
     {
       "betreiber": "EnBW", "land": "DE", "waehrung": "EUR",
       "suche": "https://www.enbw.com/elektromobilitaet/produkte/ladetarife",
+      "app": { "name": "EnBW mobility+", "url": "https://play.google.com/store/apps/details?id=com.enbw.ev" },
       "tarife": [
         { "name": "S", "kwh": 0.56, "grund_monat": 0 },
         { "name": "M", "kwh": 0.46, "grund_monat": 5.99 },
@@ -15,58 +16,49 @@
     {
       "betreiber": "EWE Go", "land": "DE", "waehrung": "EUR",
       "suche": "https://www.ewe-go.de/",
-      "tarife": [{ "name": "EWE Go App", "kwh": 0.52, "grund_monat": 0 }],
+      "app": { "name": "EWE Go", "url": "https://play.google.com/store/apps/details?id=de.ewe.go.app" },
+      "tarife": [{ "name": "App", "kwh": 0.52, "grund_monat": 0 }],
       "hinweis": "an EWE-Go-Säulen, AC und HPC gleich, keine Blockiergebühr"
     },
     {
-      "betreiber": "AMAG", "land": "CH", "waehrung": "CHF",
+      "betreiber": "AMAG", "land": "CH", "waehrung": "CHF", "auch": ["Porsche"],
       "suche": "https://www.amag-group.ch/de/neuer-ladetarif-der-amag-gruppe.html",
-      "tarife": [{ "name": "AMAG-App", "kwh": 0.28, "grund_monat": 0 }],
-      "hinweis": "mit AMAG-App oder -Ladekarte im AMAG-Netz"
-    },
-    {
-      "betreiber": "Porsche", "land": "CH", "waehrung": "CHF",
-      "suche": "https://dealer.porsche.com/ch/winterthur/de-CH",
-      "tarife": [],
-      "hinweis": "Porsche Zentrum Winterthur gehört zur AMAG-Gruppe – Preis in der AMAG-App prüfen"
+      "app": { "name": "AMAG", "url": "https://play.google.com/store/apps/details?id=ch.amag.amagapp" },
+      "tarife": [{ "name": "App", "kwh": 0.28, "grund_monat": 0 }],
+      "hinweis": "mit AMAG-App oder -Ladekarte im AMAG-Netz, auch Porsche Zentren (AMAG-Gruppe)"
     },
     {
       "betreiber": "Tesla", "land": "CH", "waehrung": "CHF",
       "suche": "https://www.tesla.com/de_ch/support/charging/supercharger/fees",
-      "tarife": [
-        { "name": "Fremdfahrzeug", "kwh": 0.40, "kwh_bis": 0.73, "grund_monat": 0 },
-        { "name": "mit Mitgliedschaft", "kwh": 0.59, "grund_monat": 13.99 }
-      ],
+      "app": { "name": "Tesla", "url": "https://play.google.com/store/apps/details?id=com.teslamotors.tesla" },
+      "tarife": [{ "name": "Fremdfahrzeug", "kwh": 0.40, "kwh_bis": 0.73, "grund_monat": 0 }],
       "hinweis": "je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App"
     },
     {
       "betreiber": "Tesla", "land": "DE", "waehrung": "EUR",
       "suche": "https://www.tesla.com/de_de/support/charging/supercharger/fees",
-      "tarife": [
-        { "name": "Fremdfahrzeug", "kwh": 0.52, "kwh_bis": 0.72, "grund_monat": 0 },
-        { "name": "mit Mitgliedschaft", "kwh": 0.38, "kwh_bis": 0.49, "grund_monat": 9.99 }
-      ],
+      "app": { "name": "Tesla", "url": "https://play.google.com/store/apps/details?id=com.teslamotors.tesla" },
+      "tarife": [{ "name": "Fremdfahrzeug", "kwh": 0.52, "kwh_bis": 0.72, "grund_monat": 0 }],
       "hinweis": "je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App"
     },
     {
       "betreiber": "Tesla", "land": "IT", "waehrung": "EUR",
       "suche": "https://www.tesla.com/it_it/support/charging/supercharger/fees",
-      "tarife": [
-        { "name": "Fremdfahrzeug", "kwh": 0.60, "grund_monat": 0 },
-        { "name": "mit Mitgliedschaft", "kwh": 0.42, "kwh_bis": 0.47, "grund_monat": 9.99 }
-      ],
+      "app": { "name": "Tesla", "url": "https://play.google.com/store/apps/details?id=com.teslamotors.tesla" },
+      "tarife": [{ "name": "Fremdfahrzeug", "kwh": 0.60, "grund_monat": 0 }],
       "hinweis": "je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App"
     },
     {
       "betreiber": "Migrol", "land": "CH", "waehrung": "CHF",
       "suche": "https://www.migrol.ch/de/mobilit%C3%A4t/e-mobilit%C3%A4t/migrol-fast-charging/zahlung-preise/",
+      "app": { "name": "M-Charge", "url": "https://play.google.com/store/apps/details?id=ch.migrol.mcharge" },
       "tarife": [
-        { "name": "bis 22 kW", "kwh": 0.38, "grund_monat": 0, "kw_bis": 22 },
+        { "name": "22 kW", "kwh": 0.38, "grund_monat": 0, "kw_bis": 22 },
         { "name": "50–64 kW", "kwh": 0.48, "grund_monat": 0, "kw_bis": 64 },
         { "name": "128 kW", "kwh": 0.49, "minute": 0.09, "grund_monat": 0, "kw_bis": 128 },
         { "name": "320 kW", "kwh": 0.59, "minute": 0.09, "grund_monat": 0 }
       ],
-      "hinweis": "M-Charge-App; Schnelllader zusätzlich 0,09 CHF je Minute"
+      "hinweis": "Schnelllader zusätzlich 0,09 CHF je Minute"
     }
   ]
 }

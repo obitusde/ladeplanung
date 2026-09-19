@@ -2,13 +2,14 @@
 <!--
   Ladeplanung — Seite „Ladepreise": zeigt preise.json und holt neue Werte über OpenRouter (mit Websuche).
   Übernommen wird erst nach Bestätigung. Wird von doGet() in Code.js ausgeliefert (…/exec?seite=preise).
+  Version 0.18.1 — kleiner, Tarife in zwei Spalten, Link zur Android-App, „auch" (Porsche → AMAG).
   Version 0.18.0
 -->
 <html lang="de">
 <head>
   <base target="_top">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <script>window.__status = {"modell":{"gespeichert":3,"kalibrierung":{"fahrten":3,"abweichung_prozent":2.4,"methode":"Gesamtfaktor aus 3 Fahrt(en)"}},"punkte":41,"ohneKoordinaten":1,"nichtAufloesbar":0,"ohneRoute":["p019 EnBW Ladestation Lörrach"],"letzterExport":"2026-09-15T09:35:21.521Z","routen":[{"id":"neuenrade","name":"Morges – Neuenrade","laenge":"716.4","stand":"15.09.2026 09:34","aktuell":false},{"id":"savona_simplon","name":"Morges – Savona (Simplon)","laenge":"478.2","stand":"Fehler: ORS HTTP 403: Quota exceeded","aktuell":false},{"id":"ingolstadt","name":"Morges – Ingolstadt","laenge":"620.7","stand":"15.09.2026 09:34","aktuell":true}]}; window.__preise = { "version": 1, "stand": "2026-09-19", "anbieter": [ { "betreiber": "EnBW", "land": "DE", "waehrung": "EUR", "suche": "https://www.enbw.com/elektromobilitaet/produkte/ladetarife", "tarife": [ { "name": "S", "kwh": 0.56, "grund_monat": 0 }, { "name": "M", "kwh": 0.46, "grund_monat": 5.99 }, { "name": "L", "kwh": 0.39, "grund_monat": 11.99 } ], "hinweis": "an EnBW-Säulen, AC und DC gleich; bis 30.09.2026 Sommeraktion −5 ct/kWh" }, { "betreiber": "EWE Go", "land": "DE", "waehrung": "EUR", "suche": "https://www.ewe-go.de/", "tarife": [{ "name": "EWE Go App", "kwh": 0.52, "grund_monat": 0 }], "hinweis": "an EWE-Go-Säulen, AC und HPC gleich, keine Blockiergebühr" }, { "betreiber": "AMAG", "land": "CH", "waehrung": "CHF", "suche": "https://www.amag-group.ch/de/neuer-ladetarif-der-amag-gruppe.html", "tarife": [{ "name": "AMAG-App", "kwh": 0.28, "grund_monat": 0 }], "hinweis": "mit AMAG-App oder -Ladekarte im AMAG-Netz" }, { "betreiber": "Porsche", "land": "CH", "waehrung": "CHF", "suche": "https://dealer.porsche.com/ch/winterthur/de-CH", "tarife": [], "hinweis": "Porsche Zentrum Winterthur gehört zur AMAG-Gruppe – Preis in der AMAG-App prüfen" }, { "betreiber": "Tesla", "land": "CH", "waehrung": "CHF", "suche": "https://www.tesla.com/de_ch/support/charging/supercharger/fees", "tarife": [ { "name": "Fremdfahrzeug", "kwh": 0.40, "kwh_bis": 0.73, "grund_monat": 0 }, { "name": "mit Mitgliedschaft", "kwh": 0.59, "grund_monat": 13.99 } ], "hinweis": "je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App" }, { "betreiber": "Tesla", "land": "DE", "waehrung": "EUR", "suche": "https://www.tesla.com/de_de/support/charging/supercharger/fees", "tarife": [ { "name": "Fremdfahrzeug", "kwh": 0.52, "kwh_bis": 0.72, "grund_monat": 0 }, { "name": "mit Mitgliedschaft", "kwh": 0.38, "kwh_bis": 0.49, "grund_monat": 9.99 } ], "hinweis": "je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App" }, { "betreiber": "Tesla", "land": "IT", "waehrung": "EUR", "suche": "https://www.tesla.com/it_it/support/charging/supercharger/fees", "tarife": [ { "name": "Fremdfahrzeug", "kwh": 0.60, "grund_monat": 0 }, { "name": "mit Mitgliedschaft", "kwh": 0.42, "kwh_bis": 0.47, "grund_monat": 9.99 } ], "hinweis": "je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App" }, { "betreiber": "Migrol", "land": "CH", "waehrung": "CHF", "suche": "https://www.migrol.ch/de/mobilit%C3%A4t/e-mobilit%C3%A4t/migrol-fast-charging/zahlung-preise/", "tarife": [ { "name": "bis 22 kW", "kwh": 0.38, "grund_monat": 0, "kw_bis": 22 }, { "name": "50–64 kW", "kwh": 0.48, "grund_monat": 0, "kw_bis": 64 }, { "name": "128 kW", "kwh": 0.49, "minute": 0.09, "grund_monat": 0, "kw_bis": 128 }, { "name": "320 kW", "kwh": 0.59, "minute": 0.09, "grund_monat": 0 } ], "hinweis": "M-Charge-App; Schnelllader zusätzlich 0,09 CHF je Minute" } ] } ;</script>
+  <script>window.__status = {"modell":{"gespeichert":3,"kalibrierung":{"fahrten":3,"abweichung_prozent":2.4,"methode":"Gesamtfaktor aus 3 Fahrt(en)"}},"punkte":41,"ohneKoordinaten":1,"nichtAufloesbar":0,"ohneRoute":["p019 EnBW Ladestation Lörrach"],"letzterExport":"2026-09-15T09:35:21.521Z","routen":[{"id":"neuenrade","name":"Morges – Neuenrade","laenge":"716.4","stand":"15.09.2026 09:34","aktuell":false},{"id":"savona_simplon","name":"Morges – Savona (Simplon)","laenge":"478.2","stand":"Fehler: ORS HTTP 403: Quota exceeded","aktuell":false},{"id":"ingolstadt","name":"Morges – Ingolstadt","laenge":"620.7","stand":"15.09.2026 09:34","aktuell":true}]}; window.__preise = { "version": 1, "stand": "2026-09-19", "anbieter": [ { "betreiber": "EnBW", "land": "DE", "waehrung": "EUR", "suche": "https://www.enbw.com/elektromobilitaet/produkte/ladetarife", "app": { "name": "EnBW mobility+", "url": "https://play.google.com/store/apps/details?id=com.enbw.ev" }, "tarife": [ { "name": "S", "kwh": 0.56, "grund_monat": 0 }, { "name": "M", "kwh": 0.46, "grund_monat": 5.99 }, { "name": "L", "kwh": 0.39, "grund_monat": 11.99 } ], "hinweis": "an EnBW-Säulen, AC und DC gleich; bis 30.09.2026 Sommeraktion −5 ct/kWh" }, { "betreiber": "EWE Go", "land": "DE", "waehrung": "EUR", "suche": "https://www.ewe-go.de/", "app": { "name": "EWE Go", "url": "https://play.google.com/store/apps/details?id=de.ewe.go.app" }, "tarife": [{ "name": "App", "kwh": 0.52, "grund_monat": 0 }], "hinweis": "an EWE-Go-Säulen, AC und HPC gleich, keine Blockiergebühr" }, { "betreiber": "AMAG", "land": "CH", "waehrung": "CHF", "auch": ["Porsche"], "suche": "https://www.amag-group.ch/de/neuer-ladetarif-der-amag-gruppe.html", "app": { "name": "AMAG", "url": "https://play.google.com/store/apps/details?id=ch.amag.amagapp" }, "tarife": [{ "name": "App", "kwh": 0.28, "grund_monat": 0 }], "hinweis": "mit AMAG-App oder -Ladekarte im AMAG-Netz, auch Porsche Zentren (AMAG-Gruppe)" }, { "betreiber": "Tesla", "land": "CH", "waehrung": "CHF", "suche": "https://www.tesla.com/de_ch/support/charging/supercharger/fees", "app": { "name": "Tesla", "url": "https://play.google.com/store/apps/details?id=com.teslamotors.tesla" }, "tarife": [{ "name": "Fremdfahrzeug", "kwh": 0.40, "kwh_bis": 0.73, "grund_monat": 0 }], "hinweis": "je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App" }, { "betreiber": "Tesla", "land": "DE", "waehrung": "EUR", "suche": "https://www.tesla.com/de_de/support/charging/supercharger/fees", "app": { "name": "Tesla", "url": "https://play.google.com/store/apps/details?id=com.teslamotors.tesla" }, "tarife": [{ "name": "Fremdfahrzeug", "kwh": 0.52, "kwh_bis": 0.72, "grund_monat": 0 }], "hinweis": "je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App" }, { "betreiber": "Tesla", "land": "IT", "waehrung": "EUR", "suche": "https://www.tesla.com/it_it/support/charging/supercharger/fees", "app": { "name": "Tesla", "url": "https://play.google.com/store/apps/details?id=com.teslamotors.tesla" }, "tarife": [{ "name": "Fremdfahrzeug", "kwh": 0.60, "grund_monat": 0 }], "hinweis": "je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App" }, { "betreiber": "Migrol", "land": "CH", "waehrung": "CHF", "suche": "https://www.migrol.ch/de/mobilit%C3%A4t/e-mobilit%C3%A4t/migrol-fast-charging/zahlung-preise/", "app": { "name": "M-Charge", "url": "https://play.google.com/store/apps/details?id=ch.migrol.mcharge" }, "tarife": [ { "name": "22 kW", "kwh": 0.38, "grund_monat": 0, "kw_bis": 22 }, { "name": "50–64 kW", "kwh": 0.48, "grund_monat": 0, "kw_bis": 64 }, { "name": "128 kW", "kwh": 0.49, "minute": 0.09, "grund_monat": 0, "kw_bis": 128 }, { "name": "320 kW", "kwh": 0.59, "minute": 0.09, "grund_monat": 0 } ], "hinweis": "Schnelllader zusätzlich 0,09 CHF je Minute" } ] } ;</script>
   <script>
   window.__aufrufe = [];
   const antwort = (r, wert) => setTimeout(() => r.ok(wert), 200);
@@ -54,21 +55,23 @@
       }
     }
     * { box-sizing: border-box; }
-    body { margin: 0; background: var(--grund); color: var(--text); font: 18px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    body { margin: 0; background: var(--grund); color: var(--text); font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
     main { max-width: 620px; margin: 0 auto; padding: 16px; }
-    h1 { font-size: 26px; margin: 4px 0 6px; }
-    h2 { font-size: 21px; margin: 22px 0 8px; }
+    h1 { font-size: 22px; margin: 4px 0 4px; }
+    h2 { font-size: 17px; margin: 16px 0 6px; }
     p { margin: 0 0 8px; }
     .leise { color: var(--leise); overflow-wrap: anywhere; }
-    .karte { border: 2px solid var(--linie); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
-    .karte b { font-size: 19px; }
-    .tarif { display: flex; justify-content: space-between; gap: 10px; font-variant-numeric: tabular-nums; }
+    .karte { border: 1px solid var(--linie); border-radius: 10px; padding: 6px 10px; margin-bottom: 8px; }
+    .kopf { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+    .kopf a { color: var(--akzent); font-weight: 600; text-decoration: none; white-space: nowrap; }
+    .tarife { display: grid; grid-template-columns: max-content 1fr; column-gap: 12px; row-gap: 1px; margin: 2px 0; font-variant-numeric: tabular-nums; }
+    .tname { white-space: nowrap; color: var(--leise); }
     .neu { color: var(--gut); font-weight: 700; }
     .fehler { color: var(--fehler); font-weight: 700; }
     label.wahl { display: flex; gap: 10px; align-items: center; margin-top: 6px; font-weight: 700; }
     label.wahl input { width: 24px; height: 24px; }
     .knopf {
-      display: flex; align-items: center; justify-content: center; width: 100%; min-height: 54px; margin-top: 8px;
+      display: flex; align-items: center; justify-content: center; width: 100%; min-height: 46px; margin-top: 8px;
       border-radius: 10px; border: 2px solid var(--linie); background: var(--flaeche); color: var(--text);
       font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; text-align: center; padding: 0 12px;
     }
@@ -96,7 +99,7 @@
 
   <script>
     'use strict';
-    const MODELL = {"preise":{"version":1,"stand":"2026-09-19","anbieter":[{"betreiber":"EnBW","land":"DE","waehrung":"EUR","suche":"https://www.enbw.com/elektromobilitaet/produkte/ladetarife","tarife":[{"name":"S","kwh":0.56,"grund_monat":0},{"name":"M","kwh":0.46,"grund_monat":5.99},{"name":"L","kwh":0.39,"grund_monat":11.99}],"hinweis":"an EnBW-Säulen, AC und DC gleich; bis 30.09.2026 Sommeraktion −5 ct/kWh"},{"betreiber":"EWE Go","land":"DE","waehrung":"EUR","suche":"https://www.ewe-go.de/","tarife":[{"name":"EWE Go App","kwh":0.52,"grund_monat":0}],"hinweis":"an EWE-Go-Säulen, AC und HPC gleich, keine Blockiergebühr"},{"betreiber":"AMAG","land":"CH","waehrung":"CHF","suche":"https://www.amag-group.ch/de/neuer-ladetarif-der-amag-gruppe.html","tarife":[{"name":"AMAG-App","kwh":0.28,"grund_monat":0}],"hinweis":"mit AMAG-App oder -Ladekarte im AMAG-Netz"},{"betreiber":"Porsche","land":"CH","waehrung":"CHF","suche":"https://dealer.porsche.com/ch/winterthur/de-CH","tarife":[],"hinweis":"Porsche Zentrum Winterthur gehört zur AMAG-Gruppe – Preis in der AMAG-App prüfen"},{"betreiber":"Tesla","land":"CH","waehrung":"CHF","suche":"https://www.tesla.com/de_ch/support/charging/supercharger/fees","tarife":[{"name":"Fremdfahrzeug","kwh":0.4,"kwh_bis":0.73,"grund_monat":0},{"name":"mit Mitgliedschaft","kwh":0.59,"grund_monat":13.99}],"hinweis":"je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App"},{"betreiber":"Tesla","land":"DE","waehrung":"EUR","suche":"https://www.tesla.com/de_de/support/charging/supercharger/fees","tarife":[{"name":"Fremdfahrzeug","kwh":0.52,"kwh_bis":0.72,"grund_monat":0},{"name":"mit Mitgliedschaft","kwh":0.38,"kwh_bis":0.49,"grund_monat":9.99}],"hinweis":"je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App"},{"betreiber":"Tesla","land":"IT","waehrung":"EUR","suche":"https://www.tesla.com/it_it/support/charging/supercharger/fees","tarife":[{"name":"Fremdfahrzeug","kwh":0.6,"grund_monat":0},{"name":"mit Mitgliedschaft","kwh":0.42,"kwh_bis":0.47,"grund_monat":9.99}],"hinweis":"je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App"},{"betreiber":"Migrol","land":"CH","waehrung":"CHF","suche":"https://www.migrol.ch/de/mobilit%C3%A4t/e-mobilit%C3%A4t/migrol-fast-charging/zahlung-preise/","tarife":[{"name":"bis 22 kW","kwh":0.38,"grund_monat":0,"kw_bis":22},{"name":"50–64 kW","kwh":0.48,"grund_monat":0,"kw_bis":64},{"name":"128 kW","kwh":0.49,"minute":0.09,"grund_monat":0,"kw_bis":128},{"name":"320 kW","kwh":0.59,"minute":0.09,"grund_monat":0}],"hinweis":"M-Charge-App; Schnelllader zusätzlich 0,09 CHF je Minute"}]},"schluessel":true,"appUrl":"https://obitusde.github.io/ladeplanung/","formularUrl":"https://script.google.com/macros/s/TEST/exec","version":"0.12.0"};
+    const MODELL = {"preise":{"version":1,"stand":"2026-09-19","anbieter":[{"betreiber":"EnBW","land":"DE","waehrung":"EUR","suche":"https://www.enbw.com/elektromobilitaet/produkte/ladetarife","app":{"name":"EnBW mobility+","url":"https://play.google.com/store/apps/details?id=com.enbw.ev"},"tarife":[{"name":"S","kwh":0.56,"grund_monat":0},{"name":"M","kwh":0.46,"grund_monat":5.99},{"name":"L","kwh":0.39,"grund_monat":11.99}],"hinweis":"an EnBW-Säulen, AC und DC gleich; bis 30.09.2026 Sommeraktion −5 ct/kWh"},{"betreiber":"EWE Go","land":"DE","waehrung":"EUR","suche":"https://www.ewe-go.de/","app":{"name":"EWE Go","url":"https://play.google.com/store/apps/details?id=de.ewe.go.app"},"tarife":[{"name":"App","kwh":0.52,"grund_monat":0}],"hinweis":"an EWE-Go-Säulen, AC und HPC gleich, keine Blockiergebühr"},{"betreiber":"AMAG","land":"CH","waehrung":"CHF","auch":["Porsche"],"suche":"https://www.amag-group.ch/de/neuer-ladetarif-der-amag-gruppe.html","app":{"name":"AMAG","url":"https://play.google.com/store/apps/details?id=ch.amag.amagapp"},"tarife":[{"name":"App","kwh":0.28,"grund_monat":0}],"hinweis":"mit AMAG-App oder -Ladekarte im AMAG-Netz, auch Porsche Zentren (AMAG-Gruppe)"},{"betreiber":"Tesla","land":"CH","waehrung":"CHF","suche":"https://www.tesla.com/de_ch/support/charging/supercharger/fees","app":{"name":"Tesla","url":"https://play.google.com/store/apps/details?id=com.teslamotors.tesla"},"tarife":[{"name":"Fremdfahrzeug","kwh":0.4,"kwh_bis":0.73,"grund_monat":0}],"hinweis":"je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App"},{"betreiber":"Tesla","land":"DE","waehrung":"EUR","suche":"https://www.tesla.com/de_de/support/charging/supercharger/fees","app":{"name":"Tesla","url":"https://play.google.com/store/apps/details?id=com.teslamotors.tesla"},"tarife":[{"name":"Fremdfahrzeug","kwh":0.52,"kwh_bis":0.72,"grund_monat":0}],"hinweis":"je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App"},{"betreiber":"Tesla","land":"IT","waehrung":"EUR","suche":"https://www.tesla.com/it_it/support/charging/supercharger/fees","app":{"name":"Tesla","url":"https://play.google.com/store/apps/details?id=com.teslamotors.tesla"},"tarife":[{"name":"Fremdfahrzeug","kwh":0.6,"grund_monat":0}],"hinweis":"je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App"},{"betreiber":"Migrol","land":"CH","waehrung":"CHF","suche":"https://www.migrol.ch/de/mobilit%C3%A4t/e-mobilit%C3%A4t/migrol-fast-charging/zahlung-preise/","app":{"name":"M-Charge","url":"https://play.google.com/store/apps/details?id=ch.migrol.mcharge"},"tarife":[{"name":"22 kW","kwh":0.38,"grund_monat":0,"kw_bis":22},{"name":"50–64 kW","kwh":0.48,"grund_monat":0,"kw_bis":64},{"name":"128 kW","kwh":0.49,"minute":0.09,"grund_monat":0,"kw_bis":128},{"name":"320 kW","kwh":0.59,"minute":0.09,"grund_monat":0}],"hinweis":"Schnelllader zusätzlich 0,09 CHF je Minute"}]},"schluessel":true,"appUrl":"https://obitusde.github.io/ladeplanung/","formularUrl":"https://script.google.com/macros/s/TEST/exec","version":"0.12.0"};
     const $ = id => document.getElementById(id);
     const LAND = { CH: 'Schweiz', DE: 'Deutschland', AT: 'Österreich', IT: 'Italien' };
     let aktuell = MODELL.preise || { anbieter: [] };
@@ -117,14 +120,16 @@
     function el(tag, klasse, text) { const e = document.createElement(tag); if (klasse) e.className = klasse; if (text !== undefined) e.textContent = text; return e; }
 
     function tarifBlock(tarife, w, klasse) {
-      const box = el('div');
-      if (!tarife.length) box.append(el('div', 'leise', 'kein Preis hinterlegt'));
-      for (const t of tarife) {
-        const z = el('div', 'tarif ' + (klasse || ''));
-        z.append(el('span', '', t.name), el('span', '', tarifText(t, w)));
-        box.append(z);
-      }
+      if (!tarife.length) return el('div', 'leise', 'kein Preis hinterlegt');
+      const box = el('div', 'tarife ' + (klasse || ''));
+      for (const t of tarife) box.append(el('span', 'tname', t.name), el('span', '', tarifText(t, w)));
       return box;
+    }
+    function kopf(a, text) {
+      const k = el('div', 'kopf');
+      k.append(el('b', '', text));
+      if (a.app) { const l = el('a', '', 'App ' + a.app.name + ' ›'); l.href = a.app.url; l.target = '_blank'; l.rel = 'noopener'; k.append(l); }
+      return k;
     }
 
     function zeige() {
@@ -137,7 +142,7 @@
         liste.append(el('h2', '', LAND[land]));
         for (const a of eintraege) {
           const k = el('div', 'karte');
-          k.append(el('b', '', a.betreiber), tarifBlock(a.tarife, a.waehrung));
+          k.append(kopf(a, a.betreiber + (a.auch && a.auch.length ? ' / ' + a.auch.join(', ') : '')), tarifBlock(a.tarife, a.waehrung));
           if (a.hinweis) k.append(el('p', 'leise', a.hinweis));
           liste.append(k);
         }
@@ -150,7 +155,7 @@
       vorschlaege.forEach((v, i) => {
         const a = v.alt;
         const k = el('div', 'karte');
-        k.append(el('b', '', a.betreiber + ' · ' + (LAND[a.land] || a.land)));
+        k.append(kopf(a, a.betreiber + ' · ' + (LAND[a.land] || a.land)));
         if (v.fehler) { k.append(el('p', 'fehler', 'Keine Antwort: ' + v.fehler)); box.append(k); return; }
         const gleich = JSON.stringify(v.neu.tarife) === JSON.stringify(a.tarife);
         k.append(el('p', 'leise', 'bisher:'), tarifBlock(a.tarife, a.waehrung));

@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.17.1 — Ladepreise: kleiner, Tarifname und Preis sauber in zwei Spalten, Link zur Android-App je Anbieter
+                   (auch in den Details); Porsche nutzt den AMAG-Preis.
   Version 0.17.0 — Auswahl „von" / „nach" (/ „über") statt Routenliste; Menü ☰ mit allen Punkten; Simulation mit
                    Vorlagen je Route (Start, Ziel, drei Punkte unterwegs); Markierungen auch ohne Akku-Eingabe (voller Akku
                    angenommen); „Akku jetzt"; Ladepreise (preise.json) in Liste, Details und eigener Seite; offline
@@ -160,10 +162,15 @@
     footer b { color: var(--text); }
 
     .klein-hinweis { margin: -4px 0 6px; font-size: 15px; color: var(--leise); }
-    #info-seite h2, #preise-seite h2 { margin: 12px 0 6px; font-size: 26px; }
-    #preise-seite h3 { margin: 20px 0 6px; font-size: 21px; }
-    .preiskarte { border: 2px solid var(--linie); border-radius: 12px; padding: 8px 12px; margin-bottom: 10px; }
-    .preiskarte .tarif { display: flex; justify-content: space-between; gap: 10px; font-variant-numeric: tabular-nums; }
+    #info-seite h2 { margin: 12px 0 6px; font-size: 26px; }
+    #preise-seite { font-size: 15px; }
+    #preise-seite h2 { margin: 10px 0 2px; font-size: 21px; }
+    #preise-seite h3 { margin: 14px 0 4px; font-size: 17px; }
+    .preiskarte { border: 1px solid var(--linie); border-radius: 10px; padding: 6px 10px; margin-bottom: 8px; }
+    .preiskarte .kopf { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+    .preiskarte .kopf a { color: var(--akzent); font-weight: 600; text-decoration: none; white-space: nowrap; }
+    .tarife { display: grid; grid-template-columns: max-content 1fr; column-gap: 12px; row-gap: 1px; margin: 2px 0; font-variant-numeric: tabular-nums; }
+    .tarife .tname { white-space: nowrap; color: var(--leise); }
     .eintrag .preis { color: var(--leise); font-size: 15px; font-variant-numeric: tabular-nums; }
     .menue { display: grid; gap: 8px; }
     .menue .knopf { display: flex; align-items: center; justify-content: flex-start; gap: 10px; text-decoration: none; color: var(--text); font-size: 19px; }
@@ -242,6 +249,7 @@
       <p class="klein-hinweis">Danach in My CUPRA ins Zielfeld einfügen – Teilen an My CUPRA geht nicht.</p>
       <a id="d-maps" class="knopf" target="_blank" rel="noopener">Navigieren (Google Maps)</a>
       <a id="d-ort" class="knopf" target="_blank" rel="noopener">In Google Maps ansehen</a>
+      <a id="d-app" class="knopf" target="_blank" rel="noopener" hidden>App</a>
       <a id="d-abrp" class="knopf" target="_blank" rel="noopener">ABRP</a>
       <a id="d-bearbeiten" class="knopf" target="_blank" rel="noopener">Bearbeiten</a>
       <a id="d-vergleich" class="knopf" target="_blank" rel="noopener">Vergleichswert eintragen (ABRP / My CUPRA)</a>
@@ -379,7 +387,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.17.0';
+    const APP_VERSION = '0.17.1';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -667,7 +675,9 @@
       const land = landVon(p);
       const name = String(p.betreiber || '').toLowerCase();
       const titel = String(p.name || '').toLowerCase();
-      return preise.anbieter.find(a => a.land === land && (a.betreiber.toLowerCase() === name || (!name && titel.includes(a.betreiber.toLowerCase())))) || null;
+      // „auch": Betreiber mit gleichem Preis (Porsche Zentren gehören zur AMAG-Gruppe)
+      const namen = a => [a.betreiber].concat(a.auch || []).map(x => x.toLowerCase());
+      return preise.anbieter.find(a => a.land === land && (namen(a).includes(name) || (!name && namen(a).some(n => titel.includes(n))))) || null;
     }
 
     const geldZahl = x => zahl(x, 2);
@@ -713,9 +723,14 @@
         box.append(el('h3', '', LAND_NAME[land]));
         for (const a of eintraege) {
           const k = el('div', 'preiskarte');
-          k.append(el('b', '', a.betreiber));
+          const kopf = el('div', 'kopf');
+          kopf.append(el('b', '', a.betreiber + (a.auch && a.auch.length ? ' / ' + a.auch.join(', ') : '')));
+          if (a.app) { const l = el('a', '', 'App ' + a.app.name + ' ›'); l.href = a.app.url; l.target = '_blank'; l.rel = 'noopener'; kopf.append(l); }
+          k.append(kopf);
           if (!a.tarife.length) k.append(el('div', 'klein', 'kein Preis hinterlegt'));
-          for (const t of a.tarife) { const z = el('div', 'tarif'); z.append(el('span', '', t.name), el('span', '', tarifText(t, a.waehrung))); k.append(z); }
+          const tabelle = el('div', 'tarife');
+          for (const t of a.tarife) tabelle.append(el('span', 'tname', t.name), el('span', '', tarifText(t, a.waehrung)));
+          k.append(tabelle);
           if (a.hinweis) k.append(el('div', 'klein', a.hinweis));
           box.append(k);
         }
@@ -1036,6 +1051,9 @@
 
       $('d-maps').href = mapsUrl(p);
       $('d-ort').href = ortUrl(p);
+      const anbieter = preisEintrag(p);
+      $('d-app').hidden = !(anbieter && anbieter.app);
+      if (anbieter && anbieter.app) { $('d-app').href = anbieter.app.url; $('d-app').textContent = 'App ' + anbieter.app.name + ' (Laden starten)'; }
       $('d-bearbeiten').href = FORMULAR_URL + '?id=' + encodeURIComponent(p.id);
       $('d-vergleich').href = FORMULAR_URL + '?seite=vergleich&route=' + encodeURIComponent(zustand.route) +
         '&richtung=' + zustand.richtung + '&nach=' + encodeURIComponent(p.id);

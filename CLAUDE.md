@@ -1,6 +1,6 @@
 # Ladeplanung Cupra Born — Projektstand für Claude
 
-**Stand 19.09.2026** · App (`index.html`) v0.17.0 · Apps Script (`apps-script/Code.js`) v0.18.0 · Veröffentlichen per GitHub Action (`.github/workflows/apps-script.yml`) v1.0.0
+**Stand 19.09.2026** · App (`index.html`) v0.17.1 · Apps Script (`apps-script/Code.js`) v0.18.1 · Veröffentlichen per GitHub Action (`.github/workflows/apps-script.yml`) v1.0.0
 Ursprünglicher Auftrag: [`docs/Umsetzungsbrief_v5.0.md`](docs/Umsetzungsbrief_v5.0.md). Diese Datei beschreibt den **tatsächlichen** Stand inklusive aller späteren Entscheidungen und hat Vorrang vor dem Brief.
 
 ---
@@ -147,7 +147,7 @@ Christof pflegt über die App; Rechenschritte stößt er über **Wartung & Statu
 
 **App-Zustand** `localStorage['ladeplanung.v1']`: `route, richtung, sim {aktiv, lat, lon, label}, einst {geschwindigkeit 120, zusatzgewicht 0, temperatur '' (=auto), reserve 10}, wetter {temp, zeit, lat, lon}, fahrt {start_soc, start_zeit, start_lat, start_lon, route, route_name, richtung, start {km, hm_hin, hm_rueck, q}}, ankunft {url, zeit}, letzterStandort {lat, lon, genauigkeit, zeit}`.
 
-**`preise.json`:** `{ version 1, stand "JJJJ-MM-TT", anbieter: [{ betreiber, land (CH/DE/AT/IT), waehrung, suche (offizielle URL als Hinweis fürs Modell), tarife: [{ name, kwh, kwh_bis?, grund_monat, minute?, kw_bis? }], hinweis }] }`. Zuordnung in der App: Betreiber der Station (leer → Name enthält Betreiber) + Land aus dem letzten Teil der Adresse. `kw_bis` wählt bei Migrol den Tarif zur kW der Station. Liste: Spanne über alle Tarife (EnBW S–L), Tesla nur Fremdfahrzeug.
+**`preise.json`:** `{ version 1, stand "JJJJ-MM-TT", anbieter: [{ betreiber, land (CH/DE/AT/IT), waehrung, suche (offizielle URL als Hinweis fürs Modell), tarife: [{ name, kwh, kwh_bis?, grund_monat, minute?, kw_bis? }], hinweis, app { name, url (Google Play) }, auch? [weitere Betreiber mit gleichem Preis, z. B. Porsche → AMAG] }] }`. Tesla nur Tarif „Fremdfahrzeug" (keine Mitgliedschaft). Zuordnung in der App: Betreiber der Station (leer → Name enthält Betreiber) + Land aus dem letzten Teil der Adresse. `kw_bis` wählt bei Migrol den Tarif zur kW der Station. Liste: Spanne über alle Tarife (EnBW S–L), Tesla nur Fremdfahrzeug.
 
 ---
 
