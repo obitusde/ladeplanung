@@ -1,6 +1,6 @@
 # Ladeplanung Cupra Born — Projektstand für Claude
 
-**Stand 18.09.2026** · App (`index.html`) v0.16.1 · Apps Script (`apps-script/Code.js`) v0.17.0 · Veröffentlichen per GitHub Action (`.github/workflows/apps-script.yml`) v1.0.0
+**Stand 18.09.2026** · App (`index.html`) v0.16.1 · Apps Script (`apps-script/Code.js`) v0.17.1 · Veröffentlichen per GitHub Action (`.github/workflows/apps-script.yml`) v1.0.0
 Ursprünglicher Auftrag: [`docs/Umsetzungsbrief_v5.0.md`](docs/Umsetzungsbrief_v5.0.md). Diese Datei beschreibt den **tatsächlichen** Stand inklusive aller späteren Entscheidungen und hat Vorrang vor dem Brief.
 
 ---
@@ -21,7 +21,7 @@ Ursprünglicher Auftrag: [`docs/Umsetzungsbrief_v5.0.md`](docs/Umsetzungsbrief_v
 
 PWA für lange Fahrten mit dem **Cupra Born 58 kWh (2021)**. Zeigt die Ladepunkte **voraus** auf einer Stammstrecke: Entfernung entlang der Straße, Anstieg, **Akku-Prognose**, Leistung, Lage (Straße, Raststätte, „x km abseits"), Notiz. Keine Navigation, kein Belegt-Status, keine Preise – Christof entscheidet selbst.
 
-Stammstrecken (je Hin/Rück): `neuenrade` (Morges–Neuenrade), `ingolstadt` (Ingolstadt über München, ohne Via), `ingolstadt_augsburg` (Via B 17 Hurlach `48.13813,10.83188` + B 300 Aichach `48.52578,11.23978` → A 8 Friedberg-Derching), `savona_simplon`, `savona_bernhard`, `brig` (Morges – Brig, A9, Ziel `46.31740,7.98814`). Ulm-Variante bewusst nicht. **Neue Routen (seit v0.17.0) per geteiltem Google-Maps-Routenlink**: Wartung → „Route hinzufügen" (Feld) oder im Blatt Routen nur die Spalte `Maps-Link` füllen und „Routen berechnen". Das Script füllt Start/Via/Ziel, Name („Morges – Ziel (Via-Orte)"), id (aus dem Zielort, `routenId_`); Start ≤ 3 km von `START_MORGES` → genau dieser. Parser `routenpunkteAusUrl_`: Pfadsegmente nach `/maps/dir/` = Wegpunkte, im data-Block `!2m2!1d<lon>!2d<lat>` je benanntem Punkt; Anzahl passt nicht → Fehler (gezogene Umwege), keine Koordinaten → Geocoder. Getestet nur mit einem echten Link ohne Zwischenziel (Morges → Brig-Glis) – Zwischenziele beim ersten echten Link prüfen.
+Stammstrecken (je Hin/Rück): `neuenrade` (Morges–Neuenrade), `ingolstadt` (Ingolstadt über München, ohne Via), `ingolstadt_augsburg` (Via B 17 Hurlach `48.13813,10.83188` + B 300 Aichach `48.52578,11.23978` → A 8 Friedberg-Derching), `savona_simplon`, `savona_bernhard`; weitere per Maps-Link (z. B. Brig). Ulm-Variante bewusst nicht. **Neue Routen (seit v0.17.0) per geteiltem Google-Maps-Routenlink**: Wartung → „Route hinzufügen" (Feld) oder im Blatt Routen nur die Spalte `Maps-Link` füllen und „Routen berechnen". Das Script füllt Start/Via/Ziel, Name („Morges – Ziel (Via-Orte)"), id (aus dem Zielort, `routenId_`); Start ≤ 3 km von `START_MORGES` → genau dieser. Parser `routenpunkteAusUrl_`: Pfadsegmente nach `/maps/dir/` = Wegpunkte, im data-Block `!2m2!1d<lon>!2d<lat>` je benanntem Punkt; Anzahl passt nicht → Fehler (gezogene Umwege), keine Koordinaten → Geocoder. Getestet nur mit einem echten Link ohne Zwischenziel (Morges → Brig-Glis) – Zwischenziele beim ersten echten Link prüfen.
 
 App: **https://obitusde.github.io/ladeplanung/** (auf dem Pixel installiert).
 

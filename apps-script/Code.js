@@ -1,6 +1,7 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.17.1 — Brig nicht mehr fest eingetragen (kommt per Link, sonst doppelt).
  * Version 0.17.0 — Routen per geteiltem Google-Maps-Link: Spalte „Maps-Link" im Blatt Routen, Feld in der Wartung;
  *                  Start/Via/Ziel, Name und id füllt das Script (Stufe 2 teilweise).
  * Version 0.16.3 — Route Morges – Brig (A9 durchs Wallis); „Routen berechnen" meldet Zeilen ohne id, Start oder Ziel.
@@ -38,7 +39,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.17.0';
+const VERSION = '0.17.1';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -97,8 +98,7 @@ const STAMMSTRECKEN = [
   ['ingolstadt_augsburg', 'Morges – Ingolstadt (Augsburg)', START_MORGES, VIA_B17 + ';' + VIA_B300, ZIEL_INGOLSTADT],
   ['savona_simplon', 'Morges – Savona (Simplon)', START_MORGES, VIA_SIMPLON, ZIEL_SAVONA],
   ['savona_bernhard', 'Morges – Savona (Gr. St. Bernhard)', START_MORGES, VIA_GR_ST_BERNHARD, ZIEL_SAVONA],
-  // Christof, 19.09.2026: Ziel Brig Zentrum, 22 m neben der Straße (OSRM); Weg über A9 Lausanne – Sion – Visp.
-  ['brig', 'Morges – Brig', START_MORGES, '', '46.31740,7.98814'],
+  // Weitere Routen legt Christof seit v0.17.0 per Google-Maps-Link an (Wartung → „Route hinzufügen").
 ];
 const ROUTEN_ENTFERNT = ['savona']; // Mont-Blanc-Variante
 
