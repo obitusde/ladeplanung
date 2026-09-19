@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.18.2 — Liegt der Standort mehr als 10 km neben der gewählten Route, plant die App ab dem gewählten
+                   Startort (voller Rechenweg statt Luftlinie); umschaltbar auf „ab meinem Standort“.
+  Version 0.18.1 — In der Liste nur „nicht erreichbar“ (passte sonst nicht in eine Zeile); die Prozentzahl steht in den Details.
   Version 0.18.0 — Reisetempo nicht mehr aus den Einstellungen, sondern aus der gewählten Route (Fahrzeit des
                    Routendienstes), korrigiert um den aus echten Fahrten gelernten Faktor (modell.json: tempo).
   Version 0.17.1 — Ladepreise: kleiner, Tarifname und Preis sauber in zwei Spalten, Link zur Android-App je Anbieter
@@ -129,6 +132,7 @@
       background: var(--warnung-grund); color: var(--warnung); font-weight: 600;
     }
     #hinweis.sim { background: var(--flaeche); color: var(--text); border: 2px dashed var(--akzent); }
+    #hinweis button { margin-left: 8px; padding: 2px 10px; min-height: 32px; border-radius: 8px; border: 2px solid currentColor; background: transparent; color: inherit; font-weight: 700; cursor: pointer; }
 
     main { flex: 1; padding: 2px 0 8px; }
     .leer { padding: 24px 16px; color: var(--leise); font-size: 20px; }
@@ -302,7 +306,7 @@
     <p>Oben <b>von</b> und <b>nach</b> wählen – angeboten werden nur Orte, zwischen denen es eine Route gibt. <b>⇄</b> tauscht die Richtung. Gibt es mehrere Wege (z. B. über München oder Augsburg), erscheint darunter <b>über</b>. Punkte, die nur in einer Richtung erreichbar sind, erscheinen nur dort.</p>
 
     <h3>Abseits der Route</h3>
-    <p>Bist du mehr als 10 km von der Linie entfernt, zeigt die App Luftlinie ohne Höhenmeter und ohne Akku-Prognose – ein Notbehelf, bis du wieder auf der Route bist. Die GPS-Genauigkeit steht unten; bei mehreren hundert Metern ist die Position unzuverlässig.</p>
+    <p>Bist du mehr als 10 km von der Linie entfernt, plant die App <b>ab dem gewählten Startort</b> – praktisch, um zu Hause eine Strecke anzuschauen, die woanders beginnt. Oben steht dann „Geplant ab Neuenrade“ mit dem Knopf <b>ab meinem Standort</b>: Damit siehst du stattdessen die Luftlinie zu jeder Station, ohne Höhen und ohne Prognose – der Notbehelf für einen größeren Umweg mitten auf der Strecke. Zurück geht es mit <b>ab Startort</b>. Die GPS-Genauigkeit steht unten; bei mehreren hundert Metern ist die Position unzuverlässig.</p>
 
     <h3>Details</h3>
     <p>Eine Station antippen: <b>Adresse kopieren</b> (in My CUPRA einfügen), <b>Navigieren</b> oder <b>Ort ansehen</b> in Google Maps, <b>ABRP</b> (Plan von deinem Standort) und <b>Bearbeiten</b>.</p>
@@ -388,7 +392,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.18.0';
+    const APP_VERSION = '0.18.2';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -553,6 +557,7 @@
     let gpsFehler = '';
     let gpsLaeuft = false;
     let detailPunkt = null;
+    let planung = { pos: null, abStart: null };   // Position, ab der gerechnet wird (Standort oder Startort der Route)
     let preise = null;       // preise.json (Ladepreise je Betreiber und Land)
     const LETZTER_STANDORT_MAX_MS = 24 * 3600e3;
 
@@ -564,6 +569,7 @@
         wetter: null,    // { temp, zeit, lat, lon }
         fahrt: null,     // { start_soc, start_zeit, start_lat, start_lon, route, route_name, richtung, start: {km, hm_hin, hm_rueck, q} }
         ankunft: null,   // { url, zeit } — Kalibrierung geöffnet, zur Erinnerung
+        abStandort: false,     // true = auch weit weg von der Route ab dem eigenen Standort rechnen (Luftlinie)
         letzterStandort: null, // { lat, lon, genauigkeit, zeit } — gilt, bis das GPS antwortet
       };
       try {
@@ -861,10 +867,15 @@
       return z.raststaette ? 'Raststätte' : '';
     }
 
-    function akkuText(pg) {
+    /** Kurz für die Liste (eine Zeile), lang für die Details. */
+    function akkuText(pg, lang) {
       if (!pg) return '';
-      if (pg.angenommen) return (pg.nichtErreichbar ? 'nicht erreichbar, braucht ≈ ' : 'braucht ≈ ') + Math.round(pg.prozent) + ' %';
-      if (pg.nichtErreichbar) return 'nicht erreichbar (fehlen ≈ ' + Math.round(-pg.ankunft) + ' %)';
+      if (pg.nichtErreichbar) {
+        if (!lang) return 'nicht erreichbar';
+        return pg.angenommen ? 'nicht erreichbar – braucht ≈ ' + Math.round(pg.prozent) + ' % (voller Akku angenommen)'
+          : 'nicht erreichbar – es fehlen ≈ ' + Math.round(-pg.ankunft) + ' %';
+      }
+      if (pg.angenommen) return 'braucht ≈ ' + Math.round(pg.prozent) + ' %';
       return 'Rest bei Ankunft ≈ ' + Math.round(pg.ankunft) + ' %';
     }
 
@@ -903,18 +914,37 @@
         return;
       }
 
-      const erg = berechneListe(daten, route.id, zustand.richtung, pos.lat, pos.lon);
-      if (erg.modus === 'strecke') holeWetter(pos);
+      let erg = berechneListe(daten, route.id, zustand.richtung, pos.lat, pos.lon);
+      // Weit weg von der Route: ab dem gewählten Startort planen statt Luftlinie (Christof, 20.09.2026)
+      planung = { pos: pos, abStart: null };
+      if (erg.modus === 'luftlinie' && !zustand.abStandort) {
+        const l = route.linie, p0 = zustand.richtung === 'hin' ? l[0] : l[l.length - 1];
+        const t = routenTeile(route);
+        planung = {
+          pos: { lat: p0[0], lon: p0[1], planung: true },
+          abStart: { ort: zustand.richtung === 'hin' ? t.start : t.ziel, entfernung: haversine(pos.lat, pos.lon, p0[0], p0[1]) },
+        };
+        erg = berechneListe(daten, route.id, zustand.richtung, p0[0], p0[1]);
+      }
+      if (erg.modus === 'strecke') holeWetter(planung.pos);
       const jetzt = erg.modus === 'strecke' ? akkuJetzt(route.id, erg.pos) : null;
 
       const hinweise = [];
       if (pos.sim) hinweise.push('Simulation: ' + (zustand.sim.label || zahl(pos.lat, 5) + ', ' + zahl(pos.lon, 5)));
       if (pos.alt) hinweise.push('Letzter Standort von ' + uhrzeit(pos.zeit) + (gpsLaeuft ? ' – aktueller wird gesucht …' : gpsFehler ? ' – GPS: ' + gpsFehler : ''));
-      if (erg.modus === 'luftlinie') hinweise.push('Abseits der Route (' + fmtKm(erg.q) + ' km) — Luftlinie, keine Höhendaten');
+      if (planung.abStart) hinweise.push('Geplant ab ' + planung.abStart.ort + ' – dein Standort ist ' + fmtKm(planung.abStart.entfernung) + ' km entfernt');
+      else if (erg.modus === 'luftlinie') hinweise.push('Abseits der Route (' + fmtKm(erg.q) + ' km) — Luftlinie, keine Höhendaten');
       if (hinweise.length) {
         hinweis.textContent = hinweise.join(' · ');
         hinweis.hidden = false;
-        if ((pos.sim || pos.alt) && erg.modus !== 'luftlinie') hinweis.className = 'sim';
+        if ((pos.sim || pos.alt || planung.abStart) && erg.modus !== 'luftlinie') hinweis.className = 'sim';
+      }
+      if (planung.abStart || (erg.modus === 'luftlinie' && zustand.abStandort)) {
+        const um = el('button', '', planung.abStart ? 'ab meinem Standort' : 'ab Startort');
+        um.type = 'button';
+        um.addEventListener('click', () => { zustand.abStandort = !zustand.abStandort; speichere(); render(); });
+        hinweis.append(um);
+        hinweis.hidden = false;
       }
 
       if (erg.eintraege.length === 0) {
@@ -1022,7 +1052,8 @@
       }
       const t = temperatur();
       teil('Temp', zahl(t.wert, 0) + ' °C' + (t.quelle === 'angenommen' ? ' (ang.)' : ''));
-      if (pos && pos.sim) teil('GPS', 'Sim.');
+      if (planung.abStart) teil('ab', planung.abStart.ort);
+      else if (pos && pos.sim) teil('GPS', 'Sim.');
       else if (pos && pos.alt) teil('GPS', 'letzter');
       else teil('GPS', pos ? '± ' + Math.round(pos.genauigkeit) + ' m' : '–');
       const tp = tempo(route);
@@ -1035,7 +1066,7 @@
       detailPunkt = p;
       $('d-name').textContent = (p.favorit ? '★ ' : '') + kurzname(p.name);
       $('d-gross').textContent = fmtKm(e.km) + ' km ' + (modus === 'luftlinie' ? 'Luftlinie' : 'voraus') +
-        (e.hm === null ? '' : ' · + ' + e.hm + ' hm') + (pg ? ' · ' + akkuText(pg) : '');
+        (e.hm === null ? '' : ' · + ' + e.hm + ' hm') + (pg ? ' · ' + akkuText(pg, true) : '');
       $('d-gross').className = 'gross' + (pg && pg.unterReserve ? ' rot' : '');
 
       const t = temperatur();
@@ -1102,7 +1133,7 @@
       ev.preventDefault();
       const soc = Number($('los-soc').value);
       if (!(soc >= 1 && soc <= 100)) { toast('Akkustand bitte als Zahl von 1 bis 100'); return; }
-      const pos = aktuellePosition();
+      const pos = planung.pos || aktuellePosition();   // beim Planen ab Startort zählt dieser als Startpunkt
       if (!pos) { toast('Erst den Standort bestimmen'); holeStandort(); return; }
       const route = aktuelleRoute();
       const pr = projiziere(route.linie, pos.lat, pos.lon, lat0Von(route));
@@ -1121,7 +1152,7 @@
 
     function angekommen() {
       const f = zustand.fahrt;
-      const pos = aktuellePosition();
+      const pos = planung.pos || aktuellePosition();
       if (!f) return;
       if (!pos) { toast('Standort unbekannt – erst „Standort" drücken'); holeStandort(); return; }
       const route = daten.routen.find(r => r.id === f.route) || aktuelleRoute();
