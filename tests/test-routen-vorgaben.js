@@ -47,7 +47,7 @@ const pruefe = (bedingung, text) => { if (!bedingung) { fehler++; console.log('F
 gs.routenVorgabenUebernehmen();
 console.log(meldungen.join('\n'));
 const ids = blatt.daten.slice(1).map(z => z[0]);
-pruefe(JSON.stringify(ids) === JSON.stringify(['neuenrade', 'ingolstadt', 'ingolstadt_augsburg', 'savona_simplon', 'savona_bernhard']), 'Zeilen danach: ' + ids);
+pruefe(JSON.stringify(ids) === JSON.stringify(['neuenrade', 'ingolstadt', 'ingolstadt_augsburg', 'savona_simplon', 'savona_bernhard', 'brig']), 'Zeilen danach: ' + ids);
 const zeile = id => blatt.daten.find(z => z[0] === id);
 pruefe(zeile('neuenrade')[5] === 716.4 && zeile('neuenrade')[7] === '15.09.2026 08:54', 'bestehende Route unberührt');
 pruefe(zeile('savona_simplon')[3] === '46.245838,8.02474' && zeile('savona_simplon')[1] === 'Morges – Savona (Simplon)', 'Simplon-Zeile: ' + zeile('savona_simplon'));

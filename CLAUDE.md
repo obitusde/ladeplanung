@@ -1,6 +1,6 @@
 # Ladeplanung Cupra Born — Projektstand für Claude
 
-**Stand 18.09.2026** · App (`index.html`) v0.16.1 · Apps Script (`apps-script/Code.js`) v0.16.2 · Veröffentlichen per GitHub Action (`.github/workflows/apps-script.yml`) v1.0.0
+**Stand 18.09.2026** · App (`index.html`) v0.16.1 · Apps Script (`apps-script/Code.js`) v0.16.3 · Veröffentlichen per GitHub Action (`.github/workflows/apps-script.yml`) v1.0.0
 Ursprünglicher Auftrag: [`docs/Umsetzungsbrief_v5.0.md`](docs/Umsetzungsbrief_v5.0.md). Diese Datei beschreibt den **tatsächlichen** Stand inklusive aller späteren Entscheidungen und hat Vorrang vor dem Brief.
 
 ---
@@ -21,7 +21,7 @@ Ursprünglicher Auftrag: [`docs/Umsetzungsbrief_v5.0.md`](docs/Umsetzungsbrief_v
 
 PWA für lange Fahrten mit dem **Cupra Born 58 kWh (2021)**. Zeigt die Ladepunkte **voraus** auf einer Stammstrecke: Entfernung entlang der Straße, Anstieg, **Akku-Prognose**, Leistung, Lage (Straße, Raststätte, „x km abseits"), Notiz. Keine Navigation, kein Belegt-Status, keine Preise – Christof entscheidet selbst.
 
-Stammstrecken (je Hin/Rück): `neuenrade` (Morges–Neuenrade), `ingolstadt` (Ingolstadt über München, ohne Via), `ingolstadt_augsburg` (Via B 17 Hurlach `48.13813,10.83188` + B 300 Aichach `48.52578,11.23978` → A 8 Friedberg-Derching), `savona_simplon`, `savona_bernhard`. Ulm-Variante bewusst nicht.
+Stammstrecken (je Hin/Rück): `neuenrade` (Morges–Neuenrade), `ingolstadt` (Ingolstadt über München, ohne Via), `ingolstadt_augsburg` (Via B 17 Hurlach `48.13813,10.83188` + B 300 Aichach `48.52578,11.23978` → A 8 Friedberg-Derching), `savona_simplon`, `savona_bernhard`, `brig` (Morges – Brig, A9, Ziel `46.31740,7.98814`). Ulm-Variante bewusst nicht. Neue Routen am besten in `STAMMSTRECKEN` (Code.js) eintragen; „Routen berechnen" übernimmt sie ins Blatt. Von Hand im Blatt geht auch: id, Name, Start, Ziel (lat,lon oder Maps-Link) Pflicht.
 
 App: **https://obitusde.github.io/ladeplanung/** (auf dem Pixel installiert).
 

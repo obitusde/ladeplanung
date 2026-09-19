@@ -1,6 +1,7 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.16.3 — Route Morges – Brig (A9 durchs Wallis); „Routen berechnen" meldet Zeilen ohne id, Start oder Ziel.
  * Version 0.16.2 — Straßennamen ohne Leerzeichen („A 96" → „A96"), in „Straße" auch „/" als Trenner.
  * Version 0.16.1 — Spalten im Blatt Ladepunkte nach Handarbeit geordnet (id, Link, Name, Straße, Notiz, kW, Anzahl,
  *                  Richtung, Favorit, dann Betreiber, Adresse, Lat, Lon, Status); ordnet sich beim Veröffentlichen selbst.
@@ -35,7 +36,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.16.2';
+const VERSION = '0.16.3';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -94,6 +95,8 @@ const STAMMSTRECKEN = [
   ['ingolstadt_augsburg', 'Morges – Ingolstadt (Augsburg)', START_MORGES, VIA_B17 + ';' + VIA_B300, ZIEL_INGOLSTADT],
   ['savona_simplon', 'Morges – Savona (Simplon)', START_MORGES, VIA_SIMPLON, ZIEL_SAVONA],
   ['savona_bernhard', 'Morges – Savona (Gr. St. Bernhard)', START_MORGES, VIA_GR_ST_BERNHARD, ZIEL_SAVONA],
+  // Christof, 19.09.2026: Ziel Brig Zentrum, 22 m neben der Straße (OSRM); Weg über A9 Lausanne – Sion – Visp.
+  ['brig', 'Morges – Brig', START_MORGES, '', '46.31740,7.98814'],
 ];
 const ROUTEN_ENTFERNT = ['savona']; // Mont-Blanc-Variante
 
@@ -1673,7 +1676,10 @@ function berechneRoutenIntern_(erzwingen) {
     const setze = function (name, wert) { blatt.getRange(zeile, sp[name]).setValue(wert); };
 
     const id = feld('id');
-    if (!id) continue;
+    if (!id) {
+      if (feld('Name') || feld('Start') || feld('Ziel')) meldungen.push('Zeile ' + zeile + ' („' + feld('Name') + '"): id fehlt — übersprungen');
+      continue;
+    }
 
     const eingabe = [feld('Start'), feld('Via'), feld('Ziel')].join('|');
     const stand = feld('Stand');
