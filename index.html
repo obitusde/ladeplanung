@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.19.0 — App des Betreibers direkt aus der Liste und aus den Details starten (Android-Intent, sonst Google Play);
+                   Belegung über Google Maps (zeigt bei vielen Betreibern „12/12"); Migrol-Preise nach der offiziellen Tabelle.
   Version 0.18.2 — Liegt der Standort mehr als 10 km neben der gewählten Route, plant die App ab dem gewählten
                    Startort (voller Rechenweg statt Luftlinie); umschaltbar auf „ab meinem Standort“.
   Version 0.18.1 — In der Liste nur „nicht erreichbar“ (passte sonst nicht in eine Zeile); die Prozentzahl steht in den Details.
@@ -178,6 +180,7 @@
     .tarife { display: grid; grid-template-columns: max-content 1fr; column-gap: 12px; row-gap: 1px; margin: 2px 0; font-variant-numeric: tabular-nums; }
     .tarife .tname { white-space: nowrap; color: var(--leise); }
     .eintrag .preis { color: var(--leise); font-size: 15px; font-variant-numeric: tabular-nums; }
+    .eintrag .app { color: var(--akzent); font-weight: 700; white-space: nowrap; }
     .menue { display: grid; gap: 8px; }
     .menue .knopf { display: flex; align-items: center; justify-content: flex-start; gap: 10px; text-decoration: none; color: var(--text); font-size: 19px; }
     .menue .knopf.haupt { justify-content: center; color: var(--akzent-text); }
@@ -254,7 +257,7 @@
       <button id="d-kopieren" class="knopf haupt" type="button">Adresse kopieren</button>
       <p class="klein-hinweis">Danach in My CUPRA ins Zielfeld einfügen – Teilen an My CUPRA geht nicht.</p>
       <a id="d-maps" class="knopf" target="_blank" rel="noopener">Navigieren (Google Maps)</a>
-      <a id="d-ort" class="knopf" target="_blank" rel="noopener">In Google Maps ansehen</a>
+      <a id="d-ort" class="knopf" target="_blank" rel="noopener">Belegung in Google Maps</a>
       <a id="d-app" class="knopf" target="_blank" rel="noopener" hidden>App</a>
       <a id="d-abrp" class="knopf" target="_blank" rel="noopener">ABRP</a>
       <a id="d-bearbeiten" class="knopf" target="_blank" rel="noopener">Bearbeiten</a>
@@ -286,7 +289,7 @@
       <li><b>letzte vor Reserve</b>: die letzte Station, die du noch über deiner Reserve erreichst.</li>
       <li><b>danach 38 km bis zur nächsten</b>: Abstand zur nächsten Station voraus – so siehst du lange Lücken.</li>
       <li><b>4 × 150 kW:</b> Anzahl Ladepunkte × Leistung, sofern eingetragen.</li>
-      <li><b>0,39–0,56 €</b>: Ladepreis des Betreibers (Direktangebot, kein Roaming), alle Tarife unter Menü → Ladepreise.</li>
+      <li><b>0,39–0,56 €</b>: Ladepreis des Betreibers (Direktangebot, kein Roaming), alle Tarife unter Menü → Ladepreise. Daneben <b>App … ›</b> startet die App des Betreibers (ist sie nicht installiert, öffnet Google Play).</li>
       <li><b>Unten:</b> Kilometer bis zum Ziel und Akku dafür („braucht", mit „Akku jetzt" „am Ziel ≈").</li>
       <li><b>Hinterlegter Text</b> („Raststätte", „McDo"): deine Notiz.</li>
       <li><b>+ hm</b> (in den Details): Summe der Anstiege bis dorthin, geglättet.</li>
@@ -309,7 +312,8 @@
     <p>Bist du mehr als 10 km von der Linie entfernt, plant die App <b>ab dem gewählten Startort</b> – praktisch, um zu Hause eine Strecke anzuschauen, die woanders beginnt. Oben steht dann „Geplant ab Neuenrade“ mit dem Knopf <b>ab meinem Standort</b>: Damit siehst du stattdessen die Luftlinie zu jeder Station, ohne Höhen und ohne Prognose – der Notbehelf für einen größeren Umweg mitten auf der Strecke. Zurück geht es mit <b>ab Startort</b>. Die GPS-Genauigkeit steht unten; bei mehreren hundert Metern ist die Position unzuverlässig.</p>
 
     <h3>Details</h3>
-    <p>Eine Station antippen: <b>Adresse kopieren</b> (in My CUPRA einfügen), <b>Navigieren</b> oder <b>Ort ansehen</b> in Google Maps, <b>ABRP</b> (Plan von deinem Standort) und <b>Bearbeiten</b>.</p>
+    <p>Eine Station antippen: <b>Adresse kopieren</b> (in My CUPRA einfügen), <b>Navigieren</b> in Google Maps, <b>Belegung in Google Maps</b>, die <b>App des Betreibers</b>, <b>ABRP</b> (Plan von deinem Standort) und <b>Bearbeiten</b>.</p>
+    <p><b>Belegung:</b> Google Maps zeigt bei vielen Ladeparks, wie viele Punkte frei sind („12/12"), weil die Betreiber das liefern. Bei anderen steht nur die Gesamtzahl. Geprüft am 22.09.2026: bei EnBW ja, bei Migrol nein. Eine eigene Anzeige hat die App bewusst nicht.</p>
 
     <h3>Daten pflegen</h3>
     <ul>
@@ -392,7 +396,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.18.2';
+    const APP_VERSION = '0.19.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -718,6 +722,20 @@
       return s;
     }
 
+    /**
+     * Link, der die App des Betreibers startet. Unter Android über einen Intent-Link mit der Play-Store-Seite
+     * als Rückfall (Chrome springt dorthin, wenn die App fehlt); sonst direkt der Play-Store-Link.
+     * Die Paketkennung steckt in der Play-Adresse (…details?id=com.enbw.ev).
+     */
+    function appUrl(app) {
+      if (!app || !app.url) return '';
+      const paket = (app.url.match(/[?&]id=([\w.]+)/) || [])[1];
+      if (!paket || !/Android/i.test(navigator.userAgent)) return app.url;
+      return 'intent://start#Intent;scheme=ladeplanung;package=' + paket +
+        ';action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER' +
+        ';S.browser_fallback_url=' + encodeURIComponent(app.url) + ';end';
+    }
+
     const datumText = iso => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + '.' + m[2] + '.' + m[1] : '–'; };
 
     function zeigePreise() {
@@ -972,7 +990,16 @@
         meta.append(metaZeile(e));
         zeile.append(meta);
         const preis = preisKurz(e.punkt);
-        if (preis) zeile.append(el('span', 'preis', preis));
+        const anbieter = preisEintrag(e.punkt);
+        if (preis || (anbieter && anbieter.app)) {
+          const zeilePreis = el('span', 'preis', preis);
+          if (anbieter && anbieter.app) {
+            const link = el('span', 'app', (preis ? ' · ' : '') + 'App ' + anbieter.app.name + ' ›');
+            link.addEventListener('click', ev => { ev.stopPropagation(); location.href = appUrl(anbieter.app); });
+            zeilePreis.append(link);
+          }
+          zeile.append(zeilePreis);
+        }
         if (erg.modus === 'strecke') {
           // Lücke bis zur nächsten Station weiter vorne (gleicher Standort, z. B. beide Raststätten-Seiten, zählt nicht)
           const naechste = erg.eintraege.slice(i + 1).find(n => n.km - e.km > AUSBLENDEN_KM);
@@ -1100,7 +1127,7 @@
       $('d-ort').href = ortUrl(p);
       const anbieter = preisEintrag(p);
       $('d-app').hidden = !(anbieter && anbieter.app);
-      if (anbieter && anbieter.app) { $('d-app').href = anbieter.app.url; $('d-app').textContent = 'App ' + anbieter.app.name + ' (Laden starten)'; }
+      if (anbieter && anbieter.app) { $('d-app').href = appUrl(anbieter.app); $('d-app').textContent = 'App ' + anbieter.app.name + ' (Laden starten)'; }
       $('d-bearbeiten').href = FORMULAR_URL + '?id=' + encodeURIComponent(p.id);
       $('d-vergleich').href = FORMULAR_URL + '?seite=vergleich&route=' + encodeURIComponent(zustand.route) +
         '&richtung=' + zustand.richtung + '&nach=' + encodeURIComponent(p.id);

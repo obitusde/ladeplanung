@@ -1,64 +1,166 @@
 {
   "version": 1,
-  "stand": "2026-09-19",
+  "stand": "2026-09-22",
   "anbieter": [
     {
-      "betreiber": "EnBW", "land": "DE", "waehrung": "EUR",
+      "betreiber": "EnBW",
+      "land": "DE",
+      "waehrung": "EUR",
       "suche": "https://www.enbw.com/elektromobilitaet/produkte/ladetarife",
-      "app": { "name": "EnBW mobility+", "url": "https://play.google.com/store/apps/details?id=com.enbw.ev" },
+      "app": {
+        "name": "EnBW mobility+",
+        "url": "https://play.google.com/store/apps/details?id=com.enbw.ev"
+      },
       "tarife": [
-        { "name": "S", "kwh": 0.56, "grund_monat": 0 },
-        { "name": "M", "kwh": 0.46, "grund_monat": 5.99 },
-        { "name": "L", "kwh": 0.39, "grund_monat": 11.99 }
+        {
+          "name": "S",
+          "kwh": 0.56,
+          "grund_monat": 0
+        },
+        {
+          "name": "M",
+          "kwh": 0.46,
+          "grund_monat": 5.99
+        },
+        {
+          "name": "L",
+          "kwh": 0.39,
+          "grund_monat": 11.99
+        }
       ],
       "hinweis": "an EnBW-Säulen, AC und DC gleich; bis 30.09.2026 Sommeraktion −5 ct/kWh"
     },
     {
-      "betreiber": "EWE Go", "land": "DE", "waehrung": "EUR",
+      "betreiber": "EWE Go",
+      "land": "DE",
+      "waehrung": "EUR",
       "suche": "https://www.ewe-go.de/",
-      "app": { "name": "EWE Go", "url": "https://play.google.com/store/apps/details?id=de.ewe.go.app" },
-      "tarife": [{ "name": "App", "kwh": 0.52, "grund_monat": 0 }],
+      "app": {
+        "name": "EWE Go",
+        "url": "https://play.google.com/store/apps/details?id=de.ewe.go.app"
+      },
+      "tarife": [
+        {
+          "name": "App",
+          "kwh": 0.52,
+          "grund_monat": 0
+        }
+      ],
       "hinweis": "an EWE-Go-Säulen, AC und HPC gleich, keine Blockiergebühr"
     },
     {
-      "betreiber": "AMAG", "land": "CH", "waehrung": "CHF", "auch": ["Porsche"],
+      "betreiber": "AMAG",
+      "land": "CH",
+      "waehrung": "CHF",
+      "auch": [
+        "Porsche"
+      ],
       "suche": "https://www.amag-group.ch/de/neuer-ladetarif-der-amag-gruppe.html",
-      "app": { "name": "AMAG", "url": "https://play.google.com/store/apps/details?id=ch.amag.amagapp" },
-      "tarife": [{ "name": "App", "kwh": 0.28, "grund_monat": 0 }],
+      "app": {
+        "name": "AMAG",
+        "url": "https://play.google.com/store/apps/details?id=ch.amag.amagapp"
+      },
+      "tarife": [
+        {
+          "name": "App",
+          "kwh": 0.28,
+          "grund_monat": 0
+        }
+      ],
       "hinweis": "mit AMAG-App oder -Ladekarte im AMAG-Netz, auch Porsche Zentren (AMAG-Gruppe)"
     },
     {
-      "betreiber": "Tesla", "land": "CH", "waehrung": "CHF",
+      "betreiber": "Tesla",
+      "land": "CH",
+      "waehrung": "CHF",
       "suche": "https://www.tesla.com/de_ch/support/charging/supercharger/fees",
-      "app": { "name": "Tesla", "url": "https://play.google.com/store/apps/details?id=com.teslamotors.tesla" },
-      "tarife": [{ "name": "Fremdfahrzeug", "kwh": 0.40, "kwh_bis": 0.73, "grund_monat": 0 }],
-      "hinweis": "je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App"
-    },
-    {
-      "betreiber": "Tesla", "land": "DE", "waehrung": "EUR",
-      "suche": "https://www.tesla.com/de_de/support/charging/supercharger/fees",
-      "app": { "name": "Tesla", "url": "https://play.google.com/store/apps/details?id=com.teslamotors.tesla" },
-      "tarife": [{ "name": "Fremdfahrzeug", "kwh": 0.52, "kwh_bis": 0.72, "grund_monat": 0 }],
-      "hinweis": "je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App"
-    },
-    {
-      "betreiber": "Tesla", "land": "IT", "waehrung": "EUR",
-      "suche": "https://www.tesla.com/it_it/support/charging/supercharger/fees",
-      "app": { "name": "Tesla", "url": "https://play.google.com/store/apps/details?id=com.teslamotors.tesla" },
-      "tarife": [{ "name": "Fremdfahrzeug", "kwh": 0.60, "grund_monat": 0 }],
-      "hinweis": "je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App"
-    },
-    {
-      "betreiber": "Migrol", "land": "CH", "waehrung": "CHF",
-      "suche": "https://www.migrol.ch/de/mobilit%C3%A4t/e-mobilit%C3%A4t/migrol-fast-charging/zahlung-preise/",
-      "app": { "name": "M-Charge", "url": "https://play.google.com/store/apps/details?id=ch.migrol.mcharge" },
+      "app": {
+        "name": "Tesla",
+        "url": "https://play.google.com/store/apps/details?id=com.teslamotors.tesla"
+      },
       "tarife": [
-        { "name": "22 kW", "kwh": 0.38, "grund_monat": 0, "kw_bis": 22 },
-        { "name": "50–64 kW", "kwh": 0.48, "grund_monat": 0, "kw_bis": 64 },
-        { "name": "128 kW", "kwh": 0.49, "minute": 0.09, "grund_monat": 0, "kw_bis": 128 },
-        { "name": "320 kW", "kwh": 0.59, "minute": 0.09, "grund_monat": 0 }
+        {
+          "name": "Fremdfahrzeug",
+          "kwh": 0.4,
+          "kwh_bis": 0.73,
+          "grund_monat": 0
+        }
       ],
-      "hinweis": "Schnelllader zusätzlich 0,09 CHF je Minute"
+      "hinweis": "je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App"
+    },
+    {
+      "betreiber": "Tesla",
+      "land": "DE",
+      "waehrung": "EUR",
+      "suche": "https://www.tesla.com/de_de/support/charging/supercharger/fees",
+      "app": {
+        "name": "Tesla",
+        "url": "https://play.google.com/store/apps/details?id=com.teslamotors.tesla"
+      },
+      "tarife": [
+        {
+          "name": "Fremdfahrzeug",
+          "kwh": 0.52,
+          "kwh_bis": 0.72,
+          "grund_monat": 0
+        }
+      ],
+      "hinweis": "je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App"
+    },
+    {
+      "betreiber": "Tesla",
+      "land": "IT",
+      "waehrung": "EUR",
+      "suche": "https://www.tesla.com/it_it/support/charging/supercharger/fees",
+      "app": {
+        "name": "Tesla",
+        "url": "https://play.google.com/store/apps/details?id=com.teslamotors.tesla"
+      },
+      "tarife": [
+        {
+          "name": "Fremdfahrzeug",
+          "kwh": 0.6,
+          "grund_monat": 0
+        }
+      ],
+      "hinweis": "je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App"
+    },
+    {
+      "betreiber": "Migrol",
+      "land": "CH",
+      "waehrung": "CHF",
+      "suche": "https://www.migrol.ch/de/blog/migrol-charge-preise/",
+      "app": {
+        "name": "M-Charge",
+        "url": "https://play.google.com/store/apps/details?id=ch.migrol.mcharge"
+      },
+      "tarife": [
+        {
+          "name": "bis 22 kW",
+          "kwh": 0.38,
+          "grund_monat": 0,
+          "kw_bis": 22
+        },
+        {
+          "name": "bis 64 kW",
+          "kwh": 0.48,
+          "grund_monat": 0,
+          "kw_bis": 64
+        },
+        {
+          "name": "bis 200 kW",
+          "kwh": 0.55,
+          "grund_monat": 0,
+          "kw_bis": 200
+        },
+        {
+          "name": "bis 400 kW",
+          "kwh": 0.59,
+          "grund_monat": 0,
+          "kw_bis": 400
+        }
+      ],
+      "hinweis": "M-Charge-App, RFID-Karte oder Kreditkarte; keine Blockiergebühr"
     }
   ]
 }
