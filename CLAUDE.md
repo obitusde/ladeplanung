@@ -1,6 +1,6 @@
 # Ladeplanung Cupra Born — Projektstand für Claude
 
-**Stand 19.09.2026** · App (`index.html`) v0.18.2 · Apps Script (`apps-script/Code.js`) v0.19.0 · Veröffentlichen per GitHub Action (`.github/workflows/apps-script.yml`) v1.0.0
+**Stand 03.10.2026** · App (`index.html`) v0.20.0 · Apps Script (`apps-script/Code.js`) v0.19.1 · Veröffentlichen per GitHub Action (`.github/workflows/apps-script.yml`) v1.0.0
 Ursprünglicher Auftrag: [`docs/Umsetzungsbrief_v5.0.md`](docs/Umsetzungsbrief_v5.0.md). Diese Datei beschreibt den **tatsächlichen** Stand inklusive aller späteren Entscheidungen und hat Vorrang vor dem Brief.
 
 ---
@@ -227,7 +227,7 @@ Weiter gültig aus dem Brief: keine Google Directions/Distance Matrix/Places API
 - **Routeninfo-Seite** (zurückgestellt, 18.09.2026): Verlauf der Strecke (Autobahnen mit km, Orte), Länge/Fahrzeit/hm/höchster Punkt, Energie ganze Strecke + Ladestopps, „du bist auf A 96 bei km …", Hinweise Vignette/Maut von Hand (CH Vignette; A14 Hohenems–Hörbranz vignettenfrei; IT Maut; Tunnelgebühr Gr. St. Bernhard). `dauer_s`/`hoechster` stehen schon in routes.json. Straßen-Verlauf aus ORS-Namen ist lückenhaft; OSM-Overpass liefert ihn sauber (getestet), geht aber nicht aus Apps Script (s. §12) → bräuchte GitHub Action mit Node.
 - Straßennamen der Route fehlen, wo ORS keine liefert (A 96, A 45) – im Titel hilft die Spalte „Straße".
 - A5/A67 bei Neuenrade: Route läuft über A5, Raststätten an der A67 mit ~4 km Querabstand (akzeptiert durch 10-km-Korridor).
-- **OBD-Adapter Veepeak OBDCheck BLE+**: Web Bluetooth geht auf dem Pixel. Community-PIDs (MEB, unbestätigt): SoC `22028C` (Header `ATSP7;ATAT1;ATST96`), Kilometerstand `2202BD` (Header `ATSHFC007B`, `ATCRA17FE007B`). Idee: Live-Akkustand statt Eingabe bei „Losfahren"/„Angekommen" – ausdrücklich **ohne Daueraufzeichnung**. Erst mit einer kleinen Testseite prüfen.
+- **OBD-Adapter Veepeak OBDCheck BLE+ (App v0.20.0, 03.10.2026):** Einstellungen → Schalter; Tippen auf „Standort“ liest per Web Bluetooth den Akku (kein Dauerlesen). Bestätigt mit `obd-test.html`: Dienst `fff0`, schreiben `fff2`, Antworten über `fff1` (nicht `ffea`); ELM327 v2.2; `ATSP7, ATCP17, ATSHFC007B, ATCRA17FE007B` → `22028C` = `62 02 8C A`, BMS-SoC = A/2,5. Display ≈ (BMS − 4,5)·100/91,5 – **vorläufig aus einem Punkt** (BMS 18,4 = Display 15 %); zweiten Punkt bei hohem Akku messen. Ohne Fahrt startet der Wert eine, sonst `fahrt.stand` für „jetzt ≈“; „Angekommen“ gibt `ende_soc` (≤ 10 min alt) an Kalibrieren. Chrome auf dem Pixel hat kein `getDevices` → nach Neuladen der Seite einmal Geräteauswahl, danach nicht mehr. Kilometerstand `2202BD`: Bytes 2–4 (47791 = `00 BA AF`), mehrteilige Antwort – kam ohne `ATFCSH17FC007B` nur halb; Test v0.3.0 offen.
 - Aus dem Brief noch nicht gebaut: Stufe 2 teilweise (Routen per Link ja, „Route ab hier"/Teilen-Ziel nein), Stufe 3 (Registerdaten BNetzA/ich-tanke-strom.ch), Stufe 4 (Filter, onChange-Trigger).
 - **Preis-Aktualisierung noch nicht echt getestet** (nur mit nachgebautem `google.script.run`): braucht `OPENROUTER_API_KEY` in den Skripteigenschaften. Erstes echtes Ergebnis prüfen (Modell, JSON, Kosten).
 
