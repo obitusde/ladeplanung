@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung — OBD-Testseite für den Veepeak OBDCheck BLE+ (Web Bluetooth, ELM327)
+  Version 0.3.1 — Jede Abfrage bis zu dreimal (NO DATA beim Akku in v0.3.0).
   Version 0.3.0 — Akku-Test nur noch mit dem bestätigten Befehlssatz (BMS 29 Bit); neu: Kilometerstand (2202BD) mit
                   Flusskontrolle an 17FC007B (ATFCSH/ATFCSD/ATFCSM1), damit die mehrteilige Antwort ganz ankommt.
   Version 0.2.0 — Auf allen Benachrichtigungs-Merkmalen hören (v0.1.0 hörte nur auf ffea, Antworten kamen nicht an); Abbruch, wenn der Adapter nicht antwortet.
@@ -36,7 +37,7 @@
 </head>
 <body>
 <h1>OBD-Test (Akkustand)</h1>
-<p class="klein">v0.3.0 · Adapter stecken, Auto einschalten, Veepeak-App schließen. Nicht in Android koppeln.</p>
+<p class="klein">v0.3.1 · Adapter stecken, Auto einschalten, Veepeak-App schließen. Nicht in Android koppeln.</p>
 
 <button id="alles" class="haupt">1. Alles testen</button>
 <button id="wieder">2. Danach: wieder verbinden ohne Auswahl</button>
@@ -56,7 +57,7 @@
 
 <script>
 'use strict';
-const VERSION = '0.3.0';
+const VERSION = '0.3.1';
 
 // Bekannte Dienste von ELM327-BLE-Adaptern (Veepeak: FFF0, andere: FFE0, Vgate, Nordic UART)
 const DIENSTE = [
@@ -227,8 +228,12 @@ async function befragen() {
     log('--- ' + satz.name);
     for (const c of satz.befehle) await sende(c);
     for (const [cmd, kopf, was] of satz.abfragen) {
-      const a = await sende(cmd, 6000);
-      const b = nutzbytes(a, kopf);
+      let a = null, b = null;
+      for (let v = 0; v < 3 && !b; v++) {   // NO DATA kam einmal beim Akku → bis zu 3 Versuche
+        if (v) await new Promise(r => setTimeout(r, 1000));
+        a = await sende(cmd, 6000);
+        b = nutzbytes(a, kopf);
+      }
       if (b) {
         const km = was.startsWith('Kilometer') && b.length >= 4 ? ' → km (Bytes 2–4) = ' + (b[1] * 65536 + b[2] * 256 + b[3]) : '';
         const z = was + km + ' (' + satz.name.slice(0, 2) + ', ' + cmd + '): Bytes ' +

@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.20.1 — Adapter: Akkustand bis zu dreimal abfragen (BMS antwortete einmal mit NO DATA).
   Version 0.20.0 — Akkustand über den OBD-Adapter (Veepeak BLE+, Web Bluetooth): beim Tippen auf „Standort“ gelesen,
                    wenn in den Einstellungen eingeschaltet; ohne Fahrt beginnt eine, sonst neuer Stand für „jetzt ≈";
                    „Angekommen" übergibt den letzten Adapterwert (≤ 10 min) an die Kalibrierung.
@@ -402,7 +403,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.20.0';
+    const APP_VERSION = '0.20.1';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -1304,8 +1305,13 @@
           return puffer;
         };
         for (const c of OBD_INIT) await sende(c, c === 'ATZ' ? 5000 : 4000);
-        const hex = (await sende('22028C', 6000)).replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
-        const i = hex.indexOf('62028C');
+        // Das BMS antwortet nicht immer beim ersten Mal (NO DATA am 03.10.2026, 16:01) → bis zu 3 Versuche
+        let hex = '', i = -1;
+        for (let v = 0; v < 3 && i < 0; v++) {
+          if (v) await new Promise(r => setTimeout(r, 1000));
+          hex = (await sende('22028C', 6000)).replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
+          i = hex.indexOf('62028C');
+        }
         if (i < 0) throw new Error('Auto liefert keinen Akkustand – Zündung an?');
         const bms = parseInt(hex.slice(i + 6, i + 8), 16) / 2.5;
         if (!(bms >= 0 && bms <= 100)) throw new Error('Akkuwert unplausibel');
