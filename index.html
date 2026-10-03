@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.24.0 — Der letzte bekannte Akkustand gilt für jede gewählte Route und Richtung: Ort des Werts wird auf die
+                   gewählte Route gelegt, Verbrauch bis zur Position abgezogen (weit neben der Route: Wert unverändert).
   Version 0.23.1 — Akkustand wandert beim Umstellen der Strecke auch nach einem Zwischenwert mit (solange seitdem nicht
                    gefahren); Einstellungen zeigen den letzten Adapterwert mit BMS-Rohwert.
   Version 0.23.0 — Fahrt-Leiste zeigt nur noch „Akku jetzt ≈ x %"; Adapter ohne Geräteauswahl, wenn Chrome getDevices
@@ -306,7 +308,7 @@
         <b>Fahrt beenden</b> öffnet das Kalibrierformular (vor dem Laden oder am Ziel).
         <b>✕</b> verwirft die Fahrt ohne Kalibrierung – z. B. nach einem Test oder einem Tippfehler; danach erscheint wieder „Akku jetzt".</li>
       <li><b>„Fahrt beendet … – Kalibrierung noch offen?":</b> Erinnerung, falls das Formular nicht abgeschickt wurde. <b>Kalibrieren</b> öffnet es nochmals, <b>✕</b> blendet die Erinnerung aus.</li>
-      <li><b>⇄</b> tauscht von und nach. Hast du einen Akkustand eingetragen und bist noch nicht losgefahren, gilt er auch für die neue Auswahl.</li>
+      <li><b>⇄</b> tauscht von und nach. Der letzte bekannte Akkustand gilt für jede Strecke, die du oben wählst – die Liste zeigt sofort, was damit erreichbar ist.</li>
       <li><b>☰ Menü:</b> Ladepunkt oder Route hinzufügen, Einstellungen, Simulation, Ladepreise, Preise aktualisieren, Wartung &amp; Status und diese Seite.</li>
     </ul>
 
@@ -448,7 +450,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.23.1';
+    const APP_VERSION = '0.24.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -853,12 +855,23 @@
       return { kwh, prozent: kwh / modell.fahrzeug.kapazitaet_kwh * 100, strecke: w };
     }
 
-    /** Geschätzter Akkustand jetzt, wenn eine Fahrt auf dieser Route und Richtung läuft; sonst null. */
+    /** Geschätzter Akkustand jetzt aus dem letzten bekannten Wert – für jede gewählte Route und Richtung
+        (Christof, 03.10.2026). Ohne Akkustand null (dann rechnet die Liste mit vollem Akku). */
     function akkuJetzt(routeId, pos) {
       const f = zustand.fahrt;
-      if (!f || !pos || f.route !== routeId || f.richtung !== zustand.richtung) return null;
-      if (f.stand) return f.stand.soc - bedarf(f.richtung, f.stand, pos, 0).prozent;   // letzter Adapterwert unterwegs
-      return f.start_soc - bedarf(f.richtung, f.start, pos, 0).prozent;
+      if (!f || !pos) return null;
+      if (f.route === routeId && f.richtung === zustand.richtung) {
+        if (f.stand) return f.stand.soc - bedarf(f.richtung, f.stand, pos, 0).prozent;   // letzter Adapterwert unterwegs
+        return f.start_soc - bedarf(f.richtung, f.start, pos, 0).prozent;
+      }
+      // Andere Auswahl: Ort des letzten Werts auf diese Route legen und den Verbrauch bis hierher abziehen;
+      // liegt er weit neben dieser Route (oder ist ohne Position), gilt der Wert unverändert.
+      const letzt = f.stand ? f.stand : { soc: f.start_soc, lat: f.start_lat, lon: f.start_lon };
+      const route = daten.routen.find(r => r.id === routeId);
+      if (!route || letzt.lat === undefined) return letzt.soc;
+      const pr = projiziere(route.linie, letzt.lat, letzt.lon, lat0Von(route));
+      if (pr.q > QUER_MAX_KM) return letzt.soc;
+      return letzt.soc - bedarf(zustand.richtung, pr, pos, 0).prozent;
     }
 
     /** Prognose für einen Listeneintrag. */
