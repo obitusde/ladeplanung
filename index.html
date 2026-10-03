@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.22.1 — Info-Seite: „Kurz: so nutzt du sie", „Die Knöpfe" (Standort, Fahrt-Leiste, ✕, Fahrt beenden, Erinnerung),
+                   Einstellungen, Details vollständig, Ladepreise/Preise aktualisieren.
   Version 0.22.0 — „Angekommen" heißt jetzt „Fahrt beenden" (vor dem Laden oder am Ziel); Adapter erkennt Laden
                    (mehr Akku als zuvor) und beginnt eine neue Fahrt; Info-Text zum Adapter.
   Version 0.21.1 — Route oder Richtung umgestellt, bevor losgefahren (< 1 km vom Start): die Fahrt mit dem Akkustand
@@ -281,7 +283,36 @@
     <h2>So funktioniert die App</h2>
 
     <h3>Was sie macht</h3>
-    <p>Während der Fahrt zeigt sie die Ladepunkte, die <b>vor dir</b> auf der gewählten Stammstrecke liegen – mit Entfernung entlang der Straße, Anstieg, geschätztem Akkubedarf, Leistung, Lage und deiner Notiz. Entscheiden tust du; navigiert wird mit Google Maps, ABRP oder dem Auto.</p>
+    <p>Vor und während der Fahrt zeigt sie die Ladepunkte, die <b>vor dir</b> auf der gewählten Stammstrecke liegen – mit Entfernung entlang der Straße, geschätztem Akku bei Ankunft, Leistung, Preis, Lage und deiner Notiz. Entscheiden tust du; navigiert wird mit Google Maps, ABRP oder dem Auto.</p>
+
+    <h3>Kurz: so nutzt du sie</h3>
+    <ol>
+      <li><b>Vor der Fahrt:</b> oben <b>von</b> und <b>nach</b> wählen (bei mehreren Wegen auch <b>über</b>). Akkustand bei „Akku jetzt" eintragen und <b>✓</b> tippen – mit OBD-Adapter genügt ein Tipp auf <b>Standort</b>.</li>
+      <li><b>Unterwegs:</b> <b>Standort</b> tippen, wann immer du sehen willst, was als Nächstes kommt und wie viel Akku dort übrig ist. Eine Station antippen für Details, Navigation und die Adresse für My CUPRA.</li>
+      <li><b>Vor dem Laden und am Ziel (freiwillig):</b> <b>Fahrt beenden</b> – im Formular den echten Akkustand prüfen (mit Adapter schon eingetragen) und speichern. Daraus lernt die Prognose; ein paar Fahrten reichen.</li>
+      <li><b>Nach dem Laden:</b> neuen Akkustand eintragen bzw. mit Adapter <b>Standort</b> tippen – das Laden erkennt die App dann selbst.</li>
+    </ol>
+    <p>Alles außer von/nach ist freiwillig: Ohne Akkustand rechnet die App mit vollem Akku.</p>
+
+    <h3>Die Knöpfe</h3>
+    <ul>
+      <li><b>Standort:</b> holt die aktuelle GPS-Position und rechnet die Liste neu (beim Öffnen der App passiert das von selbst). Mit eingeschaltetem Adapter liest derselbe Tipp auch Akku und Kilometerstand. Aufgezeichnet wird nichts – nur in dem Moment, in dem du tippst.</li>
+      <li><b>Akku jetzt … ✓:</b> Akkustand von Hand; damit beginnt eine „Fahrt".</li>
+      <li><b>Fahrt-Leiste</b> („16:09 mit 80 % · jetzt ≈ 62 %"): Startwert, ggf. der letzte Adapterwert, und der geschätzte Akku jetzt.
+        <b>Fahrt beenden</b> öffnet das Kalibrierformular (vor dem Laden oder am Ziel).
+        <b>✕</b> verwirft die Fahrt ohne Kalibrierung – z. B. nach einem Test oder einem Tippfehler; danach erscheint wieder „Akku jetzt".</li>
+      <li><b>„Fahrt beendet … – Kalibrierung noch offen?":</b> Erinnerung, falls das Formular nicht abgeschickt wurde. <b>Kalibrieren</b> öffnet es nochmals, <b>✕</b> blendet die Erinnerung aus.</li>
+      <li><b>⇄</b> tauscht von und nach. Hast du einen Akkustand eingetragen und bist noch nicht losgefahren, gilt er auch für die neue Auswahl.</li>
+      <li><b>☰ Menü:</b> Ladepunkt oder Route hinzufügen, Einstellungen, Simulation, Ladepreise, Preise aktualisieren, Wartung &amp; Status und diese Seite.</li>
+    </ul>
+
+    <h3>Einstellungen (☰ → Einstellungen)</h3>
+    <ul>
+      <li><b>Zusatzgewicht:</b> Mitfahrer und Gepäck – du als Fahrer (80 kg) bist schon eingerechnet.</li>
+      <li><b>Reserve:</b> darunter erscheint der Rest bei Ankunft <span class="rot"><b>rot</b></span>; „letzte vor Reserve" bezieht sich darauf.</li>
+      <li><b>Temperatur:</b> leer lassen = automatisch vom Wetter am Standort.</li>
+      <li><b>OBD-Adapter:</b> Veepeak OBDCheck BLE+ steckt im Auto, Zündung an, Bluetooth am Handy an. Beim ersten Tipp nach dem Öffnen der App kommt eine Geräteliste – dort <b>VEEPEAK</b> wählen, danach nicht mehr. Klappt das Lesen nicht, erscheint eine kurze Meldung und du trägst den Akku wie gewohnt ein.</li>
+    </ul>
 
     <h3>So entsteht die Liste</h3>
     <ol>
@@ -311,8 +342,7 @@
     <p>Der Akkubedarf bis zu jeder Station wird aus Strecke, Höhenmetern, dem <b>Reisetempo</b>, dem <b>Zusatzgewicht</b> (Menü → Einstellungen) und der <b>Außentemperatur</b> geschätzt. Die Temperatur ist der Durchschnitt aus jetzt und in drei Stunden am Standort – oder dein eigener Wert.</p>
     <p><b>Das Reisetempo</b> stellst du nicht mehr selbst ein: Es ist der Schnitt der gewählten Route laut Routendienst (inklusive Kurven und Ortsdurchfahrten), also z. B. 103 km/h nach Ingolstadt und 87 km/h über den Simplon. Sobald du echte Fahrten mit dem Ø-Tempo des Bordcomputers kalibriert hast, passt die App diesen Schnitt an deine Fahrweise an; unten steht dann „(gemessen)" statt „(Route)".</p>
     <p>Das Tempo hat den größten Einfluss: 130 statt 110 km/h brauchen rund ein Viertel mehr. 1000 Höhenmeter bergauf kosten etwa 11 % Akku, bergab kommt gut ein Drittel davon zurück.</p>
-    <p><b>Optional:</b> Trägst du oben „Akku jetzt" ein und tippst <b>✓</b>, rechnet die Liste mit diesem Stand und zieht unterwegs den Verbrauch ab. „Fahrt beenden" (vor dem Laden oder am Ziel) öffnet ein kurzes Formular: echter Akkustand rein, fertig – daraus lernt das Modell. Ein paar Fahrten reichen, danach kannst du es weglassen. Ohne Eintrag rechnet die App mit vollem Akku.</p>
-    <p><b>OBD-Adapter:</b> In den Einstellungen einschalten, dann liest jedes Tippen auf „Standort" den Akkustand. Das aktualisiert nur „jetzt ≈" – kalibriert wird nur über „Fahrt beenden". Zeigt der Adapter mehr Akku als vorher, erkennt die App das Laden und beginnt eine neue Fahrt.</p>
+    <p><b>Mit Akkustand</b> (von Hand oder per Adapter) zieht die Liste unterwegs den geschätzten Verbrauch ab („jetzt ≈"). Jeder neue Adapterwert ersetzt die Schätzung; zeigt er mehr Akku als vorher, erkennt die App das Laden und beginnt eine neue Fahrt. <b>Kalibriert</b> wird nur, wenn du eine Fahrt mit „Fahrt beenden" abschließt – „Standort" allein ändert am Modell nichts.</p>
     <p><b>Vergleichswerte:</b> In den Details einer Station „Vergleichswert eintragen" – Strecke in ABRP oder My CUPRA planen und die beiden Akkuwerte abschreiben. Das hilft dem Modell schon vor der ersten Fahrt; echte Fahrten zählen aber mehr.</p>
     <p id="info-modell" class="klein-hinweis"></p>
 
@@ -323,7 +353,7 @@
     <p>Bist du mehr als 10 km von der Linie entfernt, plant die App <b>ab dem gewählten Startort</b> – praktisch, um zu Hause eine Strecke anzuschauen, die woanders beginnt. Oben steht dann „Geplant ab Neuenrade“ mit dem Knopf <b>ab meinem Standort</b>: Damit siehst du stattdessen die Luftlinie zu jeder Station, ohne Höhen und ohne Prognose – der Notbehelf für einen größeren Umweg mitten auf der Strecke. Zurück geht es mit <b>ab Startort</b>. Die GPS-Genauigkeit steht unten; bei mehreren hundert Metern ist die Position unzuverlässig.</p>
 
     <h3>Details</h3>
-    <p>Eine Station antippen: <b>Adresse kopieren</b> (in My CUPRA einfügen), <b>Navigieren</b> in Google Maps, <b>Belegung in Google Maps</b>, die <b>App des Betreibers</b>, <b>ABRP</b> (Plan von deinem Standort) und <b>Bearbeiten</b>.</p>
+    <p>Eine Station antippen: <b>Adresse kopieren</b> (in My CUPRA einfügen), <b>Navigieren</b> in Google Maps, <b>Belegung in Google Maps</b>, die <b>App des Betreibers</b>, <b>ABRP</b> (Plan von deinem Standort), <b>Bearbeiten</b> (Notiz, Straße, kW, Favorit … und Löschen) und <b>Vergleichswert eintragen</b> (siehe Akku-Prognose). In der Simulation zusätzlich <b>Simulierte Position hierher</b>.</p>
     <p><b>Belegung:</b> Google Maps zeigt bei vielen Ladeparks, wie viele Punkte frei sind („12/12"), weil die Betreiber das liefern. Bei anderen steht nur die Gesamtzahl. Geprüft am 22.09.2026: bei EnBW ja, bei Migrol nein. Eine eigene Anzeige hat die App bewusst nicht.</p>
 
     <h3>Daten pflegen</h3>
@@ -335,6 +365,9 @@
       <li>Alles andere – Routen ändern, direkt im Sheet bearbeiten, Modell neu kalibrieren – unter <b>Wartung &amp; Status</b>. Dort steht auch, wann was zu tun ist.</li>
     </ul>
     <a id="info-wartung" class="knopf haupt" href="#" target="_blank" rel="noopener" style="font-size:20px">Wartung &amp; Status öffnen</a>
+
+    <h3>Ladepreise</h3>
+    <p>Menü → <b>Ladepreise</b> zeigt alle Tarife der Betreiber mit Stand. Menü → <b>Preise aktualisieren</b> lässt eine KI mit Websuche die aktuellen Preise auf den offiziellen Seiten nachsehen und zeigt je Anbieter alt und neu; übernommen wird nur, was du bestätigst.</p>
 
     <h3>Was sie nicht macht</h3>
     <p>Keine Navigation, kein Belegt-Status. Preise sind Richtwerte der Betreiber mit Datum – maßgeblich ist die Anzeige an der Säule bzw. in der App des Betreibers. Die Akku-Prognose ist eine Schätzung – maßgeblich bleibt die Anzeige im Auto.</p>
@@ -410,7 +443,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.22.0';
+    const APP_VERSION = '0.22.1';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
