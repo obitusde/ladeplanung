@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung — OBD-Testseite für den Veepeak OBDCheck BLE+ (Web Bluetooth, ELM327)
+  Version 0.2.0 — Auf allen Benachrichtigungs-Merkmalen hören (v0.1.0 hörte nur auf ffea, Antworten kamen nicht an); Abbruch, wenn der Adapter nicht antwortet.
   Version 0.1.0 — Erster Test: verbinden, Akkustand mit mehreren Befehlssätzen lesen,
                   Wiederverbinden ohne Geräteauswahl prüfen, Protokoll kopieren.
   Nur zum Ausprobieren, nicht Teil der App. Keine Daueraufzeichnung: liest nur auf Knopfdruck.
@@ -33,7 +34,7 @@
 </head>
 <body>
 <h1>OBD-Test (Akkustand)</h1>
-<p class="klein">v0.1.0 · Adapter stecken, Auto einschalten, Veepeak-App schließen. Nicht in Android koppeln.</p>
+<p class="klein">v0.2.0 · Adapter stecken, Auto einschalten, Veepeak-App schließen. Nicht in Android koppeln.</p>
 
 <button id="alles" class="haupt">1. Alles testen</button>
 <button id="wieder">2. Danach: wieder verbinden ohne Auswahl</button>
@@ -53,7 +54,7 @@
 
 <script>
 'use strict';
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 
 // Bekannte Dienste von ELM327-BLE-Adaptern (Veepeak: FFF0, andere: FFE0, Vgate, Nordic UART)
 const DIENSTE = [
@@ -86,7 +87,8 @@ async function verbindeMit(d) {
   const server = await mitZeitlimit(d.gatt.connect(), 10000, 'GATT-Verbindung');
   log('GATT verbunden nach ' + Math.round(performance.now() - t0) + ' ms');
   const dienste = await server.getPrimaryServices();
-  schreib = lese = null;
+  schreib = null;
+  lese = [];
   for (const s of dienste) {
     let chars = [];
     try { chars = await s.getCharacteristics(); } catch (e) { continue; }
@@ -94,17 +96,23 @@ async function verbindeMit(d) {
       const p = c.properties;
       log('  Dienst ' + kurz(s.uuid) + ' Merkmal ' + kurz(c.uuid) + ' ' +
           ['read', 'write', 'writeWithoutResponse', 'notify', 'indicate'].filter(k => p[k]).join(','));
-      if (!lese && (p.notify || p.indicate)) lese = c;
+      if (p.notify || p.indicate) lese.push(c);
       if (!schreib && (p.write || p.writeWithoutResponse)) schreib = c;
     }
   }
-  if (!lese || !schreib) throw new Error('Keine passenden Merkmale (notify/write) gefunden');
-  log('Lesen über ' + kurz(lese.uuid) + ', Schreiben über ' + kurz(schreib.uuid));
-  lese.addEventListener('characteristicvaluechanged', e => {
-    puffer += new TextDecoder().decode(e.target.value);
-    if (puffer.includes('>') && warte) { const w = warte; warte = null; w(); }
-  });
-  await lese.startNotifications();
+  if (!lese.length || !schreib) throw new Error('Keine passenden Merkmale (notify/write) gefunden');
+  // Auf allen Benachrichtigungs-Merkmalen hören (Veepeak: ffea und fff1) und protokollieren, welches antwortet
+  const gemeldet = new Set();
+  for (const c of lese) {
+    c.addEventListener('characteristicvaluechanged', e => {
+      const u = kurz(e.target.uuid);
+      if (!gemeldet.has(u)) { gemeldet.add(u); log('  (Antworten kommen über ' + u + ')'); }
+      puffer += new TextDecoder().decode(e.target.value);
+      if (puffer.includes('>') && warte) { const w = warte; warte = null; w(); }
+    });
+    try { await c.startNotifications(); } catch (e) { log('  ' + kurz(c.uuid) + ' startNotifications: ' + e.message); }
+  }
+  log('Hören auf ' + lese.map(c => kurz(c.uuid)).join(', ') + ', Schreiben über ' + kurz(schreib.uuid));
   try { localStorage.setItem('obdtest.geraet', d.id); } catch (e) {}
 }
 
@@ -197,8 +205,14 @@ async function allesTesten() {
 async function befragen() {
   const t0 = performance.now();
   status('Initialisiere ELM327 …');
-  await sende('ATZ', 5000);
-  for (const c of ['ATE0', 'ATL0', 'ATS1', 'ATH1', 'ATI', 'AT@1', 'ATRV']) await sende(c);
+  const z = await sende('ATZ', 5000);
+  const i = await sende('ATI');
+  if (!z && !i) {
+    status('Adapter antwortet nicht. Bitte Protokoll kopieren.');
+    log('Abbruch: keine Antwort auf ATZ/ATI');
+    return;
+  }
+  for (const c of ['ATE0', 'ATL0', 'ATS1', 'ATH1', 'AT@1', 'ATRV']) await sende(c);
   const funde = [];
   for (const satz of SAETZE) {
     status('Teste ' + satz.name + ' …');
