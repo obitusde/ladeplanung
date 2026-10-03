@@ -1,6 +1,7 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.19.3 — Formularseiten auf dem Handy hochskaliert, wenn sie in Desktop-Breite erscheinen (Text war zu klein).
  * Version 0.19.2 — Kalibrierformular zeigt, wenn die km vom Kilometerzähler stammen (App v0.21.0).
  * Version 0.19.1 — Kalibrierformular übernimmt „Akku bei Ankunft“ vom OBD-Adapter (App v0.20.0).
  * Version 0.19.0 — Reisetempo kommt aus der Route (Fahrzeit des Routendienstes); sobald echte Fahrten mit
@@ -48,7 +49,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.19.2';
+const VERSION = '0.19.3';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';

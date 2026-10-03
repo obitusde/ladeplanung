@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung — Fahrt kalibrieren. Wird von doGet() mit ?seite=kalibrieren&fahrt=<JSON> ausgeliefert,
-  die App füllt Start, Ankunft, Strecke und Erwartung vor. Version 0.15.0
+  die App füllt Start, Ankunft, Strecke und Erwartung vor. Version 0.16.0
+  (0.16.0: auf dem Handy nicht mehr winzig – Hochskalieren bei Desktop-Breite)
   (0.15.0: Strecke vom Kilometerzähler kenntlich, wenn die App ihn mitschickt)
   (0.14.0: Akku bei Ankunft vom OBD-Adapter vorbefüllt, wenn die App ihn mitschickt)
 -->
@@ -80,6 +81,13 @@
     .hinweis.fehler { background: var(--fehler-grund); color: var(--fehler); font-weight: 600; }
     .hinweis.ok { background: var(--ok-grund); }
   </style>
+  <script>
+    // Auf dem Handy erscheint die Seite teils in Desktop-Breite und damit winzig (03.10.2026) → auf Gerätebreite hochskalieren
+    (function () {
+      var breite = window.innerWidth, geraet = screen.width;
+      if (geraet && geraet < 600 && breite > geraet * 1.15) document.documentElement.style.zoom = String(Math.min(3, breite / geraet));
+    })();
+  </script>
 </head>
 <body>
   <main>

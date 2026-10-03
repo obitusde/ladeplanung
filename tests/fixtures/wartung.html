@@ -2,6 +2,7 @@
 <!--
   Ladeplanung — Seite „Wartung & Status": zeigt den Zustand und stößt Rechenschritte samt Folgeschritten an.
   Wird von doGet() in Code.js ausgeliefert (…/exec?seite=wartung).
+  Version 0.19.0 — Auf dem Handy nicht mehr winzig: hochskalieren, wenn die Seite in Desktop-Breite erscheint.
   Version 0.18.0 — Aus dem App-Menü direkt zu „Route hinzufügen" (?fokus=route).
   Version 0.17.0 — Route hinzufügen per Google-Maps-Link.
   Version 0.12.0
@@ -84,6 +85,13 @@
       padding: 12px; font: 15px/1.4 ui-monospace, Consolas, monospace; margin: 0;
     }
   </style>
+  <script>
+    // Auf dem Handy erscheint die Seite teils in Desktop-Breite und damit winzig (03.10.2026) → auf Gerätebreite hochskalieren
+    (function () {
+      var breite = window.innerWidth, geraet = screen.width;
+      if (geraet && geraet < 600 && breite > geraet * 1.15) document.documentElement.style.zoom = String(Math.min(3, breite / geraet));
+    })();
+  </script>
 </head>
 <body>
   <main>

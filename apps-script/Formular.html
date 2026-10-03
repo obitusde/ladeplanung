@@ -2,6 +2,7 @@
 <!--
   Ladeplanung — Formular zum Bearbeiten, Löschen und Hinzufügen eines Ladepunkts.
   Wird von doGet() in Code.js ausgeliefert; MODELL kommt aus dem Template.
+  Version 0.17.0 — Auf dem Handy nicht mehr winzig: hochskalieren, wenn die Seite in Desktop-Breite erscheint.
   Version 0.16.0 — Feld „Straße" (Autobahn im Titel; leer = automatisch aus OpenStreetMap).
   Version 0.12.0 — Löschen, Nähe-Warnung bis 300 m.
   Version 0.11.0 — Bearbeiten und Hinzufügen.
@@ -49,6 +50,13 @@
     .hinweis.ok { background: var(--ok-grund); }
     #loeschen-bereich { margin-top: 28px; padding-top: 12px; border-top: 2px solid var(--linie); }
   </style>
+  <script>
+    // Auf dem Handy erscheint die Seite teils in Desktop-Breite und damit winzig (03.10.2026) → auf Gerätebreite hochskalieren
+    (function () {
+      var breite = window.innerWidth, geraet = screen.width;
+      if (geraet && geraet < 600 && breite > geraet * 1.15) document.documentElement.style.zoom = String(Math.min(3, breite / geraet));
+    })();
+  </script>
 </head>
 <body>
   <main>

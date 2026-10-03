@@ -2,6 +2,7 @@
 <!--
   Ladeplanung — Seite „Ladepreise": zeigt preise.json und holt neue Werte über OpenRouter (mit Websuche).
   Übernommen wird erst nach Bestätigung. Wird von doGet() in Code.js ausgeliefert (…/exec?seite=preise).
+  Version 0.19.0 — Auf dem Handy nicht mehr winzig: hochskalieren, wenn die Seite in Desktop-Breite erscheint.
   Version 0.18.1 — kleiner, Tarife in zwei Spalten, Link zur Android-App, „auch" (Porsche → AMAG).
   Version 0.18.0
 -->
@@ -79,6 +80,13 @@
     .knopf:disabled { opacity: .6; }
     #meldung { white-space: pre-wrap; }
   </style>
+  <script>
+    // Auf dem Handy erscheint die Seite teils in Desktop-Breite und damit winzig (03.10.2026) → auf Gerätebreite hochskalieren
+    (function () {
+      var breite = window.innerWidth, geraet = screen.width;
+      if (geraet && geraet < 600 && breite > geraet * 1.15) document.documentElement.style.zoom = String(Math.min(3, breite / geraet));
+    })();
+  </script>
 </head>
 <body>
   <main>
