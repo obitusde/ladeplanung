@@ -6,7 +6,7 @@ const path = require('path');
 
 const wurzel = path.join(__dirname, '..');
 const quelle = fs.readFileSync(path.join(wurzel, 'apps-script', 'Code.js'), 'utf8');
-const gs = new Function(quelle + '; return { energieAnteile_, energieKwh_, kalibriere_, kalibriereZeilen_, loese3_, pruefeFahrt_, tempoFaktor_, MODELL_STANDARD };')();
+const gs = new Function(quelle + '; return { energieAnteile_, energieKwh_, kalibriere_, kalibriereZeilen_, loese3_, pruefeFahrt_, normalisiereFahrt_, tempoFaktor_, MODELL_STANDARD };')();
 const M = gs.MODELL_STANDARD;
 
 let fehler = 0;
@@ -84,6 +84,9 @@ const gueltig = { route: 'neuenrade', richtung: 'hin', start_soc: 80, ende_soc: 
 pruefe(gs.pruefeFahrt_(gueltig) === '', 'gültige Fahrt: ' + gs.pruefeFahrt_(gueltig));
 pruefe(gs.pruefeFahrt_({ ...gueltig, ende_soc: 90 }) !== '', 'Ende > Start (unterwegs geladen) abgelehnt');
 pruefe(gs.pruefeFahrt_({ ...gueltig, ende_soc: '' }) !== '', 'fehlender Ankunfts-Akkustand abgelehnt');
+pruefe(gs.normalisiereFahrt_({ ...gueltig, notiz: '' }).notiz === '', 'Notiz leer bleibt leer');
+pruefe(gs.normalisiereFahrt_({ ...gueltig, notiz: 'Stau', km_quelle: 'Kilometerzähler', km_route: 205.3 }).notiz === 'Stau · km vom Kilometerzähler (Route 205,3 km)',
+  'Kilometerzähler in der Notiz vermerkt');
 pruefe(gs.pruefeFahrt_({ ...gueltig, bordcomputer_kmh: 500 }) !== '', 'unplausible Ø-Geschwindigkeit abgelehnt');
 pruefe(gs.pruefeFahrt_({ ...gueltig, ende_zeit: '2026-09-15T07:00:00Z' }) !== '', 'Ankunft vor Start abgelehnt');
 

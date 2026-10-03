@@ -1,6 +1,7 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.19.2 — Kalibrierformular zeigt, wenn die km vom Kilometerzähler stammen (App v0.21.0).
  * Version 0.19.1 — Kalibrierformular übernimmt „Akku bei Ankunft“ vom OBD-Adapter (App v0.20.0).
  * Version 0.19.0 — Reisetempo kommt aus der Route (Fahrzeit des Routendienstes); sobald echte Fahrten mit
  *                  Bordcomputer-Tempo vorliegen, wird daraus ein Faktor je Route gelernt (modell.json: tempo).
@@ -47,7 +48,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.19.1';
+const VERSION = '0.19.2';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -781,7 +782,9 @@ function normalisiereFahrt_(d) {
     km: Number(d.km), hm_auf: zahl(d.hm_auf, 0), hm_ab: zahl(d.hm_ab, 0),
     start_soc: Number(d.start_soc), ende_soc: Number(d.ende_soc), erwartet: zahl(d.erwartet, null),
     geschwindigkeit: zahl(d.geschwindigkeit, 120), bordcomputer_kmh: zahl(d.bordcomputer_kmh, null),
-    zusatzgewicht: zahl(d.zusatzgewicht, 0), notiz: normalisiereFormular_({ Notiz: d.notiz }).Notiz,
+    zusatzgewicht: zahl(d.zusatzgewicht, 0),
+    notiz: [normalisiereFormular_({ Notiz: d.notiz }).Notiz, d.km_quelle === 'Kilometerzähler' ? 'km vom Kilometerzähler (Route ' + String(zahl(d.km_route, '?')).replace('.', ',') + ' km)' : '']
+      .filter(function (t) { return t; }).join(' · '),
   };
 }
 

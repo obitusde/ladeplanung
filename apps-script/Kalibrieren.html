@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung — Fahrt kalibrieren. Wird von doGet() mit ?seite=kalibrieren&fahrt=<JSON> ausgeliefert,
-  die App füllt Start, Ankunft, Strecke und Erwartung vor. Version 0.14.0
+  die App füllt Start, Ankunft, Strecke und Erwartung vor. Version 0.15.0
+  (0.15.0: Strecke vom Kilometerzähler kenntlich, wenn die App ihn mitschickt)
   (0.14.0: Akku bei Ankunft vom OBD-Adapter vorbefüllt, wenn die App ihn mitschickt)
 -->
 <html lang="de">
@@ -97,7 +98,8 @@
       ['Route', (f.route_name || f.route || '–') + (f.richtung === 'rueck' ? ' (Rückfahrt)' : ' (Hinfahrt)')],
       ['Start', uhr(f.start_zeit) + ' · ' + zahl(f.start_soc) + ' %'],
       ['Ankunft', uhr(f.ende_zeit)],
-      ['Strecke', zahl(f.km) + ' km · + ' + zahl(f.hm_auf) + ' / − ' + zahl(f.hm_ab) + ' hm'],
+      ['Strecke', zahl(f.km) + ' km' + (f.km_quelle ? ' (Kilometerzähler, Route ' + zahl(f.km_route) + ' km)' : '') +
+        ' · + ' + zahl(f.hm_auf) + ' / − ' + zahl(f.hm_ab) + ' hm'],
       ['Erwartet', f.erwartet === null || f.erwartet === undefined ? '–' : '≈ ' + zahl(f.erwartet) + ' % bei Ankunft'],
     ];
     if (f.quer_warnung) zeilen.push(['Achtung', 'Start oder Ziel lag abseits der Route – die Kilometer sind ungenau.']);

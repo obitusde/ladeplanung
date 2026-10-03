@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.21.0 — Adapter liest auch den Kilometerstand; „Angekommen" übergibt die gefahrenen km vom Kilometerzähler
+                   (statt aus der Route), wenn Start und Ankunft per Adapter gelesen wurden.
   Version 0.20.1 — Adapter: Akkustand bis zu dreimal abfragen (BMS antwortete einmal mit NO DATA).
   Version 0.20.0 — Akkustand über den OBD-Adapter (Veepeak BLE+, Web Bluetooth): beim Tippen auf „Standort“ gelesen,
                    wenn in den Einstellungen eingeschaltet; ohne Fahrt beginnt eine, sonst neuer Stand für „jetzt ≈";
@@ -403,7 +405,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.20.1';
+    const APP_VERSION = '0.21.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -1209,7 +1211,19 @@
         quer_warnung: f.start.q > 2 || pr.q > 2,
       };
       const ad = zustand.adapter;
-      if (ad && Date.now() - ad.zeit < ADAPTER_FRISCH_MS) fahrt.ende_soc = ad.soc;   // Kalibrierformular vorbefüllen
+      if (ad && Date.now() - ad.zeit < ADAPTER_FRISCH_MS) {
+        fahrt.ende_soc = ad.soc;   // Kalibrierformular vorbefüllen
+        // Gefahrene km vom Kilometerzähler statt aus der Route (genauer bei Umwegen); Höhenmeter bleiben aus der Route
+        const gefahren = ad.km_stand !== null && ad.km_stand !== undefined && f.start_km_stand ? ad.km_stand - f.start_km_stand : null;
+        if (gefahren !== null && gefahren >= 5 && gefahren <= 2000) {
+          const a = energieAnteile(modell, gefahren, b.strecke.auf, b.strecke.ab, tempo(route).wert, temperatur().wert, zustand.einst.zusatzgewicht);
+          fahrt.km = gefahren;
+          fahrt.km_quelle = 'Kilometerzähler';
+          fahrt.km_route = Math.round(b.strecke.km * 10) / 10;
+          fahrt.erwartet = Math.round((f.start_soc - energieKwh(modell, a) / modell.fahrzeug.kapazitaet_kwh * 100) * 10) / 10;
+          fahrt.quer_warnung = false;
+        }
+      }
       const url = FORMULAR_URL + '?seite=kalibrieren&fahrt=' + encodeURIComponent(JSON.stringify(fahrt));
       window.open(url, '_blank', 'noopener');
       zustand.fahrt = null;
@@ -1273,7 +1287,21 @@
       return Promise.race([p, new Promise((_, nein) => setTimeout(() => nein(new Error(was)), ms))]);
     }
 
-    /** Verbindet, liest 22028C, trennt. Ergebnis { soc (Display, ganze %), bms }. */
+    /** Nutzdaten nach der positiven Antwort (z. B. 6202BD): je Zeile Kopf 17FE007B und ISO-TP-Steuerbyte(s) entfernen. */
+    function obdNutzbytes(antwort, kopf) {
+      const hex = antwort.split(/[\r\n]+/).map(z => {
+        let h = z.replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
+        if (!h.startsWith('17FE007B')) return '';
+        h = h.slice(8);
+        return h[0] === '1' ? h.slice(4) : h.slice(2);
+      }).join('');
+      const i = hex.indexOf(kopf);
+      const b = [];
+      if (i >= 0) for (let k = i + kopf.length; k + 1 < hex.length; k += 2) b.push(parseInt(hex.slice(k, k + 2), 16));
+      return b;
+    }
+
+    /** Verbindet, liest 22028C (Akku) und 2202BD (Kilometerstand), trennt. Ergebnis { soc (Display, ganze %), bms, km_stand|null }. */
     async function leseAdapter() {
       if (!navigator.bluetooth) throw new Error('Bluetooth im Browser nicht verfügbar');
       if (!obdGeraet) obdGeraet = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: OBD_DIENSTE });
@@ -1315,7 +1343,14 @@
         if (i < 0) throw new Error('Auto liefert keinen Akkustand – Zündung an?');
         const bms = parseInt(hex.slice(i + 6, i + 8), 16) / 2.5;
         if (!(bms >= 0 && bms <= 100)) throw new Error('Akkuwert unplausibel');
-        return { soc: Math.round(anzeigeAusBms(bms)), bms: Math.round(bms * 10) / 10 };
+        // Kilometerstand (2202BD, Bytes 2–4): zweiteilige Antwort, Flusskontrolle muss an 17FC007B gehen. Fehler hier stört den Akku nicht.
+        let km_stand = null;
+        try {
+          for (const c of ['ATCAF1', 'ATFCSH17FC007B', 'ATFCSD300000', 'ATFCSM1']) await sende(c);
+          const b = obdNutzbytes(await sende('2202BD', 6000), '6202BD');
+          if (b.length >= 4) km_stand = b[1] * 65536 + b[2] * 256 + b[3];
+        } catch (e) { /* ohne Kilometerstand weiter */ }
+        return { soc: Math.round(anzeigeAusBms(bms)), bms: Math.round(bms * 10) / 10, km_stand };
       } finally {
         try { obdGeraet.gatt.disconnect(); } catch (e) { /* schon getrennt */ }
       }
@@ -1342,17 +1377,17 @@
     /** Adapterwert als „Akku jetzt": ohne laufende Fahrt beginnt eine, sonst neuer Stand (Fahrtbeginn bleibt für die Kalibrierung). */
     function uebernimmAdapter(w) {
       const pos = planung.pos || aktuellePosition();
-      zustand.adapter = { soc: w.soc, bms: w.bms, zeit: Date.now() };
+      zustand.adapter = { soc: w.soc, bms: w.bms, km_stand: w.km_stand, zeit: Date.now() };
       if (!pos) { speichere(); render(); return; }
       const route = aktuelleRoute();
       const pr = projiziere(route.linie, pos.lat, pos.lon, lat0Von(route));
-      const stand = { soc: w.soc, bms: w.bms, zeit: Date.now(), km: pr.km, hm_hin: pr.hm_hin, hm_rueck: pr.hm_rueck, q: pr.q };
+      const stand = { soc: w.soc, bms: w.bms, km_stand: w.km_stand, zeit: Date.now(), km: pr.km, hm_hin: pr.hm_hin, hm_rueck: pr.hm_rueck, q: pr.q };
       const f = zustand.fahrt;
       if (f && f.route === route.id && f.richtung === zustand.richtung) {
         f.stand = stand;
       } else {
         zustand.fahrt = {
-          start_soc: w.soc, start_bms: w.bms, quelle: 'Adapter', start_zeit: new Date().toISOString(), start_lat: pos.lat, start_lon: pos.lon,
+          start_soc: w.soc, start_bms: w.bms, start_km_stand: w.km_stand, quelle: 'Adapter', start_zeit: new Date().toISOString(), start_lat: pos.lat, start_lon: pos.lon,
           route: route.id, route_name: route.name, richtung: zustand.richtung,
           start: { km: pr.km, hm_hin: pr.hm_hin, hm_rueck: pr.hm_rueck, q: pr.q },
         };
