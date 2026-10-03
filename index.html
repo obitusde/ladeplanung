@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.23.1 — Akkustand wandert beim Umstellen der Strecke auch nach einem Zwischenwert mit (solange seitdem nicht
+                   gefahren); Einstellungen zeigen den letzten Adapterwert mit BMS-Rohwert.
   Version 0.23.0 — Fahrt-Leiste zeigt nur noch „Akku jetzt ≈ x %"; Adapter ohne Geräteauswahl, wenn Chrome getDevices
                    anbietet (Flag „Web Bluetooth new permissions backend").
   Version 0.22.1 — Info-Seite: „Kurz: so nutzt du sie", „Die Knöpfe" (Standort, Fahrt-Leiste, ✕, Fahrt beenden, Erinnerung),
@@ -434,6 +436,7 @@
       <h3>OBD-Adapter</h3>
       <label class="schalter"><input type="checkbox" id="e-obd"> Akku beim Tippen auf „Standort“ über den Adapter lesen</label>
       <p class="klein">Veepeak OBDCheck BLE+ im Auto, Zündung an. Beim ersten Mal den Adapter in der Liste wählen. Liest nur auf Knopfdruck, nichts im Hintergrund.</p>
+      <p class="klein" id="e-adapter"></p>
       <p class="klein" id="e-tempo"></p>
       <p class="klein" id="version"></p>
       <button class="knopf haupt" value="ok" style="width:100%">Fertig</button>
@@ -445,7 +448,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.23.0';
+    const APP_VERSION = '0.23.1';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -1281,10 +1284,17 @@
         die Fahrt wandert mit, sonst gälte der Akkustand nur für die alte Auswahl (Christof, 03.10.2026). */
     function fahrtMitnehmen(route, pos) {
       const f = zustand.fahrt;
-      if (!f || f.stand || (f.route === route.id && f.richtung === zustand.richtung)) return;
-      if (pos.planung || haversine(f.start_lat, f.start_lon, pos.lat, pos.lon) > 1) return;
-      const pr = projiziere(route.linie, f.start_lat, f.start_lon, lat0Von(route));
+      if (!f || pos.planung || (f.route === route.id && f.richtung === zustand.richtung)) return;
+      // Bezugsort: letzter Adapterwert (ab v0.23.1 mit Position), sonst der Start
+      const letzt = f.stand && f.stand.lat !== undefined ? f.stand : null;
+      if (f.stand && !letzt) return;
+      const ort = letzt || { lat: f.start_lat, lon: f.start_lon };
+      if (haversine(ort.lat, ort.lon, pos.lat, pos.lon) > 1) return;
+      const pr = projiziere(route.linie, ort.lat, ort.lon, lat0Von(route));
       if (pr.q > QUER_MAX_KM) return;
+      // Seit dem letzten Wert nicht gefahren: die Fahrt beginnt dort neu (der Weg davor gehört zur alten Auswahl)
+      if (letzt) Object.assign(f, { start_soc: letzt.soc, start_bms: letzt.bms, start_km_stand: letzt.km_stand,
+        start_zeit: new Date(letzt.zeit).toISOString(), start_lat: letzt.lat, start_lon: letzt.lon, stand: null });
       Object.assign(f, { route: route.id, route_name: route.name, richtung: zustand.richtung,
         start: { km: pr.km, hm_hin: pr.hm_hin, hm_rueck: pr.hm_rueck, q: pr.q } });
       speichere();
@@ -1445,7 +1455,7 @@
       if (!pos) { speichere(); render(); return false; }
       const route = aktuelleRoute();
       const pr = projiziere(route.linie, pos.lat, pos.lon, lat0Von(route));
-      const stand = { soc: w.soc, bms: w.bms, km_stand: w.km_stand, zeit: Date.now(), km: pr.km, hm_hin: pr.hm_hin, hm_rueck: pr.hm_rueck, q: pr.q };
+      const stand = { soc: w.soc, bms: w.bms, km_stand: w.km_stand, zeit: Date.now(), lat: pos.lat, lon: pos.lon, km: pr.km, hm_hin: pr.hm_hin, hm_rueck: pr.hm_rueck, q: pr.q };
       const f = zustand.fahrt;
       // Mehr Akku als beim letzten Wert → unterwegs geladen: alte Messung endet (ohne Kalibrierung), neue beginnt
       const vorher = f ? (f.stand ? f.stand.soc : f.start_soc) : null;
@@ -1525,6 +1535,9 @@
       $('e-temperatur').value = zustand.einst.temperatur;
       $('e-reserve').value = zustand.einst.reserve;
       $('e-obd').checked = !!zustand.einst.obd;
+      const ad = zustand.adapter;   // Rohwert zum Nachstellen der Umrechnung (Display-% gegen BMS-%)
+      $('e-adapter').textContent = ad ? 'Letzter Adapterwert ' + uhrzeit(ad.zeit) + ': ' + ad.soc + ' % (BMS ' + String(ad.bms).replace('.', ',') + ' %' +
+        (ad.km_stand ? ', ' + ad.km_stand.toLocaleString('de-CH') + ' km' : '') + ')' : '';
       $('version').textContent = 'App v' + APP_VERSION + ' · Daten v' + (daten.version || '?');
       einstellungenOffen = true;
       $('dlg').showModal();
