@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.21.1 — Route oder Richtung umgestellt, bevor losgefahren (< 1 km vom Start): die Fahrt mit dem Akkustand
+                   wandert mit (vorher galt „mit 15 %“ nur für die alte Auswahl, die Liste rechnete mit vollem Akku).
   Version 0.21.0 — Adapter liest auch den Kilometerstand; „Angekommen" übergibt die gefahrenen km vom Kilometerzähler
                    (statt aus der Route), wenn Start und Ankunft per Adapter gelesen wurden.
   Version 0.20.1 — Adapter: Akkustand bis zu dreimal abfragen (BMS antwortete einmal mit NO DATA).
@@ -405,7 +407,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.21.0';
+    const APP_VERSION = '0.21.1';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -943,6 +945,7 @@
         return;
       }
 
+      fahrtMitnehmen(route, pos);
       let erg = berechneListe(daten, route.id, zustand.richtung, pos.lat, pos.lon);
       // Weit weg von der Route: ab dem gewählten Startort planen statt Luftlinie (Christof, 20.09.2026)
       planung = { pos: pos, abStart: null };
@@ -1230,6 +1233,19 @@
       zustand.ankunft = { url, zeit: Date.now() };
       speichere();
       render();
+    }
+
+    /** Route oder Richtung umgestellt, aber noch nicht losgefahren (unter 1 km vom Start, kein Zwischenstand):
+        die Fahrt wandert mit, sonst gälte der Akkustand nur für die alte Auswahl (Christof, 03.10.2026). */
+    function fahrtMitnehmen(route, pos) {
+      const f = zustand.fahrt;
+      if (!f || f.stand || (f.route === route.id && f.richtung === zustand.richtung)) return;
+      if (pos.planung || haversine(f.start_lat, f.start_lon, pos.lat, pos.lon) > 1) return;
+      const pr = projiziere(route.linie, f.start_lat, f.start_lon, lat0Von(route));
+      if (pr.q > QUER_MAX_KM) return;
+      Object.assign(f, { route: route.id, route_name: route.name, richtung: zustand.richtung,
+        start: { km: pr.km, hm_hin: pr.hm_hin, hm_rueck: pr.hm_rueck, q: pr.q } });
+      speichere();
     }
 
     function verwerfeFahrt() {
