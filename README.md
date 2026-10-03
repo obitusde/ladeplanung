@@ -26,7 +26,7 @@ Ausführlich in der App unter ☰ → **ⓘ So funktioniert die App**. Kurz:
 | ☰ → **Ladepunkt / Route hinzufügen** | Per geteiltem Google-Maps-Link; wird automatisch veröffentlicht. |
 | ☰ → **Wartung & Status** | Status, Routen berechnen, Sheet-Änderungen veröffentlichen, neu kalibrieren – mit Erklärung, wann was nötig ist. |
 
-**OBD-Adapter** (Veepeak OBDCheck BLE+): in den Einstellungen einschalten, Zündung an, Bluetooth an. Beim ersten Tipp nach dem Öffnen der App in der Geräteliste *VEEPEAK* wählen. Zum Ausprobieren gibt es [`obd-test.html`](https://obitusde.github.io/ladeplanung/obd-test.html).
+**OBD-Adapter** (Veepeak OBDCheck BLE+): in den Einstellungen einschalten, Zündung an, Bluetooth an. Beim ersten Tipp nach dem Öffnen der App in der Geräteliste *VEEPEAK* wählen. Ganz ohne Liste: in Chrome `chrome://flags` → „Use the new permissions backend for Web Bluetooth" → Enabled. Zum Ausprobieren gibt es [`obd-test.html`](https://obitusde.github.io/ladeplanung/obd-test.html).
 
 Formulare (Bearbeiten, Wartung, Kalibrieren, Preise) laufen als Google-Apps-Script-Web-App und gehen nur mit Christofs Google-Konto.
 

@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.23.0 — Fahrt-Leiste zeigt nur noch „Akku jetzt ≈ x %"; Adapter ohne Geräteauswahl, wenn Chrome getDevices
+                   anbietet (Flag „Web Bluetooth new permissions backend").
   Version 0.22.1 — Info-Seite: „Kurz: so nutzt du sie", „Die Knöpfe" (Standort, Fahrt-Leiste, ✕, Fahrt beenden, Erinnerung),
                    Einstellungen, Details vollständig, Ladepreise/Preise aktualisieren.
   Version 0.22.0 — „Angekommen" heißt jetzt „Fahrt beenden" (vor dem Laden oder am Ziel); Adapter erkennt Laden
@@ -298,7 +300,7 @@
     <ul>
       <li><b>Standort:</b> holt die aktuelle GPS-Position und rechnet die Liste neu (beim Öffnen der App passiert das von selbst). Mit eingeschaltetem Adapter liest derselbe Tipp auch Akku und Kilometerstand. Aufgezeichnet wird nichts – nur in dem Moment, in dem du tippst.</li>
       <li><b>Akku jetzt … ✓:</b> Akkustand von Hand; damit beginnt eine „Fahrt".</li>
-      <li><b>Fahrt-Leiste</b> („16:09 mit 80 % · jetzt ≈ 62 %"): Startwert, ggf. der letzte Adapterwert, und der geschätzte Akku jetzt.
+      <li><b>Fahrt-Leiste</b> („Akku jetzt ≈ 62 %"): letzter Akkustand minus dem geschätzten Verbrauch seither.
         <b>Fahrt beenden</b> öffnet das Kalibrierformular (vor dem Laden oder am Ziel).
         <b>✕</b> verwirft die Fahrt ohne Kalibrierung – z. B. nach einem Test oder einem Tippfehler; danach erscheint wieder „Akku jetzt".</li>
       <li><b>„Fahrt beendet … – Kalibrierung noch offen?":</b> Erinnerung, falls das Formular nicht abgeschickt wurde. <b>Kalibrieren</b> öffnet es nochmals, <b>✕</b> blendet die Erinnerung aus.</li>
@@ -311,7 +313,7 @@
       <li><b>Zusatzgewicht:</b> Mitfahrer und Gepäck – du als Fahrer (80 kg) bist schon eingerechnet.</li>
       <li><b>Reserve:</b> darunter erscheint der Rest bei Ankunft <span class="rot"><b>rot</b></span>; „letzte vor Reserve" bezieht sich darauf.</li>
       <li><b>Temperatur:</b> leer lassen = automatisch vom Wetter am Standort.</li>
-      <li><b>OBD-Adapter:</b> Veepeak OBDCheck BLE+ steckt im Auto, Zündung an, Bluetooth am Handy an. Beim ersten Tipp nach dem Öffnen der App kommt eine Geräteliste – dort <b>VEEPEAK</b> wählen, danach nicht mehr. Klappt das Lesen nicht, erscheint eine kurze Meldung und du trägst den Akku wie gewohnt ein.</li>
+      <li><b>OBD-Adapter:</b> Veepeak OBDCheck BLE+ steckt im Auto, Zündung an, Bluetooth am Handy an. Beim ersten Tipp nach dem Öffnen der App kommt eine Geräteliste – dort <b>VEEPEAK</b> wählen, danach nicht mehr. Damit die Liste ganz wegfällt: in Chrome <code>chrome://flags</code> öffnen, nach „Web Bluetooth" suchen, <b>Use the new permissions backend for Web Bluetooth</b> auf <b>Enabled</b> stellen und Chrome neu starten. Klappt das Lesen nicht, erscheint eine kurze Meldung und du trägst den Akku wie gewohnt ein.</li>
     </ul>
 
     <h3>So entsteht die Liste</h3>
@@ -443,7 +445,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.22.1';
+    const APP_VERSION = '0.23.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -1086,10 +1088,14 @@
       if (f) {
         leiste.className = 'fahrt laeuft';
         const jetzt = erg && erg.modus === 'strecke' ? akkuJetzt(route.id, erg.pos) : null;
-        let text = uhrzeit(new Date(f.start_zeit).getTime()) + ' mit ' + f.start_soc + ' %' + (f.quelle === 'Adapter' ? ' (Adapter)' : '');
-        if (f.stand) text += ' · ' + uhrzeit(f.stand.zeit) + ' ' + f.stand.soc + ' % (Adapter)';
-        if (jetzt !== null) text += ' · jetzt ≈ ' + Math.max(0, Math.round(jetzt)) + ' %';
-        else if (f.route !== route.id || f.richtung !== zustand.richtung) text += ' (' + f.route_name + ', ' + (f.richtung === 'hin' ? 'Hinfahrt' : 'Rückfahrt') + ')';
+        // Nur der Stand jetzt (Christof, 03.10.2026); Start- und Adapterwerte bleiben intern für die Kalibrierung
+        let text;
+        if (jetzt !== null) text = 'Akku jetzt ≈ ' + Math.max(0, Math.round(jetzt)) + ' %';
+        else {
+          const letzt = f.stand || { soc: f.start_soc, zeit: new Date(f.start_zeit).getTime() };
+          text = 'Akku ' + letzt.soc + ' % um ' + uhrzeit(letzt.zeit);
+          if (f.route !== route.id || f.richtung !== zustand.richtung) text += ' (' + f.route_name + ', ' + (f.richtung === 'hin' ? 'Hinfahrt' : 'Rückfahrt') + ')';
+        }
         leiste.append(el('span', 'text', text), knopf('Fahrt beenden', 'haupt', angekommen, 'Fahrt beenden – vor dem Laden oder am Ziel, für die Kalibrierung'), knopf('✕', '', verwerfeFahrt, 'Akkustand verwerfen'));
         return;
       }
@@ -1356,6 +1362,13 @@
     /** Verbindet, liest 22028C (Akku) und 2202BD (Kilometerstand), trennt. Ergebnis { soc (Display, ganze %), bms, km_stand|null }. */
     async function leseAdapter() {
       if (!navigator.bluetooth) throw new Error('Bluetooth im Browser nicht verfügbar');
+      // Schon einmal erlaubter Adapter ohne Geräteauswahl – geht nur, wenn Chrome getDevices kennt (Flag, s. Info-Seite)
+      if (!obdGeraet && navigator.bluetooth.getDevices) {
+        try {
+          const erlaubt = await navigator.bluetooth.getDevices();
+          obdGeraet = erlaubt.find(d => /veepeak|obd/i.test(d.name || '')) || erlaubt[0] || null;
+        } catch (e) { obdGeraet = null; }
+      }
       if (!obdGeraet) obdGeraet = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: OBD_DIENSTE });
       const server = await mitZeitlimit(obdGeraet.gatt.connect(), 10000, 'Adapter nicht erreichbar – Auto an?');
       try {
