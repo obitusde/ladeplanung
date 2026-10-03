@@ -1,6 +1,7 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.19.4 — Texte: „Fahrt beenden" statt „Angekommen" (App v0.22.0).
  * Version 0.19.3 — Formularseiten auf dem Handy hochskaliert, wenn sie in Desktop-Breite erscheinen (Text war zu klein).
  * Version 0.19.2 — Kalibrierformular zeigt, wenn die km vom Kilometerzähler stammen (App v0.21.0).
  * Version 0.19.1 — Kalibrierformular übernimmt „Akku bei Ankunft“ vom OBD-Adapter (App v0.20.0).
@@ -49,7 +50,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.19.3';
+const VERSION = '0.19.4';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -190,7 +191,7 @@ function doGet(e) {
   if (p.seite === 'kalibrieren') {
     let fahrt = null;
     try { fahrt = JSON.parse(p.fahrt || ''); } catch (e) { fahrt = null; }
-    if (!fahrt || typeof fahrt !== 'object') return einfacheSeite_('Keine Fahrtdaten übergeben – bitte in der App „Angekommen" tippen.');
+    if (!fahrt || typeof fahrt !== 'object') return einfacheSeite_('Keine Fahrtdaten übergeben – bitte in der App „Fahrt beenden" tippen.');
     modell.fahrt = fahrt;
     const seite = HtmlService.createTemplateFromFile('Kalibrieren');
     seite.modellJson = JSON.stringify(modell).replace(/</g, '\\u003c');
@@ -465,7 +466,7 @@ function wartungStatus_() {
 
 // ---------------------------------------------------------------------------
 // Verbrauchsmodell (Christof, 15.09.2026). Die App errechnet den Akkubedarf je Strecke.
-// Optional: „Losfahren" / „Angekommen" in der App → Formular → Zeile im Blatt „Fahrten" →
+// Optional: „Akku jetzt" / „Fahrt beenden" in der App → Formular → Zeile im Blatt „Fahrten" →
 // Kalibrierung über alle gespeicherten Fahrten → modell.json im Repo.
 // Physikalischer Kern identisch zu energieAnteile() in index.html (geprüft in tests/test-modell.js).
 // Startwerte abgeglichen mit EV Database, Born 58 kWh bei 110 km/h:

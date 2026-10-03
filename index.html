@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.22.0 — „Angekommen" heißt jetzt „Fahrt beenden" (vor dem Laden oder am Ziel); Adapter erkennt Laden
+                   (mehr Akku als zuvor) und beginnt eine neue Fahrt; Info-Text zum Adapter.
   Version 0.21.1 — Route oder Richtung umgestellt, bevor losgefahren (< 1 km vom Start): die Fahrt mit dem Akkustand
                    wandert mit (vorher galt „mit 15 %“ nur für die alte Auswahl, die Liste rechnete mit vollem Akku).
   Version 0.21.0 — Adapter liest auch den Kilometerstand; „Angekommen" übergibt die gefahrenen km vom Kilometerzähler
@@ -309,7 +311,8 @@
     <p>Der Akkubedarf bis zu jeder Station wird aus Strecke, Höhenmetern, dem <b>Reisetempo</b>, dem <b>Zusatzgewicht</b> (Menü → Einstellungen) und der <b>Außentemperatur</b> geschätzt. Die Temperatur ist der Durchschnitt aus jetzt und in drei Stunden am Standort – oder dein eigener Wert.</p>
     <p><b>Das Reisetempo</b> stellst du nicht mehr selbst ein: Es ist der Schnitt der gewählten Route laut Routendienst (inklusive Kurven und Ortsdurchfahrten), also z. B. 103 km/h nach Ingolstadt und 87 km/h über den Simplon. Sobald du echte Fahrten mit dem Ø-Tempo des Bordcomputers kalibriert hast, passt die App diesen Schnitt an deine Fahrweise an; unten steht dann „(gemessen)" statt „(Route)".</p>
     <p>Das Tempo hat den größten Einfluss: 130 statt 110 km/h brauchen rund ein Viertel mehr. 1000 Höhenmeter bergauf kosten etwa 11 % Akku, bergab kommt gut ein Drittel davon zurück.</p>
-    <p><b>Optional:</b> Trägst du oben „Akku jetzt" ein und tippst <b>✓</b>, rechnet die Liste mit diesem Stand und zieht unterwegs den Verbrauch ab. „Angekommen" öffnet ein kurzes Formular: echter Akkustand rein, fertig – daraus lernt das Modell und wird mit jeder Fahrt genauer. Ohne Eintrag rechnet die App mit vollem Akku.</p>
+    <p><b>Optional:</b> Trägst du oben „Akku jetzt" ein und tippst <b>✓</b>, rechnet die Liste mit diesem Stand und zieht unterwegs den Verbrauch ab. „Fahrt beenden" (vor dem Laden oder am Ziel) öffnet ein kurzes Formular: echter Akkustand rein, fertig – daraus lernt das Modell. Ein paar Fahrten reichen, danach kannst du es weglassen. Ohne Eintrag rechnet die App mit vollem Akku.</p>
+    <p><b>OBD-Adapter:</b> In den Einstellungen einschalten, dann liest jedes Tippen auf „Standort" den Akkustand. Das aktualisiert nur „jetzt ≈" – kalibriert wird nur über „Fahrt beenden". Zeigt der Adapter mehr Akku als vorher, erkennt die App das Laden und beginnt eine neue Fahrt.</p>
     <p><b>Vergleichswerte:</b> In den Details einer Station „Vergleichswert eintragen" – Strecke in ABRP oder My CUPRA planen und die beiden Akkuwerte abschreiben. Das hilft dem Modell schon vor der ersten Fahrt; echte Fahrten zählen aber mehr.</p>
     <p id="info-modell" class="klein-hinweis"></p>
 
@@ -407,7 +410,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.21.1';
+    const APP_VERSION = '0.22.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -1054,14 +1057,14 @@
         if (f.stand) text += ' · ' + uhrzeit(f.stand.zeit) + ' ' + f.stand.soc + ' % (Adapter)';
         if (jetzt !== null) text += ' · jetzt ≈ ' + Math.max(0, Math.round(jetzt)) + ' %';
         else if (f.route !== route.id || f.richtung !== zustand.richtung) text += ' (' + f.route_name + ', ' + (f.richtung === 'hin' ? 'Hinfahrt' : 'Rückfahrt') + ')';
-        leiste.append(el('span', 'text', text), knopf('Angekommen', 'haupt', angekommen), knopf('✕', '', verwerfeFahrt, 'Akkustand verwerfen'));
+        leiste.append(el('span', 'text', text), knopf('Fahrt beenden', 'haupt', angekommen, 'Fahrt beenden – vor dem Laden oder am Ziel, für die Kalibrierung'), knopf('✕', '', verwerfeFahrt, 'Akkustand verwerfen'));
         return;
       }
       const a = zustand.ankunft;
       if (a && Date.now() - a.zeit < ANKUNFT_OFFEN_MS) {
         const link = el('a', 'knopf', 'Kalibrieren');
         link.href = a.url; link.target = '_blank'; link.rel = 'noopener';
-        leiste.append(el('span', 'text', 'Angekommen ' + uhrzeit(a.zeit) + ' – Kalibrierung noch offen?'), link,
+        leiste.append(el('span', 'text', 'Fahrt beendet ' + uhrzeit(a.zeit) + ' – Kalibrierung noch offen?'), link,
           knopf('✕', '', () => { zustand.ankunft = null; speichere(); render(); }, 'Erinnerung ausblenden'));
         return;
       }
@@ -1289,7 +1292,7 @@
 
     const OBD_DIENSTE = [0xfff0, 0xffe0, 0x18f0, 'e7810a71-73ae-499d-8c15-faa9aef0c3f2', '6e400001-b5a3-f393-e0a9-e50e24dcca9e'];
     const OBD_INIT = ['ATZ', 'ATE0', 'ATL0', 'ATS1', 'ATH1', 'ATSP7', 'ATCP17', 'ATSHFC007B', 'ATCRA17FE007B', 'ATAT1', 'ATST96'];
-    const ADAPTER_FRISCH_MS = 10 * 60e3;   // so alt darf der Adapterwert bei „Angekommen" sein
+    const ADAPTER_FRISCH_MS = 10 * 60e3;   // so alt darf der Adapterwert bei „Fahrt beenden" sein
     let obdGeraet = null;     // bleibt bis zum Neuladen der Seite erhalten → zweites Lesen ohne Geräteauswahl
     let obdLaeuft = false;
 
@@ -1381,8 +1384,7 @@
       try {
         const w = await leseAdapter();
         for (let i = 0; i < 50 && gpsLaeuft; i++) await new Promise(r => setTimeout(r, 500));   // auf den Standort warten
-        uebernimmAdapter(w);
-        toast('Akku ' + w.soc + ' % (Adapter)');
+        if (!uebernimmAdapter(w)) toast('Akku ' + w.soc + ' % (Adapter)');
       } catch (e) {
         if (e && e.name === 'NotFoundError') toast('Adapter-Auswahl abgebrochen');
         else { toast('Adapter: ' + (e && e.message || e)); obdGeraet = null; }
@@ -1394,12 +1396,16 @@
     function uebernimmAdapter(w) {
       const pos = planung.pos || aktuellePosition();
       zustand.adapter = { soc: w.soc, bms: w.bms, km_stand: w.km_stand, zeit: Date.now() };
-      if (!pos) { speichere(); render(); return; }
+      if (!pos) { speichere(); render(); return false; }
       const route = aktuelleRoute();
       const pr = projiziere(route.linie, pos.lat, pos.lon, lat0Von(route));
       const stand = { soc: w.soc, bms: w.bms, km_stand: w.km_stand, zeit: Date.now(), km: pr.km, hm_hin: pr.hm_hin, hm_rueck: pr.hm_rueck, q: pr.q };
       const f = zustand.fahrt;
-      if (f && f.route === route.id && f.richtung === zustand.richtung) {
+      // Mehr Akku als beim letzten Wert → unterwegs geladen: alte Messung endet (ohne Kalibrierung), neue beginnt
+      const vorher = f ? (f.stand ? f.stand.soc : f.start_soc) : null;
+      const geladen = vorher !== null && w.soc > vorher + 2;
+      if (geladen) toast('Geladen erkannt (' + vorher + ' → ' + w.soc + ' %) – neue Fahrt');
+      if (f && !geladen && f.route === route.id && f.richtung === zustand.richtung) {
         f.stand = stand;
       } else {
         zustand.fahrt = {
@@ -1411,6 +1417,7 @@
       }
       speichere();
       render();
+      return geladen;   // true: eigene Meldung schon gezeigt
     }
 
     // -----------------------------------------------------------------------
