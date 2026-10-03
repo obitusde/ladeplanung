@@ -1,6 +1,7 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.19.1 — Kalibrierformular übernimmt „Akku bei Ankunft“ vom OBD-Adapter (App v0.20.0).
  * Version 0.19.0 — Reisetempo kommt aus der Route (Fahrzeit des Routendienstes); sobald echte Fahrten mit
  *                  Bordcomputer-Tempo vorliegen, wird daraus ein Faktor je Route gelernt (modell.json: tempo).
  * Version 0.18.2 — Vergleichsformular: Fahrzeit-Feld mit normaler Tastatur („:“ war nicht eingebbar).
@@ -46,7 +47,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.19.0';
+const VERSION = '0.19.1';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';

@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.20.0 — Akkustand über den OBD-Adapter (Veepeak BLE+, Web Bluetooth): beim Tippen auf „Standort“ gelesen,
+                   wenn in den Einstellungen eingeschaltet; ohne Fahrt beginnt eine, sonst neuer Stand für „jetzt ≈";
+                   „Angekommen" übergibt den letzten Adapterwert (≤ 10 min) an die Kalibrierung.
   Version 0.19.0 — App des Betreibers direkt aus der Liste und aus den Details starten (Android-Intent, sonst Google Play);
                    Belegung über Google Maps (zeigt bei vielen Betreibern „12/12"); Migrol-Preise nach der offiziellen Tabelle.
   Version 0.18.2 — Liegt der Standort mehr als 10 km neben der gewählten Route, plant die App ab dem gewählten
@@ -385,6 +388,9 @@
       </div>
       <label>Temperatur (°C) <input type="number" id="e-temperatur" inputmode="decimal" min="-30" max="45" placeholder="automatisch"></label>
       <p class="klein">Temperatur leer lassen = automatisch vom Wetter. Stationen mit Ankunft unter der Reserve erscheinen rot.</p>
+      <h3>OBD-Adapter</h3>
+      <label class="schalter"><input type="checkbox" id="e-obd"> Akku beim Tippen auf „Standort“ über den Adapter lesen</label>
+      <p class="klein">Veepeak OBDCheck BLE+ im Auto, Zündung an. Beim ersten Mal den Adapter in der Liste wählen. Liest nur auf Knopfdruck, nichts im Hintergrund.</p>
       <p class="klein" id="e-tempo"></p>
       <p class="klein" id="version"></p>
       <button class="knopf haupt" value="ok" style="width:100%">Fertig</button>
@@ -396,7 +402,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.19.0';
+    const APP_VERSION = '0.20.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -569,7 +575,8 @@
       const standard = {
         route: null, richtung: 'hin',
         sim: { aktiv: false, lat: null, lon: null, label: '' },
-        einst: { geschwindigkeit: 120, zusatzgewicht: 0, temperatur: '', reserve: 10 },
+        einst: { geschwindigkeit: 120, zusatzgewicht: 0, temperatur: '', reserve: 10, obd: false },
+        adapter: null,   // { soc, bms, zeit } — letzter Wert vom OBD-Adapter
         wetter: null,    // { temp, zeit, lat, lon }
         fahrt: null,     // { start_soc, start_zeit, start_lat, start_lon, route, route_name, richtung, start: {km, hm_hin, hm_rueck, q} }
         ankunft: null,   // { url, zeit } — Kalibrierung geöffnet, zur Erinnerung
@@ -804,6 +811,7 @@
     function akkuJetzt(routeId, pos) {
       const f = zustand.fahrt;
       if (!f || !pos || f.route !== routeId || f.richtung !== zustand.richtung) return null;
+      if (f.stand) return f.stand.soc - bedarf(f.richtung, f.stand, pos, 0).prozent;   // letzter Adapterwert unterwegs
       return f.start_soc - bedarf(f.richtung, f.start, pos, 0).prozent;
     }
 
@@ -1036,7 +1044,8 @@
       if (f) {
         leiste.className = 'fahrt laeuft';
         const jetzt = erg && erg.modus === 'strecke' ? akkuJetzt(route.id, erg.pos) : null;
-        let text = uhrzeit(new Date(f.start_zeit).getTime()) + ' mit ' + f.start_soc + ' %';
+        let text = uhrzeit(new Date(f.start_zeit).getTime()) + ' mit ' + f.start_soc + ' %' + (f.quelle === 'Adapter' ? ' (Adapter)' : '');
+        if (f.stand) text += ' · ' + uhrzeit(f.stand.zeit) + ' ' + f.stand.soc + ' % (Adapter)';
         if (jetzt !== null) text += ' · jetzt ≈ ' + Math.max(0, Math.round(jetzt)) + ' %';
         else if (f.route !== route.id || f.richtung !== zustand.richtung) text += ' (' + f.route_name + ', ' + (f.richtung === 'hin' ? 'Hinfahrt' : 'Rückfahrt') + ')';
         leiste.append(el('span', 'text', text), knopf('Angekommen', 'haupt', angekommen), knopf('✕', '', verwerfeFahrt, 'Akkustand verwerfen'));
@@ -1198,6 +1207,8 @@
         geschwindigkeit: tempo(route).wert, zusatzgewicht: Number(zustand.einst.zusatzgewicht) || 0,
         quer_warnung: f.start.q > 2 || pr.q > 2,
       };
+      const ad = zustand.adapter;
+      if (ad && Date.now() - ad.zeit < ADAPTER_FRISCH_MS) fahrt.ende_soc = ad.soc;   // Kalibrierformular vorbefüllen
       const url = FORMULAR_URL + '?seite=kalibrieren&fahrt=' + encodeURIComponent(JSON.stringify(fahrt));
       window.open(url, '_blank', 'noopener');
       zustand.fahrt = null;
@@ -1238,6 +1249,111 @@
         },
         { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
       );
+    }
+
+    // -----------------------------------------------------------------------
+    // OBD-Adapter (Veepeak OBDCheck BLE+, ELM327 über Web Bluetooth) — nur auf Knopfdruck, keine Daueraufzeichnung
+    // Getestet 03.10.2026 (obd-test.html): BMS antwortet auf 22028C mit 29-Bit-Kopf 17FC007B → 17FE007B.
+    // -----------------------------------------------------------------------
+
+    const OBD_DIENSTE = [0xfff0, 0xffe0, 0x18f0, 'e7810a71-73ae-499d-8c15-faa9aef0c3f2', '6e400001-b5a3-f393-e0a9-e50e24dcca9e'];
+    const OBD_INIT = ['ATZ', 'ATE0', 'ATL0', 'ATS1', 'ATH1', 'ATSP7', 'ATCP17', 'ATSHFC007B', 'ATCRA17FE007B', 'ATAT1', 'ATST96'];
+    const ADAPTER_FRISCH_MS = 10 * 60e3;   // so alt darf der Adapterwert bei „Angekommen" sein
+    let obdGeraet = null;     // bleibt bis zum Neuladen der Seite erhalten → zweites Lesen ohne Geräteauswahl
+    let obdLaeuft = false;
+
+    /** Akkustand wie im Auto-Display aus dem BMS-Wert (Rohbyte/2,5). Vorläufig aus einem Messpunkt
+        (BMS 18,4 % = Display 15 %, 03.10.2026) und dem üblichen MEB-Fenster 4,5–96 %; zweiter Punkt bei hohem Akku folgt. */
+    function anzeigeAusBms(bms) {
+      return Math.max(0, Math.min(100, (bms - 4.5) * 100 / 91.5));
+    }
+
+    function mitZeitlimit(p, ms, was) {
+      return Promise.race([p, new Promise((_, nein) => setTimeout(() => nein(new Error(was)), ms))]);
+    }
+
+    /** Verbindet, liest 22028C, trennt. Ergebnis { soc (Display, ganze %), bms }. */
+    async function leseAdapter() {
+      if (!navigator.bluetooth) throw new Error('Bluetooth im Browser nicht verfügbar');
+      if (!obdGeraet) obdGeraet = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: OBD_DIENSTE });
+      const server = await mitZeitlimit(obdGeraet.gatt.connect(), 10000, 'Adapter nicht erreichbar – Auto an?');
+      try {
+        let schreib = null, puffer = '', warte = null;
+        for (const s of await server.getPrimaryServices()) {
+          let chars = [];
+          try { chars = await s.getCharacteristics(); } catch (e) { continue; }
+          for (const c of chars) {
+            const p = c.properties;
+            if (p.notify || p.indicate) {   // Veepeak meldet ffea und fff1, Antworten kommen über fff1 → auf allen hören
+              c.addEventListener('characteristicvaluechanged', e => {
+                puffer += new TextDecoder().decode(e.target.value);
+                if (puffer.includes('>') && warte) { const w = warte; warte = null; w(); }
+              });
+              try { await c.startNotifications(); } catch (e) { /* anderes Merkmal reicht */ }
+            }
+            if (!schreib && (p.write || p.writeWithoutResponse)) schreib = c;
+          }
+        }
+        if (!schreib) throw new Error('Adapter unbekannt (kein Schreibkanal)');
+        const sende = async (cmd, ms) => {
+          puffer = '';
+          const fertig = new Promise(ja => { warte = ja; });
+          const d = new TextEncoder().encode(cmd + '\r');
+          if (schreib.properties.writeWithoutResponse) await schreib.writeValueWithoutResponse(d); else await schreib.writeValue(d);
+          await mitZeitlimit(fertig, ms || 4000, 'Adapter antwortet nicht');
+          return puffer;
+        };
+        for (const c of OBD_INIT) await sende(c, c === 'ATZ' ? 5000 : 4000);
+        const hex = (await sende('22028C', 6000)).replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
+        const i = hex.indexOf('62028C');
+        if (i < 0) throw new Error('Auto liefert keinen Akkustand – Zündung an?');
+        const bms = parseInt(hex.slice(i + 6, i + 8), 16) / 2.5;
+        if (!(bms >= 0 && bms <= 100)) throw new Error('Akkuwert unplausibel');
+        return { soc: Math.round(anzeigeAusBms(bms)), bms: Math.round(bms * 10) / 10 };
+      } finally {
+        try { obdGeraet.gatt.disconnect(); } catch (e) { /* schon getrennt */ }
+      }
+    }
+
+    /** Knopf „Standort": GPS und (falls eingeschaltet) Adapter gleichzeitig. */
+    async function standortKnopf() {
+      holeStandort();
+      if (!zustand.einst.obd || obdLaeuft) return;
+      obdLaeuft = true;
+      toast('Akku wird über den Adapter gelesen …');
+      try {
+        const w = await leseAdapter();
+        for (let i = 0; i < 50 && gpsLaeuft; i++) await new Promise(r => setTimeout(r, 500));   // auf den Standort warten
+        uebernimmAdapter(w);
+        toast('Akku ' + w.soc + ' % (Adapter)');
+      } catch (e) {
+        if (e && e.name === 'NotFoundError') toast('Adapter-Auswahl abgebrochen');
+        else { toast('Adapter: ' + (e && e.message || e)); obdGeraet = null; }
+      }
+      obdLaeuft = false;
+    }
+
+    /** Adapterwert als „Akku jetzt": ohne laufende Fahrt beginnt eine, sonst neuer Stand (Fahrtbeginn bleibt für die Kalibrierung). */
+    function uebernimmAdapter(w) {
+      const pos = planung.pos || aktuellePosition();
+      zustand.adapter = { soc: w.soc, bms: w.bms, zeit: Date.now() };
+      if (!pos) { speichere(); render(); return; }
+      const route = aktuelleRoute();
+      const pr = projiziere(route.linie, pos.lat, pos.lon, lat0Von(route));
+      const stand = { soc: w.soc, bms: w.bms, zeit: Date.now(), km: pr.km, hm_hin: pr.hm_hin, hm_rueck: pr.hm_rueck, q: pr.q };
+      const f = zustand.fahrt;
+      if (f && f.route === route.id && f.richtung === zustand.richtung) {
+        f.stand = stand;
+      } else {
+        zustand.fahrt = {
+          start_soc: w.soc, start_bms: w.bms, quelle: 'Adapter', start_zeit: new Date().toISOString(), start_lat: pos.lat, start_lon: pos.lon,
+          route: route.id, route_name: route.name, richtung: zustand.richtung,
+          start: { km: pr.km, hm_hin: pr.hm_hin, hm_rueck: pr.hm_rueck, q: pr.q },
+        };
+        zustand.ankunft = null;
+      }
+      speichere();
+      render();
     }
 
     // -----------------------------------------------------------------------
@@ -1298,6 +1414,7 @@
       $('e-zusatzgewicht').value = zustand.einst.zusatzgewicht;
       $('e-temperatur').value = zustand.einst.temperatur;
       $('e-reserve').value = zustand.einst.reserve;
+      $('e-obd').checked = !!zustand.einst.obd;
       $('version').textContent = 'App v' + APP_VERSION + ' · Daten v' + (daten.version || '?');
       einstellungenOffen = true;
       $('dlg').showModal();
@@ -1312,6 +1429,7 @@
       const zahlOder = (id, min, max, ersatz) => { const n = Number($(id).value); return $(id).value.trim() !== '' && n >= min && n <= max ? n : ersatz; };
       zustand.einst.zusatzgewicht = zahlOder('e-zusatzgewicht', 0, 1000, 0);
       zustand.einst.reserve = zahlOder('e-reserve', 0, 50, 10);
+      zustand.einst.obd = $('e-obd').checked;
       const temp = $('e-temperatur').value.trim();
       zustand.einst.temperatur = temp !== '' && Number(temp) >= -30 && Number(temp) <= 45 ? Number(temp) : '';
       speichere();
@@ -1390,7 +1508,7 @@
         speichere();
         render();
       });
-      $('standort').addEventListener('click', holeStandort);
+      $('standort').addEventListener('click', standortKnopf);
       $('menue').addEventListener('click', () => $('menue-dlg').showModal());
       $('menue-dlg').querySelectorAll('a.knopf').forEach(a => a.addEventListener('click', () => $('menue-dlg').close()));
       $('menue-dlg').querySelectorAll('button[data-m]').forEach(k => k.addEventListener('click', () => {

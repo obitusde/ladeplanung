@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung — OBD-Testseite für den Veepeak OBDCheck BLE+ (Web Bluetooth, ELM327)
+  Version 0.3.0 — Akku-Test nur noch mit dem bestätigten Befehlssatz (BMS 29 Bit); neu: Kilometerstand (2202BD) mit
+                  Flusskontrolle an 17FC007B (ATFCSH/ATFCSD/ATFCSM1), damit die mehrteilige Antwort ganz ankommt.
   Version 0.2.0 — Auf allen Benachrichtigungs-Merkmalen hören (v0.1.0 hörte nur auf ffea, Antworten kamen nicht an); Abbruch, wenn der Adapter nicht antwortet.
   Version 0.1.0 — Erster Test: verbinden, Akkustand mit mehreren Befehlssätzen lesen,
                   Wiederverbinden ohne Geräteauswahl prüfen, Protokoll kopieren.
@@ -34,7 +36,7 @@
 </head>
 <body>
 <h1>OBD-Test (Akkustand)</h1>
-<p class="klein">v0.2.0 · Adapter stecken, Auto einschalten, Veepeak-App schließen. Nicht in Android koppeln.</p>
+<p class="klein">v0.3.0 · Adapter stecken, Auto einschalten, Veepeak-App schließen. Nicht in Android koppeln.</p>
 
 <button id="alles" class="haupt">1. Alles testen</button>
 <button id="wieder">2. Danach: wieder verbinden ohne Auswahl</button>
@@ -54,7 +56,7 @@
 
 <script>
 'use strict';
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 
 // Bekannte Dienste von ELM327-BLE-Adaptern (Veepeak: FFF0, andere: FFE0, Vgate, Nordic UART)
 const DIENSTE = [
@@ -144,9 +146,15 @@ async function trennen() {
 // ---------------------------------------------------------------------------
 
 // Bytes nach der positiven Antwort „62 02 8C“ (bzw. „41 5B“) heraussuchen
+// Mehrteilige Antworten: je Zeile Kopf 17FE007B und ISO-TP-Steuerbyte(s) entfernen, dann zusammensetzen
 function nutzbytes(antwort, kopf) {
   if (!antwort) return null;
-  const hex = antwort.replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
+  const hex = antwort.split(' | ').map(z => {
+    let h = z.replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
+    if (h.startsWith('17FE007B')) h = h.slice(8); else return h;
+    const art = h[0];
+    return art === '1' ? h.slice(4) : (art === '0' || art === '2') ? h.slice(2) : h;
+  }).join('');
   const i = hex.indexOf(kopf);
   if (i < 0) return null;
   const rest = hex.slice(i + kopf.length);
@@ -171,15 +179,15 @@ function deutungen(b) {
 // ---------------------------------------------------------------------------
 
 const SAETZE = [
-  { name: 'A: BMS 29 Bit (17FC007B), 22028C',
+  { name: 'A: BMS 29 Bit (17FC007B), Akku',
     befehle: ['ATSP7', 'ATCP17', 'ATSHFC007B', 'ATCRA17FE007B', 'ATAT1', 'ATST96'],
-    abfragen: [['22028C', '62028C', 'Akku (BMS)'], ['2202BD', '6202BD', 'Kilometerstand?']] },
-  { name: 'B: BMS 11 Bit (7E5), 22028C',
-    befehle: ['ATCRA', 'ATSP6', 'ATSH7E5', 'ATCRA7ED'],
     abfragen: [['22028C', '62028C', 'Akku (BMS)']] },
-  { name: 'C: Standard-OBD, 015B',
-    befehle: ['ATCRA', 'ATSP0', 'ATSH7DF'],
-    abfragen: [['0100', '4100', 'unterstützte PIDs'], ['015B', '415B', 'Akku (Standard)']] },
+  { name: 'K1: Kilometerstand mit eigener Flusskontrolle',
+    befehle: ['ATCAF1', 'ATFCSH17FC007B', 'ATFCSD300000', 'ATFCSM1'],
+    abfragen: [['2202BD', '6202BD', 'Kilometerstand']] },
+  { name: 'K2: Kilometerstand mit Flusskontrolle, Formatierung aus',
+    befehle: ['ATCAF0', 'ATFCSH17FC007B', 'ATFCSD300000', 'ATFCSM1'],
+    abfragen: [['032202BD', '6202BD', 'Kilometerstand (roh)']] },
 ];
 
 async function allesTesten() {
@@ -222,7 +230,8 @@ async function befragen() {
       const a = await sende(cmd, 6000);
       const b = nutzbytes(a, kopf);
       if (b) {
-        const z = was + ' (' + satz.name.slice(0, 1) + ', ' + cmd + '): Bytes ' +
+        const km = was.startsWith('Kilometer') && b.length >= 4 ? ' → km (Bytes 2–4) = ' + (b[1] * 65536 + b[2] * 256 + b[3]) : '';
+        const z = was + km + ' (' + satz.name.slice(0, 2) + ', ' + cmd + '): Bytes ' +
                   b.map(x => x.toString(16).toUpperCase().padStart(2, '0')).join(' ') + ' → ' + deutungen(b);
         log('  ✓ ' + z);
         funde.push(z);

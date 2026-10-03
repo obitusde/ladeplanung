@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung — Fahrt kalibrieren. Wird von doGet() mit ?seite=kalibrieren&fahrt=<JSON> ausgeliefert,
-  die App füllt Start, Ankunft, Strecke und Erwartung vor. Version 0.13.0
+  die App füllt Start, Ankunft, Strecke und Erwartung vor. Version 0.14.0
+  (0.14.0: Akku bei Ankunft vom OBD-Adapter vorbefüllt, wenn die App ihn mitschickt)
 -->
 <html lang="de">
 <head>
@@ -106,6 +107,7 @@
       $('zusammenfassung').append(dt, dd);
     }
     form.start_soc.value = f.start_soc ?? '';
+    form.ende_soc.value = f.ende_soc ?? '';   // vom OBD-Adapter, falls die App ihn eben gelesen hat
     form.zusatzgewicht.value = f.zusatzgewicht ?? 0;
 
     function hinweis(text) { const h = $('hinweis'); h.textContent = text || ''; h.className = 'hinweis fehler'; h.hidden = !text; }
