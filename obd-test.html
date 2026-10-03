@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<!--
+  Ladeplanung — OBD-Testseite für den Veepeak OBDCheck BLE+ (Web Bluetooth, ELM327)
+  Version 0.1.0 — Erster Test: verbinden, Akkustand mit mehreren Befehlssätzen lesen,
+                  Wiederverbinden ohne Geräteauswahl prüfen, Protokoll kopieren.
+  Nur zum Ausprobieren, nicht Teil der App. Keine Daueraufzeichnung: liest nur auf Knopfdruck.
+-->
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#000000">
+<title>OBD-Test</title>
+<style>
+  :root { --bg:#000; --fg:#eee; --grau:#999; --karte:#1a1a1a; --akzent:#4fc3f7; --gut:#81c784; --rot:#ef5350; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.4 system-ui, sans-serif; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  p.klein { color:var(--grau); font-size:14px; margin:0 0 12px; }
+  button { display:block; width:100%; margin:8px 0; padding:14px; font-size:17px; border:0; border-radius:10px;
+           background:var(--karte); color:var(--fg); }
+  button.haupt { background:var(--akzent); color:#000; font-weight:600; }
+  button:disabled { opacity:.4; }
+  #status { margin:12px 0; padding:12px; border-radius:10px; background:var(--karte); }
+  #ergebnis { font-size:15px; }
+  #ergebnis b { font-size:22px; color:var(--gut); }
+  details { margin:12px 0; }
+  summary { color:var(--grau); }
+  input { width:100%; padding:12px; font-size:16px; border-radius:8px; border:1px solid #444; background:#111; color:var(--fg); }
+  pre { white-space:pre-wrap; word-break:break-all; font-size:12px; background:#0d0d0d; padding:8px; border-radius:8px;
+        max-height:50vh; overflow:auto; }
+</style>
+</head>
+<body>
+<h1>OBD-Test (Akkustand)</h1>
+<p class="klein">v0.1.0 · Adapter stecken, Auto einschalten, Veepeak-App schließen. Nicht in Android koppeln.</p>
+
+<button id="alles" class="haupt">1. Alles testen</button>
+<button id="wieder">2. Danach: wieder verbinden ohne Auswahl</button>
+<button id="kopieren">Protokoll kopieren</button>
+
+<div id="status">Bereit.</div>
+<div id="ergebnis"></div>
+
+<details>
+  <summary>Einzelner Befehl (nur wenn ich darum bitte)</summary>
+  <input id="befehl" placeholder="z. B. ATSHFC007B;22028C" autocomplete="off" autocapitalize="characters">
+  <button id="senden">Senden</button>
+  <button id="trennen">Trennen</button>
+</details>
+
+<pre id="log"></pre>
+
+<script>
+'use strict';
+const VERSION = '0.1.0';
+
+// Bekannte Dienste von ELM327-BLE-Adaptern (Veepeak: FFF0, andere: FFE0, Vgate, Nordic UART)
+const DIENSTE = [
+  0xfff0, 0xffe0, 0x18f0,
+  'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
+  '6e400001-b5a3-f393-e0a9-e50e24dcca9e',
+];
+
+const $ = id => document.getElementById(id);
+let geraet = null, schreib = null, lese = null, puffer = '', warte = null;
+const zeilen = [];
+
+function log(t) {
+  const z = new Date().toTimeString().slice(0, 8) + ' ' + t;
+  zeilen.push(z);
+  $('log').textContent = zeilen.join('\n');
+  $('log').scrollTop = 1e9;
+}
+function status(t) { $('status').textContent = t; }
+
+// ---------------------------------------------------------------------------
+// Verbindung
+// ---------------------------------------------------------------------------
+
+async function verbindeMit(d) {
+  geraet = d;
+  log('Gerät: ' + (d.name || '(ohne Name)') + ' id=' + d.id);
+  d.addEventListener('gattserverdisconnected', () => log('Verbindung getrennt'));
+  const t0 = performance.now();
+  const server = await mitZeitlimit(d.gatt.connect(), 10000, 'GATT-Verbindung');
+  log('GATT verbunden nach ' + Math.round(performance.now() - t0) + ' ms');
+  const dienste = await server.getPrimaryServices();
+  schreib = lese = null;
+  for (const s of dienste) {
+    let chars = [];
+    try { chars = await s.getCharacteristics(); } catch (e) { continue; }
+    for (const c of chars) {
+      const p = c.properties;
+      log('  Dienst ' + kurz(s.uuid) + ' Merkmal ' + kurz(c.uuid) + ' ' +
+          ['read', 'write', 'writeWithoutResponse', 'notify', 'indicate'].filter(k => p[k]).join(','));
+      if (!lese && (p.notify || p.indicate)) lese = c;
+      if (!schreib && (p.write || p.writeWithoutResponse)) schreib = c;
+    }
+  }
+  if (!lese || !schreib) throw new Error('Keine passenden Merkmale (notify/write) gefunden');
+  log('Lesen über ' + kurz(lese.uuid) + ', Schreiben über ' + kurz(schreib.uuid));
+  lese.addEventListener('characteristicvaluechanged', e => {
+    puffer += new TextDecoder().decode(e.target.value);
+    if (puffer.includes('>') && warte) { const w = warte; warte = null; w(); }
+  });
+  await lese.startNotifications();
+  try { localStorage.setItem('obdtest.geraet', d.id); } catch (e) {}
+}
+
+function kurz(u) { return /^0000(....)-0000-1000-8000-00805f9b34fb$/.test(u) ? u.slice(4, 8) : u; }
+
+function mitZeitlimit(p, ms, was) {
+  return Promise.race([p, new Promise((_, nein) => setTimeout(() => nein(new Error(was + ': Zeitlimit')), ms))]);
+}
+
+async function sende(cmd, ms = 4000) {
+  puffer = '';
+  const fertig = new Promise(ja => { warte = ja; });
+  const daten = new TextEncoder().encode(cmd + '\r');
+  if (schreib.properties.writeWithoutResponse) await schreib.writeValueWithoutResponse(daten);
+  else await schreib.writeValue(daten);
+  try { await mitZeitlimit(fertig, ms, cmd); }
+  catch (e) { warte = null; log('> ' + cmd + '  ⚠ keine Antwort (' + puffer.replace(/\s+/g, ' ').trim() + ')'); return null; }
+  const antwort = puffer.replace(/>/g, '').replace(/\r/g, '\n').split('\n').map(s => s.trim()).filter(Boolean).join(' | ');
+  log('> ' + cmd + '  →  ' + antwort);
+  return antwort;
+}
+
+async function trennen() {
+  try { if (geraet && geraet.gatt.connected) geraet.gatt.disconnect(); } catch (e) {}
+}
+
+// ---------------------------------------------------------------------------
+// Auswertung
+// ---------------------------------------------------------------------------
+
+// Bytes nach der positiven Antwort „62 02 8C“ (bzw. „41 5B“) heraussuchen
+function nutzbytes(antwort, kopf) {
+  if (!antwort) return null;
+  const hex = antwort.replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
+  const i = hex.indexOf(kopf);
+  if (i < 0) return null;
+  const rest = hex.slice(i + kopf.length);
+  const b = [];
+  for (let k = 0; k + 1 < rest.length && b.length < 6; k += 2) b.push(parseInt(rest.slice(k, k + 2), 16));
+  return b;
+}
+
+function deutungen(b) {
+  if (!b || !b.length) return '';
+  const A = b[0], B = b[1] ?? 0;
+  return [
+    'A/2,5 = ' + (A / 2.5).toFixed(1),
+    'A·100/255 = ' + (A * 100 / 255).toFixed(1),
+    'A/2 = ' + (A / 2).toFixed(1),
+    '(A·256+B)/100 = ' + ((A * 256 + B) / 100).toFixed(1),
+  ].join(' · ');
+}
+
+// ---------------------------------------------------------------------------
+// Testablauf
+// ---------------------------------------------------------------------------
+
+const SAETZE = [
+  { name: 'A: BMS 29 Bit (17FC007B), 22028C',
+    befehle: ['ATSP7', 'ATCP17', 'ATSHFC007B', 'ATCRA17FE007B', 'ATAT1', 'ATST96'],
+    abfragen: [['22028C', '62028C', 'Akku (BMS)'], ['2202BD', '6202BD', 'Kilometerstand?']] },
+  { name: 'B: BMS 11 Bit (7E5), 22028C',
+    befehle: ['ATCRA', 'ATSP6', 'ATSH7E5', 'ATCRA7ED'],
+    abfragen: [['22028C', '62028C', 'Akku (BMS)']] },
+  { name: 'C: Standard-OBD, 015B',
+    befehle: ['ATCRA', 'ATSP0', 'ATSH7DF'],
+    abfragen: [['0100', '4100', 'unterstützte PIDs'], ['015B', '415B', 'Akku (Standard)']] },
+];
+
+async function allesTesten() {
+  sperre(true);
+  $('ergebnis').innerHTML = '';
+  log('=== Test v' + VERSION + ' · ' + navigator.userAgent);
+  log('getDevices vorhanden: ' + !!(navigator.bluetooth && navigator.bluetooth.getDevices));
+  try {
+    if (!navigator.bluetooth) throw new Error('Web Bluetooth nicht verfügbar (Chrome? Bluetooth an?)');
+    status('Adapter in der Liste antippen …');
+    const d = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: DIENSTE });
+    status('Verbinde …');
+    await verbindeMit(d);
+    await befragen();
+  } catch (e) {
+    log('FEHLER: ' + e.message);
+    status('Fehler: ' + e.message);
+  }
+  await trennen();
+  sperre(false);
+}
+
+async function befragen() {
+  const t0 = performance.now();
+  status('Initialisiere ELM327 …');
+  await sende('ATZ', 5000);
+  for (const c of ['ATE0', 'ATL0', 'ATS1', 'ATH1', 'ATI', 'AT@1', 'ATRV']) await sende(c);
+  const funde = [];
+  for (const satz of SAETZE) {
+    status('Teste ' + satz.name + ' …');
+    log('--- ' + satz.name);
+    for (const c of satz.befehle) await sende(c);
+    for (const [cmd, kopf, was] of satz.abfragen) {
+      const a = await sende(cmd, 6000);
+      const b = nutzbytes(a, kopf);
+      if (b) {
+        const z = was + ' (' + satz.name.slice(0, 1) + ', ' + cmd + '): Bytes ' +
+                  b.map(x => x.toString(16).toUpperCase().padStart(2, '0')).join(' ') + ' → ' + deutungen(b);
+        log('  ✓ ' + z);
+        funde.push(z);
+      }
+    }
+  }
+  const dauer = ((performance.now() - t0) / 1000).toFixed(1);
+  log('Dauer Abfrage: ' + dauer + ' s');
+  status(funde.length ? 'Fertig. Bitte Protokoll kopieren und Akku-% vom Display dazuschreiben.'
+                      : 'Fertig, aber keine Antwort mit Werten. Bitte Protokoll kopieren.');
+  $('ergebnis').innerHTML = funde.length
+    ? funde.map(f => '<p>' + f.replace(/A\/2,5 = ([\d.]+)/, 'A/2,5 = <b>$1</b>') + '</p>').join('')
+    : '';
+}
+
+async function wiederVerbinden() {
+  sperre(true);
+  log('=== Wiederverbinden ohne Auswahl');
+  try {
+    if (!navigator.bluetooth.getDevices) throw new Error('getDevices fehlt in diesem Chrome → Auswahl wäre jedes Mal nötig');
+    const liste = await navigator.bluetooth.getDevices();
+    log('Erlaubte Geräte: ' + liste.length + ' ' + liste.map(d => d.name || d.id).join(', '));
+    let id = null;
+    try { id = localStorage.getItem('obdtest.geraet'); } catch (e) {}
+    const d = liste.find(x => x.id === id) || liste[0];
+    if (!d) throw new Error('kein erlaubtes Gerät gespeichert');
+    status('Verbinde ohne Auswahl …');
+    await verbindeMit(d);
+    await sende('ATZ', 5000);
+    for (const c of ['ATE0', 'ATL0', 'ATS1', 'ATH1', ...SAETZE[0].befehle]) await sende(c);
+    const b = nutzbytes(await sende('22028C', 6000), '62028C');
+    log(b ? '  ✓ ohne Auswahl gelesen: ' + deutungen(b) : '  ✗ verbunden, aber kein Wert');
+    status(b ? 'Wiederverbinden klappt.' : 'Verbunden, aber kein Wert. Protokoll kopieren.');
+  } catch (e) {
+    log('FEHLER: ' + e.message);
+    status('Fehler: ' + e.message);
+  }
+  await trennen();
+  sperre(false);
+}
+
+async function einzelbefehl() {
+  sperre(true);
+  try {
+    if (!geraet || !geraet.gatt.connected) {
+      const d = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: DIENSTE });
+      await verbindeMit(d);
+      await sende('ATZ', 5000);
+    }
+    for (const c of $('befehl').value.split(';').map(s => s.trim()).filter(Boolean)) await sende(c, 6000);
+  } catch (e) { log('FEHLER: ' + e.message); }
+  sperre(false);
+}
+
+function sperre(an) { for (const id of ['alles', 'wieder', 'senden']) $(id).disabled = an; }
+
+$('alles').onclick = allesTesten;
+$('wieder').onclick = wiederVerbinden;
+$('senden').onclick = einzelbefehl;
+$('trennen').onclick = () => { trennen(); log('getrennt (von Hand)'); };
+$('kopieren').onclick = async () => {
+  const text = zeilen.join('\n');
+  try { await navigator.clipboard.writeText(text); status('Protokoll kopiert (' + zeilen.length + ' Zeilen).'); }
+  catch (e) {
+    const ta = document.createElement('textarea'); ta.value = text; document.body.append(ta); ta.select();
+    document.execCommand('copy'); ta.remove(); status('Protokoll kopiert.');
+  }
+};
+log('OBD-Test v' + VERSION + ' geladen');
+</script>
+</body>
+</html>
