@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.24.1 — Adapter aus getDevices: erst auf seine Bluetooth-Werbung warten, dann verbinden (sonst „no longer in
+                   range"); klappt es nicht, beim nächsten Tippen wieder Geräteauswahl.
   Version 0.24.0 — Der letzte bekannte Akkustand gilt für jede gewählte Route und Richtung: Ort des Werts wird auf die
                    gewählte Route gelegt, Verbrauch bis zur Position abgezogen (weit neben der Route: Wert unverändert).
   Version 0.23.1 — Akkustand wandert beim Umstellen der Strecke auch nach einem Zwischenwert mit (solange seitdem nicht
@@ -450,7 +452,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.24.0';
+    const APP_VERSION = '0.24.1';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -1357,6 +1359,19 @@
     const ADAPTER_FRISCH_MS = 10 * 60e3;   // so alt darf der Adapterwert bei „Fahrt beenden" sein
     let obdGeraet = null;     // bleibt bis zum Neuladen der Seite erhalten → zweites Lesen ohne Geräteauswahl
     let obdLaeuft = false;
+    let obdAuswahl = false;   // getDevices-Gerät war nicht erreichbar → nächstes Mal Geräteauswahl
+    let obdAusListe = false;  // obdGeraet stammt aus getDevices → vor jedem Verbinden auf Werbung warten
+
+    /** Chrome hält ein Gerät aus getDevices für „nicht in Reichweite", bis es dessen Bluetooth-Werbung gesehen hat
+        (Fehler „Bluetooth Device is no longer in range", 05.10.2026) → kurz auf Werbung warten. */
+    function warteAufWerbung(g, ms) {
+      return new Promise((ja, nein) => {
+        const ab = new AbortController();
+        const t = setTimeout(() => { ab.abort(); nein(new Error('Adapter sendet nicht – Zündung an?')); }, ms);
+        g.addEventListener('advertisementreceived', () => { clearTimeout(t); ab.abort(); ja(); }, { once: true });
+        g.watchAdvertisements({ signal: ab.signal }).catch(e => { clearTimeout(t); nein(e); });
+      });
+    }
 
     /** Akkustand wie im Auto-Display aus dem BMS-Wert (Rohbyte/2,5). Vorläufig aus einem Messpunkt
         (BMS 18,4 % = Display 15 %, 03.10.2026) und dem üblichen MEB-Fenster 4,5–96 %; zweiter Punkt bei hohem Akku folgt. */
@@ -1386,14 +1401,30 @@
     async function leseAdapter() {
       if (!navigator.bluetooth) throw new Error('Bluetooth im Browser nicht verfügbar');
       // Schon einmal erlaubter Adapter ohne Geräteauswahl – geht nur, wenn Chrome getDevices kennt (Flag, s. Info-Seite)
-      if (!obdGeraet && navigator.bluetooth.getDevices) {
+      if (!obdGeraet && !obdAuswahl && navigator.bluetooth.getDevices) {
         try {
           const erlaubt = await navigator.bluetooth.getDevices();
           obdGeraet = erlaubt.find(d => /veepeak|obd/i.test(d.name || '')) || erlaubt[0] || null;
+          obdAusListe = !!obdGeraet;
         } catch (e) { obdGeraet = null; }
       }
-      if (!obdGeraet) obdGeraet = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: OBD_DIENSTE });
-      const server = await mitZeitlimit(obdGeraet.gatt.connect(), 10000, 'Adapter nicht erreichbar – Auto an?');
+      if (!obdGeraet) {
+        obdGeraet = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: OBD_DIENSTE });
+        obdAusListe = false;
+      }
+      obdAuswahl = false;
+      const ausListe = obdAusListe;
+      let server;
+      try {
+        if (ausListe && obdGeraet.watchAdvertisements) await warteAufWerbung(obdGeraet, 10000);
+        server = await mitZeitlimit(obdGeraet.gatt.connect(), 10000, 'Adapter nicht erreichbar – Auto an?');
+      } catch (e) {
+        if (ausListe) {
+          obdAuswahl = true; obdGeraet = null;
+          throw new Error((e && e.message || e) + ' – nochmal Standort tippen und VEEPEAK auswählen');
+        }
+        throw e;
+      }
       try {
         let schreib = null, puffer = '', warte = null;
         for (const s of await server.getPrimaryServices()) {
@@ -1740,7 +1771,7 @@
     // Für automatisierte Tests zugänglich machen
     window.ladeplanung = {
       berechneListe, projiziere, haversine, punktBeiKm, mapsUrl, abrpUrl, energieAnteile, energieKwh, streckenwerte, bedarf,
-      routenTeile, routenZwischen, zieleVon, simPunkte, preisKurz, preisEintrag, landVon, prognose, tempo,
+      routenTeile, routenZwischen, zieleVon, simPunkte, preisKurz, preisEintrag, landVon, prognose, tempo, leseAdapter,
       get preise() { return preise; },
       get daten() { return daten; }, get modell() { return modell; }, get zustand() { return zustand; },
     };
