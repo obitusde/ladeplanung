@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.27.0 — Route ab hier: auf Abschnitten deiner Stammstrecken nur deine Stationen, fremde nur auf unbekannten
+                   Abschnitten (je km geprüft, ≤ 1,5 km neben einer Stammstrecke; Kreuzungen und kurze Abweichungen geglättet).
   Version 0.26.0 — Fremde Stationen auch aus Deutschland (EnBW, Tesla; Ladesäulenregister) und AMAG Schweiz; Karte mit
                    Vorrang: deine Stationen (★ zuerst), AMAG, EnBW, Migrol, Tesla, Rest (wer oben liegt, wessen Schild bleibt).
   Version 0.25.5 — Karte: Route violett mit weißem Rand (grau sah aus wie Grenzen). Details ohne Annahmen, Favorit,
@@ -380,7 +382,7 @@
       <li><b>Große Zahl:</b> ganzer Weg bis zur Station – entlang der Route und, wenn sie abseits liegt, der Abzweig dazu („3 km abseits"). Stationen, deren Abzweig länger ist als der Weg entlang der Route bis dorthin, blendet die App aus: Sie liegen neben oder hinter dir, nicht auf dem Weg.</li>
       <li><b>braucht ≈ 23 %</b>: so viel Akku kostet der Weg bis dorthin. <b>Rest bei Ankunft ≈ 34 %</b>: so viel ist dort noch übrig – wenn oben „Akku jetzt" eingetragen ist. Ohne Eintrag rechnet die App mit vollem Akku (100 %). <span class="rot"><b>Rot</b></span> = Rest unter deiner Reserve, <b>nicht erreichbar</b> = Akku reicht nicht bis dorthin.</li>
       <li><b>Grau</b>: nicht erreichbar mit dem Akkustand.</li>
-      <li><b>Gestrichelt, „nicht in deiner Liste"</b> (nur bei „Route ab hier"): Station aus amtlichen Registern, ab 100 kW, monatlich aktualisiert: Schweiz AMAG, Migrol, Tesla (ich-tanke-strom.ch), Deutschland EnBW und Tesla (Ladesäulenregister der Bundesnetzagentur). In den Details <b>In meine Liste übernehmen</b> – das Formular ist schon ausgefüllt.</li>
+      <li><b>Gestrichelt, „nicht in deiner Liste"</b> (nur bei „Route ab hier"): Station aus amtlichen Registern, ab 100 kW, monatlich aktualisiert: Schweiz AMAG, Migrol, Tesla (ich-tanke-strom.ch), Deutschland EnBW und Tesla (Ladesäulenregister der Bundesnetzagentur). Sie erscheinen nur auf Abschnitten, die zu keiner deiner Stammstrecken gehören – wo du eine Strecke schon kennst, zeigt die App nur deine Stationen. In den Details <b>In meine Liste übernehmen</b> – das Formular ist schon ausgefüllt.</li>
       <li><b>letzte vor Reserve</b>: die letzte Station, die du noch über deiner Reserve erreichst.</li>
       <li><b>danach 38 km bis zur nächsten</b>: Abstand zur nächsten Station voraus – so siehst du lange Lücken.</li>
       <li><b>4 × 150 kW:</b> Anzahl Ladepunkte × Leistung, sofern eingetragen.</li>
@@ -543,7 +545,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.26.0';
+    const APP_VERSION = '0.27.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -560,6 +562,8 @@
     const ADHOC_ID = 'adhoc';
     const FREMD_DUBLETTE_M = 150;   // Station aus den Bundesdaten so nah an einer eigenen → ist dieselbe, nicht doppelt zeigen
     const FREMD_MAX_KM = 3;         // fremde Stationen höchstens so weit neben der Route (≈ 6–8 km Umweg hin und zurück)
+    const BEKANNT_Q_KM = 1.5;       // Route ab hier liegt auf einer Stammstrecke, wenn diese höchstens so weit entfernt ist
+    const BEKANNT_MIN_KM = 3;       // kürzere bekannte Stücke (Kreuzungen) bzw. Lücken (andere Ausfahrt) werden geglättet
     // Mont-Blanc-Tunnel nie (Christof): Rechteck über dem Tunnelinneren (dort gibt es sonst keine Straße);
     // führt eine Route hindurch, wird über den Gr.-St.-Bernhard-Tunnel neu gerechnet ([lon, lat] wie savona_bernhard)
     const MONT_BLANC_TUNNEL = { lat: [45.84, 45.89], lon: [6.88, 6.94] };
@@ -1840,6 +1844,48 @@
     }
 
     /** Route ab hier in die geladenen Daten einfügen: eigene Stationen und Migrol/Tesla (ohne Dubletten) bis 10 km zuordnen. */
+    /**
+     * Je Kilometer der Route ab hier: liegt sie dort auf einer deiner Stammstrecken (≤ 1,5 km, gleich welche Richtung)?
+     * Kreuzungen (bekannt < 3 km) zählen nicht, kurze Abweichungen in bekannter Strecke (unbekannt < 3 km) schon.
+     * Ergebnis an der Route zwischengespeichert, neu nur wenn sich routes.json ändert (Christof, 14.10.2026: Variante a).
+     */
+    function bekannteAbschnitte(r) {
+      const stamm = daten.routen.filter(x => !x.adhoc);
+      const schluessel = (daten.erzeugt || '') + '|' + stamm.map(x => x.id).join(',');
+      if (r.bekannt && r.bekannt.schluessel === schluessel) return r.bekannt.km;
+      const kaesten = stamm.map(x => {
+        let s = 90, n = -90, w = 180, o = -180;
+        for (const q of x.linie) { s = Math.min(s, q[0]); n = Math.max(n, q[0]); w = Math.min(w, q[1]); o = Math.max(o, q[1]); }
+        return { x, s: s - 0.02, n: n + 0.02, w: w - 0.03, o: o + 0.03 };
+      });
+      const anzahl = Math.max(1, Math.ceil(r.laenge_km));
+      const km = new Array(anzahl + 1);
+      let i = 0;
+      for (let k = 0; k <= anzahl; k++) {
+        while (i + 1 < r.linie.length - 1 && r.linie[i + 1][2] < k) i++;   // Linie nur einmal durchlaufen
+        const a = r.linie[i], b = r.linie[Math.min(i + 1, r.linie.length - 1)];
+        const t = b[2] > a[2] ? Math.max(0, Math.min(1, (k - a[2]) / (b[2] - a[2]))) : 0;
+        const lat = a[0] + t * (b[0] - a[0]), lon = a[1] + t * (b[1] - a[1]);
+        km[k] = kaesten.some(c => lat >= c.s && lat <= c.n && lon >= c.w && lon <= c.o &&
+          projiziere(c.x.linie, lat, lon, lat0Von(c.x)).q <= BEKANNT_Q_KM);
+      }
+      // kurze Stücke glätten: erst Lücken in bekannter Strecke füllen, dann kurze bekannte Stücke (Kreuzungen) streichen
+      const glaette = (wert, max) => {
+        for (let k = 0; k <= anzahl;) {
+          if (km[k] !== wert) { k++; continue; }
+          let e = k; while (e + 1 <= anzahl && km[e + 1] === wert) e++;
+          const innen = k > 0 && e < anzahl;
+          if (e - k + 1 < max && (wert === true || innen)) for (let j = k; j <= e; j++) km[j] = !wert;
+          k = e + 1;
+        }
+      };
+      glaette(false, BEKANNT_MIN_KM);
+      glaette(true, BEKANNT_MIN_KM);
+      r.bekannt = { schluessel, km };
+      try { localStorage.setItem(ADHOC_SPEICHER, JSON.stringify(r)); } catch (e) { /* nur bis zum Neuladen */ }
+      return km;
+    }
+
     function fuegeAdhocEin() {
       if (!daten) return;
       daten.routen = daten.routen.filter(r => !r.adhoc);
@@ -1859,10 +1905,13 @@
         if (eigene.some(p => haversine(p.lat, p.lon, f.lat, f.lon) * 1000 <= FREMD_DUBLETTE_M)) continue;
         daten.punkte.push({ ...f, fremd: true, richtung: 'beide', favorit: false, notiz: '', link: '', zuordnung: [] });
       }
+      const bekannt = bekannteAbschnitte(r);
       for (const p of daten.punkte) {
         const pr = projiziere(r.linie, p.lat, p.lon, lat0Von(r));
         // eigene Stationen bis 10 km (bewusst eingetragen), fremde nur bis 3 km (Christof, 14.10.2026)
         if (pr.q > (p.fremd ? FREMD_MAX_KM : QUER_MAX_KM)) continue;
+        // Auf Abschnitten deiner Stammstrecken nur deine Stationen – dort hast du selbst geprüft, was Sinn macht
+        if (p.fremd && bekannt[Math.min(bekannt.length - 1, Math.max(0, Math.round(pr.km)))]) continue;
         const strasse = String(p.strasse || '').split(/[,/;]/)[0].trim();
         (p.zuordnung = p.zuordnung || []).push({
           route: ADHOC_ID, km: pr.km, hm_hin: pr.hm_hin, hm_rueck: pr.hm_rueck, quer_km: runde(pr.q, 1),
@@ -2449,7 +2498,7 @@
     window.ladeplanung = {
       berechneListe, projiziere, haversine, punktBeiKm, mapsUrl, abrpUrl, energieAnteile, energieKwh, streckenwerte, bedarf,
       routenTeile, routenZwischen, zieleVon, simPunkte, preisKurz, preisEintrag, landVon, prognose, tempo, leseAdapter,
-      kumuliere, duenneAus, fuegeAdhocEin, adhocRichtung, uebernehmenUrl, zeigeKarte, durchMontBlanc, berechneAdhoc,
+      kumuliere, duenneAus, fuegeAdhocEin, bekannteAbschnitte, adhocRichtung, uebernehmenUrl, zeigeKarte, durchMontBlanc, berechneAdhoc,
       get adhocRoute() { return adhocRoute; }, set adhocRoute(r) { adhocRoute = r; },
       get fremde() { return fremde; },
       get preise() { return preise; },
