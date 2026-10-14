@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.25.1 — Route ab hier: OpenRouteService erlaubt Sperrflächen nur bis 150 km Route (Fehler 400 bei
+                   Ovronnaz–Neuenrade) → ohne Sperre rechnen; führt die Route durch den Mont-Blanc-Tunnel, neu über
+                   den Gr.-St.-Bernhard-Tunnel.
   Version 0.25.0 — „Route ab hier" (Menü): Route vom Standort oder einem Ort zu einem bekannten oder frei gesuchten Ort,
                    direkt im Handy über OpenRouteService (Schlüssel in den Einstellungen, nur im Handy gespeichert);
                    danach dieselbe Liste wie bei Stammstrecken, dazu Migrol/Tesla aus den Bundesdaten (fremde.json)
@@ -527,7 +530,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.25.0';
+    const APP_VERSION = '0.25.1';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -543,8 +546,10 @@
     const ADHOC_SPEICHER = 'ladeplanung.adhoc';
     const ADHOC_ID = 'adhoc';
     const FREMD_DUBLETTE_M = 150;   // Station aus den Bundesdaten so nah an einer eigenen → ist dieselbe, nicht doppelt zeigen
-    // Mont-Blanc-Tunnel nie (Christof): kleines Rechteck über der Tunnelmitte, dort gibt es sonst keine Straße
-    const MONT_BLANC = [[[6.90, 45.85], [6.94, 45.85], [6.94, 45.885], [6.90, 45.885], [6.90, 45.85]]];
+    // Mont-Blanc-Tunnel nie (Christof): Rechteck über dem Tunnelinneren (dort gibt es sonst keine Straße);
+    // führt eine Route hindurch, wird über den Gr.-St.-Bernhard-Tunnel neu gerechnet ([lon, lat] wie savona_bernhard)
+    const MONT_BLANC_TUNNEL = { lat: [45.84, 45.89], lon: [6.88, 6.94] };
+    const GR_ST_BERNHARD = [7.16605, 45.85658];
     // Karte: Leaflet 1.9.4 von cdnjs, nur diese geprüfte Fassung (Prüfsumme), Kacheln von OpenStreetMap
     const LEAFLET_URL = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/';
     const LEAFLET_JS_SRI = 'sha512-BwHfrr4c9kmRkLw6iXFdzcdWV/PGkVgiIyIWLLlTSXzWQzxuSg4DiQUCpauz/EWjgk5TYQqX/kvn9pG1NpYfqg==';
@@ -1763,22 +1768,43 @@
 
     /** Route start → ziel als Routenobjekt wie in routes.json (Linie mit km und geglätteten Höhenmetern). */
     async function berechneAdhoc(start, ziel) {
-      const j = await ors('/v2/directions/driving-car/geojson', { method: 'POST', body: JSON.stringify({
-        coordinates: [[start.lon, start.lat], [ziel.lon, ziel.lat]],
-        elevation: true, instructions: false, radiuses: [5000, 5000],
-        options: { avoid_polygons: { type: 'Polygon', coordinates: MONT_BLANC } },
-      }) });
-      const f = j.features && j.features[0];
-      if (!f || !f.geometry || !f.geometry.coordinates || f.geometry.coordinates.length < 2) throw new Error('keine Route gefunden');
-      if (f.geometry.coordinates[0].length < 3) throw new Error('Route ohne Höhenwerte');
+      const hole = async punkte => {
+        const j = await ors('/v2/directions/driving-car/geojson', { method: 'POST', body: JSON.stringify({
+          coordinates: punkte, elevation: true, instructions: false, radiuses: punkte.map(() => 5000),
+        }) });
+        const f = j.features && j.features[0];
+        if (!f || !f.geometry || !f.geometry.coordinates || f.geometry.coordinates.length < 2) throw new Error('keine Route gefunden');
+        if (f.geometry.coordinates[0].length < 3) throw new Error('Route ohne Höhenwerte');
+        return f;
+      };
+      const a = [start.lon, start.lat], b = [ziel.lon, ziel.lat];
+      // Mont-Blanc-Tunnel nie (Christof). Sperrflächen erlaubt ORS nur bis 150 km Route → ohne rechnen und
+      // bei Bedarf nochmal über den Gr.-St.-Bernhard-Tunnel (wie die Stammstrecke savona_bernhard).
+      let f = await hole([a, b]);
+      let ueber = '';
+      if (durchMontBlanc(f.geometry.coordinates)) {
+        f = await hole([a, GR_ST_BERNHARD, b]);
+        ueber = 'Gr. St. Bernhard';
+      }
       const linie = duenneAus(kumuliere(f.geometry.coordinates));
       const ende = linie[linie.length - 1];
       const summe = (f.properties && f.properties.summary) || {};
       return {
         id: ADHOC_ID, adhoc: true, name: start.name + ' – ' + ziel.name + ' (Route ab hier)', erzeugt: new Date().toISOString(),
         laenge_km: runde(ende[2], 1), dauer_s: Math.round(summe.duration || 0), hm_hin: ende[3], hm_rueck: ende[4],
-        start: { name: start.name, lat: start.lat, lon: start.lon }, ziel: { name: ziel.name, lat: ziel.lat, lon: ziel.lon }, linie,
+        start: { name: start.name, lat: start.lat, lon: start.lon }, ziel: { name: ziel.name, lat: ziel.lat, lon: ziel.lon }, ueber, linie,
       };
+    }
+
+    /** Führt die Route durch den Mont-Blanc-Tunnel? Prüft auch das Innere langer Abschnitte (der Tunnel ist ein gerades Stück). */
+    function durchMontBlanc(koordinaten) {
+      const drin = (lon, lat) => lat > MONT_BLANC_TUNNEL.lat[0] && lat < MONT_BLANC_TUNNEL.lat[1] &&
+        lon > MONT_BLANC_TUNNEL.lon[0] && lon < MONT_BLANC_TUNNEL.lon[1];
+      for (let i = 1; i < koordinaten.length; i++) {
+        const [x0, y0] = koordinaten[i - 1], [x1, y1] = koordinaten[i];
+        for (let k = 0; k <= 10; k++) if (drin(x0 + k / 10 * (x1 - x0), y0 + k / 10 * (y1 - y0))) return true;
+      }
+      return false;
     }
 
     /** Fahrtrichtungs-Vektor einer Route bei km (für die Richtung einseitiger Raststätten). */
@@ -1916,7 +1942,7 @@
         speichere();
         $('adhoc-dlg').close();
         render();
-        toast('Route ab hier: ' + fmtKm(r.laenge_km) + ' km');
+        toast('Route ab hier: ' + fmtKm(r.laenge_km) + ' km' + (r.ueber ? ' über ' + r.ueber + ' (nicht Mont Blanc)' : ''));
       } catch (e) {
         adhocStatus('Fehler: ' + e.message);
       } finally {
@@ -2333,7 +2359,7 @@
     window.ladeplanung = {
       berechneListe, projiziere, haversine, punktBeiKm, mapsUrl, abrpUrl, energieAnteile, energieKwh, streckenwerte, bedarf,
       routenTeile, routenZwischen, zieleVon, simPunkte, preisKurz, preisEintrag, landVon, prognose, tempo, leseAdapter,
-      kumuliere, duenneAus, fuegeAdhocEin, adhocRichtung, uebernehmenUrl, zeigeKarte,
+      kumuliere, duenneAus, fuegeAdhocEin, adhocRichtung, uebernehmenUrl, zeigeKarte, durchMontBlanc, berechneAdhoc,
       get adhocRoute() { return adhocRoute; }, set adhocRoute(r) { adhocRoute = r; },
       get fremde() { return fremde; },
       get preise() { return preise; },
