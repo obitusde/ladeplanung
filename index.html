@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.25.2 — Stationen ausgeblendet, deren Abzweig länger ist als der Weg entlang der Route bis dorthin (liegen
+                   neben/hinter dir); große Zahl = ganzer Weg (entlang + abseits); fremde Stationen nur bis 3 km neben
+                   der Route (eigene weiter bis 10 km).
   Version 0.25.1 — Route ab hier: OpenRouteService erlaubt Sperrflächen nur bis 150 km Route (Fehler 400 bei
                    Ovronnaz–Neuenrade) → ohne Sperre rechnen; führt die Route durch den Mont-Blanc-Tunnel, neu über
                    den Gr.-St.-Bernhard-Tunnel.
@@ -364,7 +367,7 @@
 
     <h3>Was die Angaben bedeuten</h3>
     <ul>
-      <li><b>Große Zahl:</b> Kilometer entlang der Route bis auf Höhe des Ladepunkts. Liegt er abseits, kommt der Weg von der Ausfahrt noch dazu („3,2 km abseits").</li>
+      <li><b>Große Zahl:</b> ganzer Weg bis zur Station – entlang der Route und, wenn sie abseits liegt, der Abzweig dazu („3 km abseits"). Stationen, deren Abzweig länger ist als der Weg entlang der Route bis dorthin, blendet die App aus: Sie liegen neben oder hinter dir, nicht auf dem Weg.</li>
       <li><b>braucht ≈ 23 %</b>: so viel Akku kostet der Weg bis dorthin. <b>Rest bei Ankunft ≈ 34 %</b>: so viel ist dort noch übrig – wenn oben „Akku jetzt" eingetragen ist. Ohne Eintrag rechnet die App mit vollem Akku (100 %). <span class="rot"><b>Rot</b></span> = Rest unter deiner Reserve, <b>nicht erreichbar</b> = Akku reicht nicht bis dorthin.</li>
       <li><b>Grau</b>: nicht erreichbar mit dem Akkustand.</li>
       <li><b>Gestrichelt, „nicht in deiner Liste"</b> (nur bei „Route ab hier"): Migrol- und Tesla-Station aus den Bundesdaten (ich-tanke-strom.ch, ab 100 kW, monatlich aktualisiert). In den Details <b>In meine Liste übernehmen</b> – das Formular ist schon ausgefüllt.</li>
@@ -530,7 +533,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.25.1';
+    const APP_VERSION = '0.25.2';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -546,6 +549,7 @@
     const ADHOC_SPEICHER = 'ladeplanung.adhoc';
     const ADHOC_ID = 'adhoc';
     const FREMD_DUBLETTE_M = 150;   // Station aus den Bundesdaten so nah an einer eigenen → ist dieselbe, nicht doppelt zeigen
+    const FREMD_MAX_KM = 3;         // fremde Stationen höchstens so weit neben der Route (≈ 6–8 km Umweg hin und zurück)
     // Mont-Blanc-Tunnel nie (Christof): Rechteck über dem Tunnelinneren (dort gibt es sonst keine Straße);
     // führt eine Route hindurch, wird über den Gr.-St.-Bernhard-Tunnel neu gerechnet ([lon, lat] wie savona_bernhard)
     const MONT_BLANC_TUNNEL = { lat: [45.84, 45.89], lon: [6.88, 6.94] };
@@ -722,7 +726,7 @@
 
       if (pr.q > QUER_MAX_KM) {
         const eintraege = kandidaten
-          .map(x => ({ punkt: x.punkt, z: x.z, km: haversine(lat, lon, x.punkt.lat, x.punkt.lon), hm: null }))
+          .map(x => { const km = haversine(lat, lon, x.punkt.lat, x.punkt.lon); return { punkt: x.punkt, z: x.z, km, weg: km, hm: null }; })
           .sort((a, b) => a.km - b.km);
         return { modus: 'luftlinie', q: pr.q, s: null, pos: null, rest: null, eintraege };
       }
@@ -731,10 +735,15 @@
       for (const x of kandidaten) {
         const km = hin ? x.z.km - pr.km : pr.km - x.z.km;
         if (km <= AUSBLENDEN_KM) continue;
+        // Abzweig länger als der Weg entlang der Route bis dorthin: die Station liegt neben oder hinter dir,
+        // nicht auf dem Weg (Migrol Sion bei Ovronnaz → Neuenrade, Christof 14.10.2026)
+        const abseits = x.z.quer_km > 1 ? x.z.quer_km : 0;
+        if (abseits > km) continue;
         const hm = hin ? x.z.hm_hin - pr.hm_hin : pr.hm_rueck - x.z.hm_rueck;
-        eintraege.push({ punkt: x.punkt, z: x.z, km, hm: Math.max(0, Math.round(hm)) });
+        // km = entlang der Route (Reihenfolge, Lücken), weg = ganzer Weg zur Station (Anzeige)
+        eintraege.push({ punkt: x.punkt, z: x.z, km, weg: km + abseits, hm: Math.max(0, Math.round(hm)) });
       }
-      eintraege.sort((a, b) => a.km - b.km);
+      eintraege.sort((a, b) => a.weg - b.weg || a.km - b.km);   // nach angezeigtem Weg, damit die Zahlen aufsteigen
       return { modus: 'strecke', q: pr.q, s: pr.km, pos: pr, rest: hin ? route.laenge_km - pr.km : pr.km, eintraege };
     }
 
@@ -1228,7 +1237,7 @@
         zeile.type = 'button';
         // rot = unter der Reserve, aber erreichbar; nicht erreichbar ist grau (ganze Zeile)
         const rot = pg && pg.unterReserve && !pg.nichtErreichbar ? ' rot' : '';
-        const km = el('span', 'km' + rot, fmtKm(e.km));
+        const km = el('span', 'km' + rot, fmtKm(e.weg));
         km.append(el('small', '', 'km'));
         const strasse = e.z && e.z.strasse ? ' (' + e.z.strasse + ')' : '';
         zeile.append(km, el('span', 'name' + rot, (e.punkt.favorit ? '★ ' : '') + kurzname(e.punkt.name) + strasse));
@@ -1352,7 +1361,8 @@
       detailPunkt = p;
       detailEintrag = e;
       $('d-name').textContent = (p.favorit ? '★ ' : '') + kurzname(p.name);
-      $('d-gross').textContent = fmtKm(e.km) + ' km ' + (modus === 'luftlinie' ? 'Luftlinie' : 'voraus') +
+      $('d-gross').textContent = fmtKm(e.weg) + ' km ' + (modus === 'luftlinie' ? 'Luftlinie' : 'voraus') +
+        (e.weg > e.km ? ' (davon ' + fmtKm(e.weg - e.km) + ' km abseits)' : '') +
         (e.hm === null ? '' : ' · + ' + e.hm + ' hm') + (pg ? ' · ' + akkuText(pg, true) : '');
       $('d-gross').className = 'gross' + (pg && pg.unterReserve ? ' rot' : '');
 
@@ -1840,7 +1850,8 @@
       }
       for (const p of daten.punkte) {
         const pr = projiziere(r.linie, p.lat, p.lon, lat0Von(r));
-        if (pr.q > QUER_MAX_KM) continue;
+        // eigene Stationen bis 10 km (bewusst eingetragen), fremde nur bis 3 km (Christof, 14.10.2026)
+        if (pr.q > (p.fremd ? FREMD_MAX_KM : QUER_MAX_KM)) continue;
         const strasse = String(p.strasse || '').split(/[,/;]/)[0].trim();
         (p.zuordnung = p.zuordnung || []).push({
           route: ADHOC_ID, km: pr.km, hm_hin: pr.hm_hin, hm_rueck: pr.hm_rueck, quer_km: runde(pr.q, 1),
@@ -2045,12 +2056,12 @@
           fillOpacity: e.punkt.fremd ? 0.15 : pg && pg.nichtErreichbar ? 0.4 : 0.9, dashArray: e.punkt.fremd ? '3 3' : null,
         }).addTo(karteEbene);
         m.on('click', () => zeichneKarte(e, false));
-        if (gewaehlt) m.bindTooltip(fmtKm(e.km) + ' km' + (pg ? ' · ' + akkuKurz(pg) : ''), { permanent: true, direction: 'top', offset: [0, -10], className: 'schild' });
+        if (gewaehlt) m.bindTooltip(fmtKm(e.weg) + ' km' + (pg ? ' · ' + akkuKurz(pg) : ''), { permanent: true, direction: 'top', offset: [0, -10], className: 'schild' });
       }
       if (ich) L.circleMarker(ich, { radius: 8, color: '#ffffff', weight: 3, fillColor: '#1a73e8', fillOpacity: 1 }).bindTooltip('Du').addTo(karteEbene);
 
       $('karte-text').textContent = wahl
-        ? kurzname(wahl.punkt.name) + ' · ' + fmtKm(wahl.km) + ' km' + (wahl.prognose ? ' · ' + akkuText(wahl.prognose) : '') + (wahl.punkt.fremd ? ' · nicht in deiner Liste' : '')
+        ? kurzname(wahl.punkt.name) + ' · ' + fmtKm(wahl.weg) + ' km' + (wahl.prognose ? ' · ' + akkuText(wahl.prognose) : '') + (wahl.punkt.fremd ? ' · nicht in deiner Liste' : '')
         : (erg && erg.eintraege.length ? 'Station antippen' : 'Keine Ladepunkte voraus');
       $('karte-details').hidden = !wahl;
       if (zoomen) {
