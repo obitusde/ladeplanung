@@ -1,4 +1,4 @@
-{"version":2,"stand":"2026-10-14","min_kw":100,"quellen":{"CH":"BFE, ich-tanke-strom.ch","DE":"Bundesnetzagentur, Ladesäulenregister"},"punkte":[
+{"version":2,"stand":"2026-10-14","min_kw":100,"quellen":{"CH":"BFE, ich-tanke-strom.ch","DE":"Bundesnetzagentur, Ladesäulenregister vom 2026-09-01"},"punkte":[
 {"id":"bfe-47.1869-8.4738","name":"AMAG Charging Station Cham","betreiber":"AMAG","lat":47.186928,"lon":8.473792,"kw":400,"anzahl":6,"adresse":"Alte Steinhauserstrasse, 6330 Cham, Schweiz"},
 {"id":"bfe-47.3789-8.6801","name":"AMAG Charging Station Volketswil","betreiber":"AMAG","lat":47.378919,"lon":8.68013,"kw":400,"anzahl":4,"adresse":"Hölzliwiesenstrasse, 8604 Volketswil, Schweiz"},
 {"id":"bfe-47.5485-7.5461","name":"Migrol Allschwil","betreiber":"Migrol","lat":47.548464,"lon":7.546145,"kw":300,"anzahl":4,"adresse":"Binningerstrasse, 4123 Allschwil, Schweiz"},
