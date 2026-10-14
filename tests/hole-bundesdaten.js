@@ -1,8 +1,10 @@
-// Ladestationen aus den Bundesdaten (BFE, ich-tanke-strom.ch) → fremde.json
-// Version 1.0.0 (14.10.2026) — Migrol und Tesla in der Schweiz ab 100 kW, je Standort zusammengefasst.
+// Ladestationen aus amtlichen Registern → fremde.json
+// Version 1.1.0 (14.10.2026) — zusätzlich Deutschland (Ladesäulenregister der Bundesnetzagentur: EnBW mobility+ und
+//                              Tesla Germany) und AMAG in der Schweiz.
+// Version 1.0.0 (14.10.2026) — Schweiz (BFE, ich-tanke-strom.ch): Migrol und Tesla ab 100 kW, je Standort zusammengefasst.
 //
-// Aufruf: node tests/hole-bundesdaten.js            (lädt die aktuelle Datei vom Bund)
-//         node tests/hole-bundesdaten.js datei.json  (lokale Datei, auch gzip)
+// Aufruf: node tests/hole-bundesdaten.js                         (lädt beide Quellen aus dem Netz)
+//         node tests/hole-bundesdaten.js ch.json[.gz] de.csv     (lokale Dateien)
 // Läuft monatlich als GitHub Action (.github/workflows/bundesdaten.yml).
 // In der App erscheinen diese Stationen nur bei „Route ab hier", gestrichelt mit „nicht in deiner Liste".
 'use strict';
@@ -10,31 +12,83 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 
-const QUELLE_URL = 'https://data.geo.admin.ch/ch.bfe.ladestellen-elektromobilitaet/data/oicp/ch.bfe.ladestellen-elektromobilitaet.json';
+const CH_URL = 'https://data.geo.admin.ch/ch.bfe.ladestellen-elektromobilitaet/data/oicp/ch.bfe.ladestellen-elektromobilitaet.json';
+const DE_SEITE = 'https://www.bundesnetzagentur.de/DE/Fachthemen/ElektrizitaetundGas/E-Mobilitaet/start.html';
 const MIN_KW = 100;
 const STANDORT_M = 80;   // Ladepunkte eines Betreibers bis 80 m auseinander = ein Standort
+const KENNUNG = 'ladeplanung (github.com/obitusde/ladeplanung)';
 
-/** Betreiber für die App oder null: nur Migrol (Name, läuft beim Bund unter „M-Charge") und Tesla. */
-function betreiberVon(operatorName, name) {
-  if (/migrol/i.test(name)) return 'Migrol';
-  if (/^tesla$/i.test(String(operatorName || '').trim())) return 'Tesla';
-  return null;
-}
+// ---------------------------------------------------------------------------
+// Gemeinsam
+// ---------------------------------------------------------------------------
 
 function abstandM(a, b) {
   const fx = 111320 * Math.cos(a.lat * Math.PI / 180);
   return Math.hypot((a.lat - b.lat) * 110574, (a.lon - b.lon) * fx);
 }
 
+/** Sammelt Ladepunkte zu Standorten (gleicher Betreiber, ≤ 80 m) – mit Raster, damit 10 000 Zeilen schnell gehen. */
+function sammler() {
+  const raster = new Map();
+  const alle = [];
+  const zelle = (lat, lon) => Math.round(lat * 100) + ',' + Math.round(lon * 100);
+  return {
+    alle,
+    hinzu(betreiber, lat, lon, kw, anzahl, neu) {
+      const zl = Math.round(lat * 100), zo = Math.round(lon * 100);
+      let s = null;
+      for (let a = -1; a <= 1 && !s; a++) for (let b = -1; b <= 1 && !s; b++) {
+        for (const x of raster.get((zl + a) + ',' + (zo + b)) || []) {
+          if (x.betreiber === betreiber && abstandM(x, { lat, lon }) <= STANDORT_M) { s = x; break; }
+        }
+      }
+      if (!s) {
+        s = Object.assign({ betreiber, lat, lon, kw: 0, anzahl: 0 }, neu());
+        const k = zelle(lat, lon);
+        if (!raster.has(k)) raster.set(k, []);
+        raster.get(k).push(s);
+        alle.push(s);
+      }
+      s.anzahl += anzahl;
+      s.kw = Math.max(s.kw, kw);
+    },
+  };
+}
+
+function alsPunkte(standorte, praefix) {
+  return standorte
+    .filter(s => s.kw >= MIN_KW)
+    .map(s => ({
+      id: praefix + '-' + s.lat.toFixed(4) + '-' + s.lon.toFixed(4),
+      name: s.name, betreiber: s.betreiber, lat: Number(s.lat.toFixed(6)), lon: Number(s.lon.toFixed(6)),
+      kw: Math.round(s.kw), anzahl: s.anzahl, adresse: s.adresse,
+    }))
+    .sort((x, y) => x.betreiber.localeCompare(y.betreiber) || x.name.localeCompare(y.name, 'de'));
+}
+
+const sauber = t => String(t || '').replace(/\s+/g, ' ').trim();
+const adresse = (strasse, plz, ort, land) => [sauber(strasse), sauber([plz, ort].filter(Boolean).join(' ')), land].filter(Boolean).join(', ');
+
+// ---------------------------------------------------------------------------
+// Schweiz: BFE (OICP-JSON)
+// ---------------------------------------------------------------------------
+
+/** Betreiber für die App oder null: Migrol (beim Bund unter „M-Charge"), AMAG (Name), Tesla (Betreiber). */
+function betreiberVon(operatorName, name) {
+  if (/migrol/i.test(name)) return 'Migrol';
+  if (/\bamag\b/i.test(name)) return 'AMAG';
+  if (/^tesla$/i.test(String(operatorName || '').trim())) return 'Tesla';
+  return null;
+}
+
 /** „Migrol | Gossau SG 1" → „Migrol Gossau SG"; Tesla ohne Namen → „Tesla Supercharger <Ort>". */
 function standortName(betreiber, name, ort) {
-  if (betreiber === 'Tesla') return 'Tesla Supercharger ' + (ort || '').trim();
+  if (betreiber === 'Tesla') return 'Tesla Supercharger ' + sauber(ort);
   return String(name).replace(/\s*\|\s*/g, ' ').replace(/\s+\d+\s*$/, '').replace(/\s+/g, ' ').trim();
 }
 
-/** Bundesdaten (OICP-JSON) → Liste der Standorte. Rein rechnerisch. */
 function auswerten(bund) {
-  const standorte = [];
+  const s = sammler();
   for (const block of bund.EVSEData || []) {
     for (const r of [].concat(block.EVSEDataRecord || [])) {
       const namen = [].concat(r.ChargingStationNames || []);
@@ -45,55 +99,124 @@ function auswerten(bund) {
       if (!(lat > 45 && lat < 48.5 && lon > 5.5 && lon < 11)) continue;
       const kw = Math.max(0, ...[].concat(r.ChargingFacilities || []).map(f => Number(f && f.power) || 0));
       const a = r.Address || {};
-      let s = standorte.find(x => x.betreiber === betreiber && abstandM(x, { lat, lon }) <= STANDORT_M);
-      if (!s) {
-        s = { betreiber, lat, lon, kw: 0, anzahl: 0, name: standortName(betreiber, name, a.City),
-          adresse: [String(a.Street || ''), [a.PostalCode, a.City].filter(Boolean).join(' '), 'Schweiz']
-            .map(t => String(t).replace(/\s+/g, ' ').trim()).filter(Boolean).join(', ') };
-        standorte.push(s);
-      }
-      s.anzahl++;
-      s.kw = Math.max(s.kw, kw);
+      s.hinzu(betreiber, lat, lon, kw, 1, () => ({ name: standortName(betreiber, name, a.City), adresse: adresse(a.Street, a.PostalCode, a.City, 'Schweiz') }));
     }
   }
-  return standorte
-    .filter(s => s.kw >= MIN_KW)
-    .map(s => ({
-      id: 'bfe-' + s.lat.toFixed(4) + '-' + s.lon.toFixed(4),
-      name: s.name, betreiber: s.betreiber, lat: Number(s.lat.toFixed(6)), lon: Number(s.lon.toFixed(6)),
-      kw: Math.round(s.kw), anzahl: s.anzahl, adresse: s.adresse,
-    }))
-    .sort((x, y) => x.betreiber.localeCompare(y.betreiber) || x.name.localeCompare(y.name, 'de'));
+  return alsPunkte(s.alle, 'bfe');
 }
 
-function alsJson(puffer) {
-  const roh = puffer[0] === 0x1f && puffer[1] === 0x8b ? zlib.gunzipSync(puffer) : puffer;
-  return JSON.parse(roh.toString('utf8'));
+// ---------------------------------------------------------------------------
+// Deutschland: Ladesäulenregister der Bundesnetzagentur (CSV, Semikolon, Kopfzeilen vor der Tabelle)
+// Nur EnBW mobility+ und Tesla Germany (Christof, 14.10.2026): ohne Tesla-Werk Grünheide und regionale EnBW-Töchter.
+// ---------------------------------------------------------------------------
+
+function betreiberDE(name) {
+  const n = sauber(name);
+  if (/^EnBW mobility\+/i.test(n)) return 'EnBW';
+  if (/^Tesla Germany GmbH$/i.test(n)) return 'Tesla';
+  return null;
+}
+
+/** Neuester CSV-Link auf der Seite der Bundesnetzagentur (der Dateiname enthält das Datum). */
+function neuesterCsvLink(html) {
+  const treffer = [...String(html).matchAll(/https:\/\/data\.bundesnetzagentur\.de\/[^"'\s]*Ladesaeulenregister_BNetzA_(\d{4}-\d{2}-\d{2})\.csv/g)];
+  if (!treffer.length) return null;
+  treffer.sort((a, b) => b[1].localeCompare(a[1]));
+  return { url: treffer[0][0], stand: treffer[0][1] };
+}
+
+/** CSV mit Semikolon; Felder in Anführungszeichen dürfen ; und Zeilenumbrüche enthalten. */
+function zerlegeCsv(text) {
+  const zeilen = [];
+  let feld = '', zeile = [], inZitat = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inZitat) {
+      if (c === '"') { if (text[i + 1] === '"') { feld += '"'; i++; } else inZitat = false; }
+      else feld += c;
+    } else if (c === '"') inZitat = true;
+    else if (c === ';') { zeile.push(feld); feld = ''; }
+    else if (c === '\n') { zeile.push(feld.replace(/\r$/, '')); zeilen.push(zeile); zeile = []; feld = ''; }
+    else feld += c;
+  }
+  if (feld !== '' || zeile.length) { zeile.push(feld); zeilen.push(zeile); }
+  return zeilen;
+}
+
+const zahlDE = s => { const t = String(s || '').trim(); return Number(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t); };
+
+function auswertenDE(text) {
+  const zeilen = zerlegeCsv(String(text).replace(/^﻿/, ''));
+  const k = zeilen.findIndex(z => z[0] === 'Ladeeinrichtungs-ID');
+  if (k < 0) throw new Error('Kopfzeile „Ladeeinrichtungs-ID" nicht gefunden – Format geändert?');
+  const kopf = zeilen[k].map(sauber);
+  const sp = n => { const i = kopf.indexOf(n); if (i < 0) throw new Error('Spalte „' + n + '" fehlt'); return i; };
+  const i = {
+    betreiber: sp('Betreiber'), name: sp('Anzeigename (Karte)'), status: sp('Status'), anzahl: sp('Anzahl Ladepunkte'),
+    kw: sp('Nennleistung Ladeeinrichtung [kW]'), strasse: sp('Straße'), nr: sp('Hausnummer'), plz: sp('Postleitzahl'),
+    ort: sp('Ort'), lat: sp('Breitengrad'), lon: sp('Längengrad'),
+  };
+  const s = sammler();
+  for (const f of zeilen.slice(k + 1)) {
+    if (f.length < kopf.length - 5) continue;
+    const betreiber = betreiberDE(f[i.betreiber]);
+    if (!betreiber || !/in betrieb/i.test(f[i.status])) continue;
+    const lat = zahlDE(f[i.lat]), lon = zahlDE(f[i.lon]);
+    if (!(lat > 47 && lat < 55.2 && lon > 5.8 && lon < 15.1)) continue;
+    const ort = sauber(f[i.ort]);
+    s.hinzu(betreiber, lat, lon, zahlDE(f[i.kw]) || 0, zahlDE(f[i.anzahl]) || 1, () => ({
+      name: sauber(f[i.name]) || (betreiber === 'Tesla' ? 'Tesla Supercharger ' : 'EnBW ') + ort,
+      adresse: adresse(sauber(f[i.strasse]) + (f[i.nr] ? ' ' + sauber(f[i.nr]) : ''), f[i.plz], ort, 'Deutschland'),
+    }));
+  }
+  return alsPunkte(s.alle, 'bnetza');
+}
+
+// ---------------------------------------------------------------------------
+// Ablauf
+// ---------------------------------------------------------------------------
+
+function alsText(puffer) {
+  return (puffer[0] === 0x1f && puffer[1] === 0x8b ? zlib.gunzipSync(puffer) : puffer).toString('utf8');
+}
+
+async function lade(url) {
+  const antwort = await fetch(url, { headers: { 'User-Agent': KENNUNG } });
+  if (!antwort.ok) throw new Error(url + ': HTTP ' + antwort.status);
+  return Buffer.from(await antwort.arrayBuffer());
 }
 
 async function main() {
-  const datei = process.argv[2];
-  let puffer;
-  if (datei) puffer = fs.readFileSync(datei);
+  const [chDatei, deDatei] = process.argv.slice(2);
+  const ch = auswerten(JSON.parse(alsText(chDatei ? fs.readFileSync(chDatei) : await lade(CH_URL))));
+  if (ch.length < 20) throw new Error('Schweiz: nur ' + ch.length + ' Standorte – Datenformat geändert? fremde.json bleibt unverändert');
+
+  let deStand = '', deText;
+  if (deDatei) deText = fs.readFileSync(deDatei, 'utf8');
   else {
-    const antwort = await fetch(QUELLE_URL, { headers: { 'User-Agent': 'ladeplanung (github.com/obitusde/ladeplanung)' } });
-    if (!antwort.ok) throw new Error('Bundesdaten HTTP ' + antwort.status);
-    puffer = Buffer.from(await antwort.arrayBuffer());
+    const link = neuesterCsvLink((await lade(DE_SEITE)).toString('utf8'));
+    if (!link) throw new Error('Deutschland: kein CSV-Link auf der Seite der Bundesnetzagentur – Seite geändert?');
+    deStand = link.stand;
+    deText = (await lade(link.url)).toString('utf8');
   }
-  const punkte = auswerten(alsJson(puffer));
-  if (punkte.length < 20) throw new Error('nur ' + punkte.length + ' Standorte gefunden – Datenformat geändert? fremde.json bleibt unverändert');
+  const de = auswertenDE(deText);
+  if (de.length < 500) throw new Error('Deutschland: nur ' + de.length + ' Standorte – Datenformat geändert? fremde.json bleibt unverändert');
+
+  const punkte = ch.concat(de);
   const ziel = path.join(__dirname, '..', 'fremde.json');
-  const neu = { version: 1, quelle: 'BFE, ich-tanke-strom.ch', min_kw: MIN_KW, punkte };
-  // „stand" nur ändern, wenn sich die Stationen geändert haben – sonst kein Commit
   let alt = null;
   try { alt = JSON.parse(fs.readFileSync(ziel, 'utf8')); } catch (e) { /* erste Fassung */ }
   const gleich = alt && JSON.stringify(alt.punkte) === JSON.stringify(punkte);
-  neu.stand = gleich ? alt.stand : new Date().toISOString().slice(0, 10);
-  fs.writeFileSync(ziel, JSON.stringify({ version: neu.version, stand: neu.stand, quelle: neu.quelle, min_kw: neu.min_kw, punkte }, null, 1) + '\n');
+  const stand = gleich ? alt.stand : new Date().toISOString().slice(0, 10);
+  const quellen = { CH: 'BFE, ich-tanke-strom.ch', DE: 'Bundesnetzagentur, Ladesäulenregister' + (deStand ? ' vom ' + deStand : '') };
+  // Ein Punkt je Zeile: lesbar im Diff, aber deutlich kleiner als eingerückt (≈ 2000 Standorte)
+  const text = '{"version":2,"stand":' + JSON.stringify(stand) + ',"min_kw":' + MIN_KW + ',"quellen":' + JSON.stringify(quellen) +
+    ',"punkte":[\n' + punkte.map(p => JSON.stringify(p)).join(',\n') + '\n]}\n';
+  fs.writeFileSync(ziel, text);
   const z = {};
-  punkte.forEach(p => { z[p.betreiber] = (z[p.betreiber] || 0) + 1; });
-  console.log('fremde.json: ' + punkte.length + ' Standorte ' + JSON.stringify(z) + (gleich ? ' (unverändert)' : ' (neu, Stand ' + neu.stand + ')'));
+  punkte.forEach(p => { const k = (p.id.startsWith('bfe') ? 'CH ' : 'DE ') + p.betreiber; z[k] = (z[k] || 0) + 1; });
+  console.log('fremde.json: ' + punkte.length + ' Standorte ' + JSON.stringify(z) + (gleich ? ' (unverändert)' : ' (neu, Stand ' + stand + ')'));
 }
 
-module.exports = { auswerten, standortName, betreiberVon };
+module.exports = { auswerten, auswertenDE, standortName, betreiberVon, betreiberDE, neuesterCsvLink, zerlegeCsv };
 if (require.main === module) main().catch(e => { console.error('Fehler: ' + e.message); process.exit(1); });

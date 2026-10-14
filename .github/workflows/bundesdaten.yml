@@ -1,9 +1,10 @@
-# Bundesdaten Ladestationen — Version 1.0.0
+# Bundesdaten Ladestationen — Version 1.1.0
 #
 # Einmal im Monat (am 1., 05:00 UTC) und auf Knopfdruck (Actions → „Bundesdaten Ladestationen" → „Run workflow"):
-# lädt die Schweizer Ladestellen des Bundes (BFE, ich-tanke-strom.ch), filtert Migrol und Tesla ab 100 kW
-# und legt sie als fremde.json ins Repo. Die App zeigt sie bei „Route ab hier" als „nicht in deiner Liste".
+# lädt die Schweizer Ladestellen des Bundes (BFE, ich-tanke-strom.ch: AMAG, Migrol, Tesla) und das deutsche
+# Ladesäulenregister (Bundesnetzagentur: EnBW mobility+, Tesla Germany), jeweils ab 100 kW, und legt sie als fremde.json ins Repo. Die App zeigt sie bei „Route ab hier" als „nicht in deiner Liste".
 #
+# Version 1.1.0 — Deutschland und AMAG dazu (14.10.2026).
 # Version 1.0.0 — erste Fassung (14.10.2026).
 
 name: Bundesdaten Ladestationen
@@ -52,7 +53,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add fremde.json
-          git commit -m "fremde.json: Migrol und Tesla aus den Bundesdaten aktualisiert"
+          git commit -m "fremde.json: Ladestationen aus den Registern (CH, DE) aktualisiert"
           git pull --rebase
           git push
           # Pushes mit dem Action-Schlüssel stoßen GitHub Pages nicht sicher an → Bau ausdrücklich anfordern

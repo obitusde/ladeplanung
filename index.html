@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.26.0 — Fremde Stationen auch aus Deutschland (EnBW, Tesla; Ladesäulenregister) und AMAG Schweiz; Karte mit
+                   Vorrang: deine Stationen (★ zuerst), AMAG, EnBW, Migrol, Tesla, Rest (wer oben liegt, wessen Schild bleibt).
   Version 0.25.5 — Karte: Route violett mit weißem Rand (grau sah aus wie Grenzen). Details ohne Annahmen, Favorit,
                    Koordinaten und id; Notiz direkt nach dem Akkubedarf.
   Version 0.25.4 — Karte: Firma im Schild („Tesla · 26 km · 40 %"); Schild antippen wählt die Station (ließ den Tipp
@@ -378,7 +380,7 @@
       <li><b>Große Zahl:</b> ganzer Weg bis zur Station – entlang der Route und, wenn sie abseits liegt, der Abzweig dazu („3 km abseits"). Stationen, deren Abzweig länger ist als der Weg entlang der Route bis dorthin, blendet die App aus: Sie liegen neben oder hinter dir, nicht auf dem Weg.</li>
       <li><b>braucht ≈ 23 %</b>: so viel Akku kostet der Weg bis dorthin. <b>Rest bei Ankunft ≈ 34 %</b>: so viel ist dort noch übrig – wenn oben „Akku jetzt" eingetragen ist. Ohne Eintrag rechnet die App mit vollem Akku (100 %). <span class="rot"><b>Rot</b></span> = Rest unter deiner Reserve, <b>nicht erreichbar</b> = Akku reicht nicht bis dorthin.</li>
       <li><b>Grau</b>: nicht erreichbar mit dem Akkustand.</li>
-      <li><b>Gestrichelt, „nicht in deiner Liste"</b> (nur bei „Route ab hier"): Migrol- und Tesla-Station aus den Bundesdaten (ich-tanke-strom.ch, ab 100 kW, monatlich aktualisiert). In den Details <b>In meine Liste übernehmen</b> – das Formular ist schon ausgefüllt.</li>
+      <li><b>Gestrichelt, „nicht in deiner Liste"</b> (nur bei „Route ab hier"): Station aus amtlichen Registern, ab 100 kW, monatlich aktualisiert: Schweiz AMAG, Migrol, Tesla (ich-tanke-strom.ch), Deutschland EnBW und Tesla (Ladesäulenregister der Bundesnetzagentur). In den Details <b>In meine Liste übernehmen</b> – das Formular ist schon ausgefüllt.</li>
       <li><b>letzte vor Reserve</b>: die letzte Station, die du noch über deiner Reserve erreichst.</li>
       <li><b>danach 38 km bis zur nächsten</b>: Abstand zur nächsten Station voraus – so siehst du lange Lücken.</li>
       <li><b>4 × 150 kW:</b> Anzahl Ladepunkte × Leistung, sofern eingetragen.</li>
@@ -541,7 +543,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.25.5';
+    const APP_VERSION = '0.26.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -1392,7 +1394,8 @@
         ['Richtung', { hin: 'nur Hinfahrt', rueck: 'nur Rückfahrt', beide: 'beide' }[p.richtung] || p.richtung],
         ['Streckenkm', e.z ? zahl(e.z.km, 1) + ' km ab Start' : '–'],
       ];
-      if (p.fremd) felder.push(['Quelle', 'Bundesdaten (ich-tanke-strom.ch), Stand ' + datumText(fremde && fremde.stand) + ' – nicht in deiner Liste']);
+      if (p.fremd) felder.push(['Quelle', (String(p.id).startsWith('bnetza') ? 'Ladesäulenregister der Bundesnetzagentur'
+        : 'Bundesdaten (ich-tanke-strom.ch)') + ', Stand ' + datumText(fremde && fremde.stand) + ' – nicht in deiner Liste']);
       const dl = $('d-felder');
       dl.replaceChildren();
       for (const [k, v] of felder) dl.append(el('dt', '', k), el('dd', '', v));
@@ -1847,7 +1850,12 @@
       delete r.lat0;
       daten.routen.push(r);
       const eigene = daten.punkte.slice();
+      // ≈ 2000 fremde Standorte (CH + DE): nur die im Rechteck um die Route weiter prüfen – spart dem Handy die Rechnung
+      let s = 90, n = -90, w = 180, o = -180;
+      for (const q of r.linie) { s = Math.min(s, q[0]); n = Math.max(n, q[0]); w = Math.min(w, q[1]); o = Math.max(o, q[1]); }
+      const rand = FREMD_MAX_KM / 100;   // ≈ 0,03° – großzügig genug für 3 km in jeder Richtung
       for (const f of (fremde && fremde.punkte) || []) {
+        if (f.lat < s - rand || f.lat > n + rand || f.lon < w - 2 * rand || f.lon > o + 2 * rand) continue;
         if (eigene.some(p => haversine(p.lat, p.lon, f.lat, f.lon) * 1000 <= FREMD_DUBLETTE_M)) continue;
         daten.punkte.push({ ...f, fremd: true, richtung: 'beide', favorit: false, notiz: '', link: '', zuordnung: [] });
       }
@@ -2058,9 +2066,10 @@
 
       // Alle erreichbaren Stationen deutlich mit Schild „26 km · 39 %“, nicht erreichbare klein und grau ohne Schild
       // (Christof, 14.10.2026). Zeichenreihenfolge: grau, erreichbar, gewählt – die gewählte liegt oben.
+      // Innerhalb der erreichbaren nach Vorrang: unwichtige zuerst zeichnen, damit die wichtigen oben liegen.
       const eintraege = ((erg && erg.eintraege) || []).slice();
       const rang = e => e === wahl ? 2 : e.prognose && e.prognose.nichtErreichbar ? 0 : 1;
-      eintraege.sort((x, y) => rang(x) - rang(y));
+      eintraege.sort((x, y) => rang(x) - rang(y) || vorrang(y.punkt) - vorrang(x.punkt));
       const erreichbar = [];
       karteSchilder = [];
       for (const e of eintraege) {
@@ -2088,10 +2097,10 @@
           const el = ev.tooltip.getElement();
           if (el && !el.dataset.tipp) { el.dataset.tipp = '1'; L.DomEvent.on(el, 'click', x => { L.DomEvent.stop(x); waehle(); }); }
         });
-        karteSchilder.push({ m, text, gewaehlt });
+        karteSchilder.push({ m, text, gewaehlt, vorrang: vorrang(e.punkt), weg: e.weg });
       }
-      // Schilder: gewählte zuerst, danach die nächsten zuerst
-      karteSchilder.sort((x, y) => (y.gewaehlt - x.gewaehlt));
+      // Überdecken sich Schilder, bleibt sichtbar: gewählte, dann nach Vorrang, dann die nähere
+      karteSchilder.sort((x, y) => (y.gewaehlt - x.gewaehlt) || x.vorrang - y.vorrang || x.weg - y.weg);
       if (ich) L.circleMarker(ich, { radius: 8, color: '#ffffff', weight: 3, fillColor: '#1a73e8', fillOpacity: 1 }).bindTooltip('Du').addTo(karteEbene);
 
       const anzahl = erreichbar.length - (wahl && wahl.prognose && wahl.prognose.nichtErreichbar ? 1 : 0);
@@ -2106,6 +2115,15 @@
         else karte.fitBounds(strecke.getBounds(), { padding: [30, 30] });
       }
       ordneSchilder();
+    }
+
+    // Vorrang auf der Karte (Christof, 14.10.2026): deine Stationen (★ zuerst), dann AMAG, EnBW, Migrol, Tesla, der Rest.
+    // Gilt nur für die Karte (wer oben liegt, wessen Schild bei Überdeckung bleibt); die Liste bleibt nach Entfernung.
+    const FIRMEN_VORRANG = ['AMAG', 'EnBW', 'Migrol', 'Tesla'];
+    function vorrang(p) {
+      if (!p.fremd) return p.favorit ? 0 : 1;
+      const i = FIRMEN_VORRANG.indexOf(firmaVon(p));
+      return 2 + (i < 0 ? FIRMEN_VORRANG.length : i);
     }
 
     /** Firma für das Kartenschild: „Tesla", „EnBW", „Migrol" – ohne „Supercharger", Ort usw. */

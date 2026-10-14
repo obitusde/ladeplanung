@@ -1,6 +1,6 @@
 // Test der Auswertung der Bundesdaten (tests/hole-bundesdaten.js) mit kleinen Beispieldaten.
 // Aufruf: node tests/test-bundesdaten.js
-const { auswerten, standortName } = require('./hole-bundesdaten.js');
+const { auswerten, auswertenDE, standortName, neuesterCsvLink } = require('./hole-bundesdaten.js');
 
 let fehler = 0;
 const pruefe = (bedingung, text) => { if (!bedingung) { fehler++; console.log('FEHLER ' + text); } };
@@ -24,9 +24,13 @@ const bund = { EVSEData: [
     evse([], 46.30005, 7.80005, 250, 'Steg'),
   ] },
   { OperatorName: 'eCarUp', EVSEDataRecord: [evse('Irgendwas', 46.4, 7.0, 150, 'X')] },
+  { OperatorName: 'Autosense', EVSEDataRecord: [evse('AMAG Charging Station Cham', 47.18, 8.46, 400, 'Cham')] },
 ] };
 
-const erg = auswerten(bund);
+const alleCh = auswerten(bund);
+const amag = alleCh.find(p => p.betreiber === 'AMAG');
+pruefe(amag && amag.name === 'AMAG Charging Station Cham' && amag.kw === 400, 'AMAG aus den Bundesdaten: ' + JSON.stringify(amag));
+const erg = alleCh.filter(p => p.betreiber !== 'AMAG');
 pruefe(erg.length === 2, 'zwei Standorte erwartet, waren ' + erg.length + ': ' + erg.map(p => p.name).join(', '));
 const sion = erg.find(p => p.betreiber === 'Migrol');
 pruefe(sion && sion.name === 'Migrol Sion' && sion.anzahl === 2 && sion.kw === 320, 'Migrol Sion zusammengefasst: ' + JSON.stringify(sion));
@@ -35,6 +39,38 @@ const steg = erg.find(p => p.betreiber === 'Tesla');
 pruefe(steg && steg.name === 'Tesla Supercharger Steg' && steg.kw === 250 && steg.anzahl === 2, 'Tesla Steg: ' + JSON.stringify(steg));
 pruefe(erg.every(p => /^bfe-\d+\.\d{4}-\d+\.\d{4}$/.test(p.id)), 'ids im Format bfe-lat-lon');
 pruefe(standortName('Migrol', 'Migrol | Gossau SG 1', 'Gossau') === 'Migrol Gossau SG', 'Name ohne Laufnummer');
+
+// Deutschland: Ladesäulenregister (Aufbau wie die echte Datei vom 01.09.2026, gekürzt)
+const kopfDE = 'Ladeeinrichtungs-ID;Betreiber;Anzeigename (Karte);Status;Art der Ladeeinrichtung;Anzahl Ladepunkte;Nennleistung Ladeeinrichtung [kW];' +
+  'Inbetriebnahmedatum;Straße;Hausnummer;Adresszusatz;Postleitzahl;Ort;Kreis/kreisfreie Stadt;Bundesland;Breitengrad;Längengrad;Standortbezeichnung';
+const zeileDE = (id, betreiber, name, status, anzahl, kw, strasse, nr, plz, ort, lat, lon, zusatz) =>
+  [id, betreiber, name, status, 'Schnellladeeinrichtung', anzahl, kw, '01.01.2024', strasse, nr, zusatz || '', plz, ort, 'Kreis', 'BW', lat, lon, ''].join(';');
+const csv = '﻿Ladesäulenregister Bundesnetzagentur;;;\r\nHinweis: ;;;\r\nLetzte Aktualisierung vom: 01.09.2026;;;\r\n;;;\r\n' +
+  'Allgemeine Informationen;;;1. Ladepunkt\r\n' + kopfDE + '\r\n' + [
+  zeileDE('1', 'EnBW mobility+ AG und Co.KG ', '', 'In Betrieb', '4', '300', 'Ulmer Str.', '5', '89129', 'Langenau', '48,4950', '10,1180'),
+  zeileDE('2', 'EnBW mobility+ AG und Co.KG ', '', 'In Betrieb', '4', '300', 'Ulmer Str.', '5', '89129', 'Langenau', '48,49505', '10,11805'), // gleicher Standort
+  zeileDE('3', 'EnBW mobility+ AG und Co.KG ', '', 'In Betrieb', '2', '22', 'Dorfstr.', '1', '89000', 'Klein', '48,1', '10,0'),               // unter 100 kW
+  zeileDE('4', 'EnBW Ostwürttemberg DonauRies AG', '', 'In Betrieb', '2', '150', 'A', '1', '73430', 'Aalen', '48,83', '10,09'),         // regionale Tochter
+  zeileDE('5', 'Tesla Manufacturing Brandenburg SE', '', 'In Betrieb', '8', '250', 'Tesla Str.', '1', '15537', 'Grünheide', '52,39', '13,79'), // Werk
+  zeileDE('6', 'Tesla Germany GmbH', '', 'In Betrieb', '12', '250', 'Am Rasthof', '2', '89188', 'Merklingen', '48,5120', '9,7600', '"an der A8; Ausfahrt 61"'),
+  zeileDE('7', 'Tesla Germany GmbH', '', 'Außer Betrieb', '8', '250', 'X', '1', '70000', 'Stuttgart', '48,7', '9,1'),
+].join('\r\n') + '\r\n';
+const de = auswertenDE(csv);
+pruefe(de.length === 2, 'Deutschland: 2 Standorte erwartet, waren ' + de.length + ': ' + de.map(p => p.name).join(', '));
+const langenau = de.find(p => p.betreiber === 'EnBW');
+pruefe(langenau && langenau.name === 'EnBW Langenau' && langenau.anzahl === 8 && langenau.kw === 300, 'EnBW Langenau zusammengefasst: ' + JSON.stringify(langenau));
+pruefe(langenau && langenau.adresse === 'Ulmer Str. 5, 89129 Langenau, Deutschland', 'Adresse DE: ' + (langenau && langenau.adresse));
+pruefe(langenau && Math.abs(langenau.lat - 48.495) < 0.001, 'Komma-Koordinaten gelesen');
+const merklingen = de.find(p => p.betreiber === 'Tesla');
+pruefe(merklingen && merklingen.name === 'Tesla Supercharger Merklingen' && merklingen.anzahl === 12, 'Tesla Merklingen (Semikolon im Feld): ' + JSON.stringify(merklingen));
+pruefe(de.every(p => p.id.startsWith('bnetza-')), 'ids im Format bnetza-lat-lon');
+
+const seite = '<a href="https://data.bundesnetzagentur.de/Bundesnetzagentur/DE/x/Ladesaeulenregister_BNetzA_2026-08-01.csv">alt</a>' +
+  '<a href="https://data.bundesnetzagentur.de/Bundesnetzagentur/DE/x/Ladesaeulenregister_BNetzA_2026-09-01.csv">neu</a>' +
+  '<a href="https://data.bundesnetzagentur.de/Bundesnetzagentur/DE/x/Ladesaeulenregister_BNetzA_2026-09-30.xlsx">xlsx</a>';
+const link = neuesterCsvLink(seite);
+pruefe(link && link.stand === '2026-09-01' && link.url.endsWith('_2026-09-01.csv'), 'neuester CSV-Link: ' + JSON.stringify(link));
+pruefe(neuesterCsvLink('<html>nichts</html>') === null, 'ohne Link null');
 
 console.log(fehler === 0 ? 'Alle Prüfungen bestanden.' : fehler + ' Prüfungen fehlgeschlagen.');
 process.exit(fehler === 0 ? 0 : 1);
