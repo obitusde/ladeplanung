@@ -2,6 +2,7 @@
 <!--
   Ladeplanung — Formular zum Bearbeiten, Löschen und Hinzufügen eines Ladepunkts.
   Wird von doGet() in Code.js ausgeliefert; MODELL kommt aus dem Template.
+  Version 0.18.0 — Vorbelegt aus der App („Übernehmen" einer Station aus den Bundesdaten): eigener Hinweistext.
   Version 0.17.0 — Auf dem Handy nicht mehr winzig: hochskalieren, wenn die Seite in Desktop-Breite erscheint.
   Version 0.16.0 — Feld „Straße" (Autobahn im Titel; leer = automatisch aus OpenStreetMap).
   Version 0.12.0 — Löschen, Nähe-Warnung bis 300 m.
@@ -156,7 +157,9 @@
     const knopfText = neu ? 'Anlegen' : 'Speichern';
 
     $('titel').textContent = neu ? 'Ladepunkt hinzufügen' : 'Ladepunkt bearbeiten';
-    $('unter').textContent = neu
+    $('unter').textContent = neu && punkt.uebernommen
+      ? 'Aus den Bundesdaten (ich-tanke-strom.ch) übernommen. Angaben prüfen, bei Bedarf Notiz ergänzen und „Anlegen" tippen – die Adresse ergänzt das Script.'
+      : neu
       ? 'Link aus Google Maps einfügen (Ort antippen → „Teilen" → „Link kopieren"). Alles andere ist optional – Name, Adresse und Betreiber ergänzt das Script. Gibt es die Station schon, wirst du gewarnt.'
       : [punkt.id, punkt.Adresse].filter(Boolean).join(' · ');
     $('feld-link').hidden = !neu;

@@ -4,10 +4,19 @@ const fs = require('fs');
 const path = require('path');
 
 const quelle = fs.readFileSync(path.join(__dirname, '..', 'apps-script', 'Code.js'), 'utf8');
-const gs = new Function(quelle + '; return { werteMapsUrlAus_, koordinatenAusAdresse_, betreiberAusName_, nameMitOrt_ };')();
+const gs = new Function(quelle + '; return { werteMapsUrlAus_, koordinatenAusAdresse_, betreiberAusName_, nameMitOrt_, vorbelegungNeu_ };')();
 
 let fehler = 0;
 const pruefe = (bedingung, text) => { if (!bedingung) { fehler++; console.log('FEHLER ' + text); } };
+
+// 0. „Übernehmen" aus den Bundesdaten: Link mit query=lat,lon und Vorbelegung des Formulars.
+const ueber = gs.werteMapsUrlAus_('https://www.google.com/maps/search/?api=1&query=46.23111,7.36222');
+pruefe(ueber.lat === 46.23111 && ueber.lon === 7.36222, 'query=lat,lon erkannt, war ' + ueber.lat + ',' + ueber.lon);
+pruefe(gs.werteMapsUrlAus_('https://www.google.com/maps/search/?api=1&query=46.5%2C6.6').lat === 46.5, 'query mit kodiertem Komma');
+const vb = gs.vorbelegungNeu_({ link: 'https://www.google.com/maps/search/?api=1&query=1,2', name: 'Migrol Sion 2', betreiber: 'Migrol', kw: '320', anzahl: 'x4' });
+pruefe(vb.Name === 'Migrol Sion 2' && vb.kW === '320' && vb.Anzahl === '' && vb.uebernommen === true, 'Vorbelegung: Text übernommen, ungültige Zahl leer');
+pruefe(gs.vorbelegungNeu_({}).uebernommen === false && gs.vorbelegungNeu_({}).link === '', 'Vorbelegung leer ohne Parameter');
+pruefe(gs.vorbelegungNeu_({ kw: '5000' }).kW === '', 'kW über 1000 verworfen');
 
 // 1. Alle echten Links: Name, Koordinaten im plausiblen Bereich, Betreiber erkannt.
 const zeilen = fs.readFileSync(path.join(__dirname, 'fixtures', 'maps-links.tsv'), 'utf8').trim().split(/\r?\n/);

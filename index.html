@@ -1,6 +1,11 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.25.0 — „Route ab hier" (Menü): Route vom Standort oder einem Ort zu einem bekannten oder frei gesuchten Ort,
+                   direkt im Handy über OpenRouteService (Schlüssel in den Einstellungen, nur im Handy gespeichert);
+                   danach dieselbe Liste wie bei Stammstrecken, dazu Migrol/Tesla aus den Bundesdaten (fremde.json)
+                   gestrichelt mit „nicht in deiner Liste" und „In meine Liste übernehmen". Karte (Leaflet,
+                   OpenStreetMap): ganze Strecke, Standort, Weg bis zur gewählten Station. Nicht erreichbare Stationen grau.
   Version 0.24.1 — Adapter aus getDevices: erst auf seine Bluetooth-Werbung warten, dann verbinden (sonst „no longer in
                    range"); klappt es nicht, beim nächsten Tippen wieder Geräteauswahl.
   Version 0.24.0 — Der letzte bekannte Akkustand gilt für jede gewählte Route und Richtung: Ort des Werts wird auf die
@@ -180,6 +185,25 @@
       background: var(--flaeche); border: 1px solid var(--linie); overflow-wrap: anywhere;
     }
     .rot, .eintrag .rot { color: var(--rot); }
+    /* Nicht erreichbar: grau (Christof, 14.10.2026); nicht in der eigenen Liste: gestrichelt */
+    .eintrag.grau { opacity: .5; }
+    .eintrag.fremd { border: 2px dashed var(--leise); border-radius: 10px; margin: 4px 6px; width: calc(100% - 12px); }
+    .eintrag .fremd-marke { justify-self: start; margin-top: 2px; padding: 0 8px; border-radius: 6px; border: 1px dashed var(--leise); color: var(--leise); font-weight: 700; font-size: 14px; }
+    header #karte-knopf { flex: none; padding: 0 12px; }
+
+    #karte-seite { position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column; background: var(--grund); padding-top: env(safe-area-inset-top); }
+    #karte-seite .kopf { display: flex; gap: 6px; padding: 8px 10px; }
+    #karte-seite .kopf .knopf { min-height: 44px; }
+    #karte { flex: 1; min-height: 0; background: var(--flaeche); }
+    #karte-info { display: flex; gap: 10px; align-items: center; padding: 8px 12px calc(env(safe-area-inset-bottom) + 8px); border-top: 2px solid var(--linie); }
+    #karte-info .text { flex: 1; font-weight: 600; font-variant-numeric: tabular-nums; }
+    #karte-info .knopf { min-height: 44px; }
+    .leaflet-tooltip.schild { font: 700 14px/1.2 system-ui, sans-serif; }
+
+    .vorschlaege { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+    .chip { min-height: 40px; padding: 0 12px; border-radius: 20px; border: 2px solid var(--linie); background: var(--flaeche); font-weight: 600; cursor: pointer; }
+    .chip.gewaehlt { background: var(--akzent); color: var(--akzent-text); border-color: var(--akzent); }
+    #adhoc-dlg .wahl { font-weight: 700; margin: 0 0 6px; }
 
     footer {
       position: sticky; bottom: 0;
@@ -238,7 +262,7 @@
 
     #toast {
       position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 70px); transform: translateX(-50%);
-      z-index: 10; background: var(--text); color: var(--grund);
+      z-index: 1000; background: var(--text); color: var(--grund);
       padding: 12px 18px; border-radius: 12px; font-weight: 600; max-width: 90vw;
     }
   </style>
@@ -254,6 +278,7 @@
     <div class="zeile">
       <select id="ueber" class="ort" aria-label="über" hidden></select>
       <button id="standort" class="knopf haupt" type="button">Standort</button>
+      <button id="karte-knopf" class="knopf" type="button" aria-label="Karte: Weg zur nächsten Station">Karte</button>
     </div>
   </header>
 
@@ -276,6 +301,8 @@
     <div class="aktionen">
       <button id="d-kopieren" class="knopf haupt" type="button">Adresse kopieren</button>
       <p class="klein-hinweis">Danach in My CUPRA ins Zielfeld einfügen – Teilen an My CUPRA geht nicht.</p>
+      <a id="d-uebernehmen" class="knopf haupt" target="_blank" rel="noopener" hidden>In meine Liste übernehmen</a>
+      <button id="d-karte" class="knopf" type="button">Auf Karte</button>
       <a id="d-maps" class="knopf" target="_blank" rel="noopener">Navigieren (Google Maps)</a>
       <a id="d-ort" class="knopf" target="_blank" rel="noopener">Belegung in Google Maps</a>
       <a id="d-app" class="knopf" target="_blank" rel="noopener" hidden>App</a>
@@ -310,6 +337,7 @@
         <b>Fahrt beenden</b> öffnet das Kalibrierformular (vor dem Laden oder am Ziel).
         <b>✕</b> verwirft die Fahrt ohne Kalibrierung – z. B. nach einem Test oder einem Tippfehler; danach erscheint wieder „Akku jetzt".</li>
       <li><b>„Fahrt beendet … – Kalibrierung noch offen?":</b> Erinnerung, falls das Formular nicht abgeschickt wurde. <b>Kalibrieren</b> öffnet es nochmals, <b>✕</b> blendet die Erinnerung aus.</li>
+      <li><b>Karte:</b> ganze Strecke, dein Standort (blau) und der Weg bis zur nächsten Station. Eine andere Station antippen zeigt den Weg dorthin; <b>Ganze Strecke</b> zoomt heraus, <b>Details</b> öffnet die Station. In den Details jeder Station gibt es dafür auch <b>Auf Karte</b>.</li>
       <li><b>⇄</b> tauscht von und nach. Der letzte bekannte Akkustand gilt für jede Strecke, die du oben wählst – die Liste zeigt sofort, was damit erreichbar ist.</li>
       <li><b>☰ Menü:</b> Ladepunkt oder Route hinzufügen, Einstellungen, Simulation, Ladepreise, Preise aktualisieren, Wartung &amp; Status und diese Seite.</li>
     </ul>
@@ -335,6 +363,8 @@
     <ul>
       <li><b>Große Zahl:</b> Kilometer entlang der Route bis auf Höhe des Ladepunkts. Liegt er abseits, kommt der Weg von der Ausfahrt noch dazu („3,2 km abseits").</li>
       <li><b>braucht ≈ 23 %</b>: so viel Akku kostet der Weg bis dorthin. <b>Rest bei Ankunft ≈ 34 %</b>: so viel ist dort noch übrig – wenn oben „Akku jetzt" eingetragen ist. Ohne Eintrag rechnet die App mit vollem Akku (100 %). <span class="rot"><b>Rot</b></span> = Rest unter deiner Reserve, <b>nicht erreichbar</b> = Akku reicht nicht bis dorthin.</li>
+      <li><b>Grau</b>: nicht erreichbar mit dem Akkustand.</li>
+      <li><b>Gestrichelt, „nicht in deiner Liste"</b> (nur bei „Route ab hier"): Migrol- und Tesla-Station aus den Bundesdaten (ich-tanke-strom.ch, ab 100 kW, monatlich aktualisiert). In den Details <b>In meine Liste übernehmen</b> – das Formular ist schon ausgefüllt.</li>
       <li><b>letzte vor Reserve</b>: die letzte Station, die du noch über deiner Reserve erreichst.</li>
       <li><b>danach 38 km bis zur nächsten</b>: Abstand zur nächsten Station voraus – so siehst du lange Lücken.</li>
       <li><b>4 × 150 kW:</b> Anzahl Ladepunkte × Leistung, sofern eingetragen.</li>
@@ -359,6 +389,10 @@
 
     <h3>Abseits der Route</h3>
     <p>Bist du mehr als 10 km von der Linie entfernt, plant die App <b>ab dem gewählten Startort</b> – praktisch, um zu Hause eine Strecke anzuschauen, die woanders beginnt. Oben steht dann „Geplant ab Neuenrade“ mit dem Knopf <b>ab meinem Standort</b>: Damit siehst du stattdessen die Luftlinie zu jeder Station, ohne Höhen und ohne Prognose – der Notbehelf für einen größeren Umweg mitten auf der Strecke. Zurück geht es mit <b>ab Startort</b>. Die GPS-Genauigkeit steht unten; bei mehreren hundert Metern ist die Position unzuverlässig.</p>
+
+    <h3>Route ab hier</h3>
+    <p>Für Fahrten abseits der Stammstrecken, z. B. von Ovronnaz nach Neuenrade: Menü → <b>Route ab hier</b>. Start ist dein Standort oder ein anderer Ort, Ziel einer deiner Orte (antippen) oder ein beliebiger Ort (suchen; nur Orte, gerechnet wird zur Ortsmitte). Die App holt die Route bei OpenRouteService und zeigt danach dieselbe Liste wie sonst – mit deinen Stationen bis 10 km neben dem Weg und zusätzlich Migrol und Tesla aus den Bundesdaten. Oben steht dann z. B. „Ovronnaz → Neuenrade“; die Route bleibt, bis du eine neue holst oder sie im selben Fenster entfernst.</p>
+    <p>Einmalig nötig: den <b>OpenRouteService-Schlüssel</b> unter Menü → Einstellungen eintragen. Er bleibt nur auf diesem Handy.</p>
 
     <h3>Details</h3>
     <p>Eine Station antippen: <b>Adresse kopieren</b> (in My CUPRA einfügen), <b>Navigieren</b> in Google Maps, <b>Belegung in Google Maps</b>, die <b>App des Betreibers</b>, <b>ABRP</b> (Plan von deinem Standort), <b>Bearbeiten</b> (Notiz, Straße, kW, Favorit … und Löschen) und <b>Vergleichswert eintragen</b> (siehe Akku-Prognose). In der Simulation zusätzlich <b>Simulierte Position hierher</b>.</p>
@@ -389,6 +423,18 @@
     <p id="info-stand" class="klein-hinweis" style="margin-top:20px"></p>
   </section>
 
+  <section id="karte-seite" hidden>
+    <div class="kopf">
+      <button id="karte-zurueck" class="knopf" type="button">← Zurück</button>
+      <button id="karte-ganz" class="knopf" type="button">Ganze Strecke</button>
+    </div>
+    <div id="karte"></div>
+    <div id="karte-info">
+      <span id="karte-text" class="text"></span>
+      <button id="karte-details" class="knopf" type="button" hidden>Details</button>
+    </div>
+  </section>
+
   <section id="preise-seite" hidden>
     <button id="preise-zurueck" class="knopf" type="button">← Zurück</button>
     <h2>Ladepreise</h2>
@@ -400,6 +446,7 @@
   <dialog id="menue-dlg">
     <form method="dialog" class="menue">
       <h2>Menü</h2>
+      <button type="button" class="knopf" data-m="adhoc">↪ Route ab hier</button>
       <a id="m-neu" class="knopf" href="#" target="_blank" rel="noopener">＋ Ladepunkt hinzufügen</a>
       <a id="m-route" class="knopf" href="#" target="_blank" rel="noopener">＋ Route hinzufügen</a>
       <button type="button" class="knopf" data-m="einstellungen">⚙ Einstellungen</button>
@@ -409,6 +456,31 @@
       <a id="m-wartung" class="knopf" href="#" target="_blank" rel="noopener">🔧 Wartung &amp; Status</a>
       <button type="button" class="knopf" data-m="info">ⓘ So funktioniert die App</button>
       <button class="knopf haupt" value="zu">Schließen</button>
+    </form>
+  </dialog>
+
+  <dialog id="adhoc-dlg">
+    <form method="dialog" id="adhoc-form">
+      <h2>Route ab hier</h2>
+      <h3>Start</h3>
+      <div class="vorschlaege">
+        <button type="button" class="chip gewaehlt" data-start="hier">Mein Standort</button>
+        <button type="button" class="chip" data-start="ort">Anderer Ort …</button>
+      </div>
+      <div id="adhoc-start-ort" hidden>
+        <input type="text" id="adhoc-start-text" autocomplete="off" spellcheck="false" placeholder="Ort suchen, z. B. Sion">
+        <div id="adhoc-start-vorschlaege" class="vorschlaege"></div>
+      </div>
+      <h3>Ziel</h3>
+      <div id="adhoc-ziele" class="vorschlaege"></div>
+      <input type="text" id="adhoc-ziel-text" autocomplete="off" spellcheck="false" placeholder="anderer Ort, z. B. Lyon">
+      <div id="adhoc-ziel-vorschlaege" class="vorschlaege"></div>
+      <p id="adhoc-wahl" class="wahl"></p>
+      <p class="klein">Nur Orte (Ortsmitte), keine Straßen – es geht um die Ladestationen auf dem Weg, nicht um Navigation.</p>
+      <p id="adhoc-status" class="klein" role="status"></p>
+      <button type="button" id="adhoc-los" class="knopf haupt" style="width:100%">Route berechnen</button>
+      <button type="button" id="adhoc-entfernen" class="knopf" style="width:100%;margin-top:8px" hidden>Route ab hier entfernen</button>
+      <button class="knopf" value="zu" style="width:100%;margin-top:8px">Abbrechen</button>
     </form>
   </dialog>
 
@@ -441,6 +513,9 @@
       <label class="schalter"><input type="checkbox" id="e-obd"> Akku beim Tippen auf „Standort“ über den Adapter lesen</label>
       <p class="klein">Veepeak OBDCheck BLE+ im Auto, Zündung an. Beim ersten Mal den Adapter in der Liste wählen. Liest nur auf Knopfdruck, nichts im Hintergrund.</p>
       <p class="klein" id="e-adapter"></p>
+      <h3>Route ab hier</h3>
+      <label>OpenRouteService-Schlüssel <input type="text" id="e-ors" autocomplete="off" spellcheck="false" placeholder="Schlüssel einfügen"></label>
+      <p class="klein">Bleibt nur auf diesem Handy gespeichert, nicht im öffentlichen Repo.</p>
       <p class="klein" id="e-tempo"></p>
       <p class="klein" id="version"></p>
       <button class="knopf haupt" value="ok" style="width:100%">Fertig</button>
@@ -452,7 +527,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.24.1';
+    const APP_VERSION = '0.25.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -462,6 +537,18 @@
     const ABSEITS = { label: 'Weit abseits (Annecy)', lat: 45.8992, lon: 6.1294 };
     const TEMPERATUR_ERSATZ_C = 15;
     const ANKUNFT_OFFEN_MS = 12 * 3600e3;  // so lange erinnert die Leiste an eine noch nicht kalibrierte Ankunft
+    // Route ab hier (v0.25.0): OpenRouteService direkt aus dem Handy; Schlüssel nur in localStorage, nie im Repo
+    const ORS_BASIS = 'https://api.openrouteservice.org';
+    const ORS_SPEICHER = 'ladeplanung.ors';
+    const ADHOC_SPEICHER = 'ladeplanung.adhoc';
+    const ADHOC_ID = 'adhoc';
+    const FREMD_DUBLETTE_M = 150;   // Station aus den Bundesdaten so nah an einer eigenen → ist dieselbe, nicht doppelt zeigen
+    // Mont-Blanc-Tunnel nie (Christof): kleines Rechteck über der Tunnelmitte, dort gibt es sonst keine Straße
+    const MONT_BLANC = [[[6.90, 45.85], [6.94, 45.85], [6.94, 45.885], [6.90, 45.885], [6.90, 45.85]]];
+    // Karte: Leaflet 1.9.4 von cdnjs, nur diese geprüfte Fassung (Prüfsumme), Kacheln von OpenStreetMap
+    const LEAFLET_URL = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/';
+    const LEAFLET_JS_SRI = 'sha512-BwHfrr4c9kmRkLw6iXFdzcdWV/PGkVgiIyIWLLlTSXzWQzxuSg4DiQUCpauz/EWjgk5TYQqX/kvn9pG1NpYfqg==';
+    const LEAFLET_CSS_SRI = 'sha512-Zcn6bjR/8RZbLEpLIeOwNtzREBAJnUKESxces60Mpoj+2okopSAcSUIUOseddDm0cxnGQzxIR7vJgsLZbdLE3w==';
 
     // Rückfall, falls modell.json nicht geladen werden kann — gleiche Startwerte wie MODELL_STANDARD in Code.js
     const MODELL_STANDARD = {
@@ -533,6 +620,81 @@
     }
     // ENERGIE-ENDE
 
+    // LINIE-START — gleiche Rechnung wie kumuliere_ / glaetteHoehen_ / duenneAus_ in apps-script/Code.js (geprüft in tests/test-linie.js)
+    // Höhen: gleitender Median über 2 km im 100-m-Raster, dann erst ab 10 m Änderung zählen (rohe Höhen rauschen 2–3-fach).
+    const HOEHEN_SCHWELLE_M = 10;
+    const GLAETTUNG_FENSTER_KM = 2;
+    const GLAETTUNG_RASTER_KM = 0.1;
+    const AUSDUENNUNG_KM = 0.25;
+    const AUSDUENNUNG_HM = 10;
+    const runde = (x, stellen) => { const f = Math.pow(10, stellen); return Math.round(x * f) / f; };
+
+    /** [lon, lat, höhe] in voller Auflösung → [lat, lon, km, anstieg_hin, anstieg_rueck, höhe_geglättet]. */
+    function kumuliere(koordinaten) {
+      const n = koordinaten.length;
+      const kms = new Array(n);
+      let km = 0;
+      for (let i = 0; i < n; i++) {
+        if (i > 0) km += haversine(koordinaten[i - 1][1], koordinaten[i - 1][0], koordinaten[i][1], koordinaten[i][0]);
+        kms[i] = km;
+      }
+      const glatt = glaetteHoehen(kms, koordinaten.map(p => p[2]));
+      const erg = [];
+      let auf = 0, ab = 0;
+      let bezug = n > 0 ? glatt[0] : 0;
+      for (let i = 0; i < n; i++) {
+        const d = glatt[i] - bezug;
+        if (d >= HOEHEN_SCHWELLE_M) { auf += d; bezug = glatt[i]; }
+        else if (-d >= HOEHEN_SCHWELLE_M) { ab -= d; bezug = glatt[i]; }
+        erg.push([koordinaten[i][1], koordinaten[i][0], kms[i], auf, ab, glatt[i]]);
+      }
+      return erg;
+    }
+
+    function glaetteHoehen(kms, hoehen) {
+      const n = hoehen.length;
+      const laenge = n > 0 ? kms[n - 1] : 0;
+      if (n < 3 || laenge <= 0) return hoehen.slice();
+      const schritte = Math.max(1, Math.round(laenge / GLAETTUNG_RASTER_KM));
+      const raster = new Array(schritte + 1);
+      let j = 0;
+      for (let s = 0; s <= schritte; s++) {
+        const k = laenge * s / schritte;
+        while (j + 1 < n - 1 && kms[j + 1] < k) j++;
+        const spann = kms[j + 1] - kms[j];
+        const t = spann > 0 ? Math.max(0, Math.min(1, (k - kms[j]) / spann)) : 0;
+        raster[s] = hoehen[j] + t * (hoehen[j + 1] - hoehen[j]);
+      }
+      const radius = Math.max(1, Math.round(GLAETTUNG_FENSTER_KM / 2 / (laenge / schritte)));
+      const median = raster.map((_, s) => {
+        const fenster = raster.slice(Math.max(0, s - radius), s + radius + 1).sort((a, b) => a - b);
+        return fenster[Math.floor(fenster.length / 2)];
+      });
+      return kms.map(k => {
+        const pos = k / laenge * schritte;
+        const s0 = Math.min(schritte, Math.floor(pos));
+        const s1 = Math.min(schritte, s0 + 1);
+        return median[s0] + (pos - s0) * (median[s1] - median[s0]);
+      });
+    }
+
+    /** Stützpunkt behalten, wenn > 250 m oder > 10 m Höhe seit dem letzten; erster und letzter immer. */
+    function duenneAus(voll) {
+      if (voll.length === 0) return [];
+      const behalten = [voll[0]];
+      let letzter = voll[0];
+      for (let i = 1; i < voll.length - 1; i++) {
+        const p = voll[i];
+        if (p[2] - letzter[2] > AUSDUENNUNG_KM || Math.abs(p[5] - letzter[5]) > AUSDUENNUNG_HM) {
+          behalten.push(p);
+          letzter = p;
+        }
+      }
+      if (voll.length > 1) behalten.push(voll[voll.length - 1]);
+      return behalten.map(p => [runde(p[0], 5), runde(p[1], 5), runde(p[2], 2), Math.round(p[3]), Math.round(p[4])]);
+    }
+    // LINIE-ENDE
+
     /** Kilometer, Anstieg und Gefälle zwischen zwei Positionen auf der Linie, in Fahrtrichtung. */
     function streckenwerte(richtung, von, bis) {
       const hin = richtung === 'hin';
@@ -550,7 +712,8 @@
       const hin = richtung === 'hin';
       const kandidaten = daten.punkte
         .map(p => ({ punkt: p, z: (p.zuordnung || []).find(z => z.route === routeId) }))
-        .filter(x => x.z && (x.punkt.richtung === 'beide' || x.punkt.richtung === richtung));
+        // Route ab hier: Richtung je Station umgerechnet (z.richtung), sonst die der Stammstrecke
+        .filter(x => x.z && ((x.z.richtung || x.punkt.richtung) === 'beide' || (x.z.richtung || x.punkt.richtung) === richtung));
 
       if (pr.q > QUER_MAX_KM) {
         const eintraege = kandidaten
@@ -619,7 +782,13 @@
     let detailPunkt = null;
     let planung = { pos: null, abStart: null };   // Position, ab der gerechnet wird (Standort oder Startort der Route)
     let preise = null;       // preise.json (Ladepreise je Betreiber und Land)
+    let fremde = null;       // fremde.json (Migrol/Tesla aus den Bundesdaten) – nur bei „Route ab hier"
+    let detailEintrag = null;
+    let letzteAnsicht = null;   // { route, erg, pos, planPos } der zuletzt gezeichneten Liste – für die Karte
     const LETZTER_STANDORT_MAX_MS = 24 * 3600e3;
+    let adhocRoute = (() => {
+      try { return JSON.parse(localStorage.getItem(ADHOC_SPEICHER) || 'null'); } catch (e) { return null; }
+    })();
 
     const zustand = (() => {
       const standard = {
@@ -722,7 +891,7 @@
       fuelle($('nach'), zieleVon(von).map(o => [o, o]), nach);
       const varianten = routenZwischen(von, nach);
       $('ueber').hidden = varianten.length < 2;
-      fuelle($('ueber'), varianten.map(x => [x.route.id, 'über ' + (routenTeile(x.route).variante || x.route.name)]), route.id);
+      fuelle($('ueber'), varianten.map(x => [x.route.id, x.route.adhoc ? 'Route ab hier' : 'über ' + (routenTeile(x.route).variante || x.route.name)]), route.id);
     }
 
     // -----------------------------------------------------------------------
@@ -818,6 +987,7 @@
         }
       }
       $('preise-seite').hidden = false;
+      nachVorn('preise-seite');
       $('preise-seite').scrollTop = 0;
       history.pushState({ preise: true }, '');
     }
@@ -996,6 +1166,7 @@
           : gpsFehler ? 'Standort nicht verfügbar: ' + gpsFehler
           : 'Standort drücken.';
         liste.append(el('p', 'leer', text));
+        letzteAnsicht = { route, erg: null, pos: null, planPos: null };
         renderFahrt(route, null);
         renderFuss(route, null, null);
         return;
@@ -1044,15 +1215,19 @@
       if (erg.eintraege.some(e => e.prognose && e.prognose.unterReserve)) {
         for (const e of erg.eintraege) if (e.prognose && !e.prognose.unterReserve) letzteVorReserve = e;
       }
+      letzteAnsicht = { route, erg, pos, planPos: planung.pos };
       erg.eintraege.forEach((e, i) => {
         const pg = e.prognose;
-        const zeile = el('button', 'eintrag' + (e.punkt.favorit ? ' favorit' : ''));
+        const zeile = el('button', 'eintrag' + (e.punkt.favorit ? ' favorit' : '') + (e.punkt.fremd ? ' fremd' : '') +
+          (pg && pg.nichtErreichbar ? ' grau' : ''));
         zeile.type = 'button';
-        const rot = pg && pg.unterReserve ? ' rot' : '';
+        // rot = unter der Reserve, aber erreichbar; nicht erreichbar ist grau (ganze Zeile)
+        const rot = pg && pg.unterReserve && !pg.nichtErreichbar ? ' rot' : '';
         const km = el('span', 'km' + rot, fmtKm(e.km));
         km.append(el('small', '', 'km'));
         const strasse = e.z && e.z.strasse ? ' (' + e.z.strasse + ')' : '';
         zeile.append(km, el('span', 'name' + rot, (e.punkt.favorit ? '★ ' : '') + kurzname(e.punkt.name) + strasse));
+        if (e.punkt.fremd) zeile.append(el('span', 'fremd-marke', 'nicht in deiner Liste'));
         if (pg) zeile.append(el('span', 'akku' + rot, akkuText(pg)));
         const meta = el('span', 'meta');
         const lage = lageKurz(e.z);
@@ -1085,6 +1260,10 @@
 
       renderFahrt(route, erg);
       renderFuss(route, erg, pos);
+      // offene Karte mit den neuen Werten (Standort, Wetter, Akku) nachziehen, gewählte Station bleibt
+      if (karte && !$('karte-seite').hidden) {
+        zeichneKarte(karteWahl ? erg.eintraege.find(x => x.punkt.id === karteWahl.punkt.id) || null : null, false);
+      }
     }
 
     /** Leiste über der Liste: Losfahren / Fahrt läuft / Angekommen – Kalibrierung offen. Alles optional. */
@@ -1166,6 +1345,7 @@
       const p = e.punkt;
       const pg = e.prognose;
       detailPunkt = p;
+      detailEintrag = e;
       $('d-name').textContent = (p.favorit ? '★ ' : '') + kurzname(p.name);
       $('d-gross').textContent = fmtKm(e.km) + ' km ' + (modus === 'luftlinie' ? 'Luftlinie' : 'voraus') +
         (e.hm === null ? '' : ' · + ' + e.hm + ' hm') + (pg ? ' · ' + akkuText(pg, true) : '');
@@ -1192,7 +1372,8 @@
         ['Notiz', p.notiz || '–'],
         ['Streckenkm', e.z ? zahl(e.z.km, 1) + ' km ab Start' : '–'],
         ['Koordinaten', zahl(p.lat, 5) + ', ' + zahl(p.lon, 5)],
-        ['id', p.id],
+        p.fremd ? ['Quelle', 'Bundesdaten (ich-tanke-strom.ch), Stand ' + datumText(fremde && fremde.stand) + ' – nicht in deiner Liste']
+          : ['id', p.id],
       ];
       const dl = $('d-felder');
       dl.replaceChildren();
@@ -1208,10 +1389,27 @@
         '&richtung=' + zustand.richtung + '&nach=' + encodeURIComponent(p.id);
       $('d-abrp').href = abrpUrl(p, aktuellePosition());
       $('d-sim').hidden = !zustand.sim.aktiv;
+      // Station aus den Bundesdaten: übernehmen statt bearbeiten; Vergleichswerte nur für Stammstrecken (Script kennt „adhoc" nicht)
+      $('d-uebernehmen').hidden = !p.fremd;
+      if (p.fremd) $('d-uebernehmen').href = uebernehmenUrl(p);
+      $('d-bearbeiten').hidden = !!p.fremd;
+      $('d-vergleich').hidden = !!p.fremd || zustand.route === ADHOC_ID;
 
       $('detail').hidden = false;
+      nachVorn('detail');
       history.pushState({ detail: true }, '');
     }
+
+    /** Formular „Hinzufügen", vorbelegt mit den Bundesdaten; der Link mit Koordinaten ersetzt den Maps-Link. */
+    function uebernehmenUrl(p) {
+      const link = 'https://www.google.com/maps/search/?api=1&query=' + p.lat + ',' + p.lon;
+      return FORMULAR_URL + '?neu=1&link=' + encodeURIComponent(link) + '&name=' + encodeURIComponent(p.name) +
+        '&betreiber=' + encodeURIComponent(p.betreiber || '') + '&kw=' + encodeURIComponent(p.kw || '') + '&anzahl=' + encodeURIComponent(p.anzahl || '');
+    }
+
+    // Überlagernde Seiten (Details, Karte, Info, Preise): die zuletzt geöffnete liegt oben, „Zurück" schließt nur sie
+    let ebene = 5;
+    function nachVorn(id) { $(id).style.zIndex = String(++ebene); }
 
     function schliesseDetail() {
       $('detail').hidden = true;
@@ -1521,6 +1719,321 @@
     }
 
     // -----------------------------------------------------------------------
+    // Route ab hier (Christof, 14.10.2026): vom Standort (oder einem Ort) zu einem Ziel, im Handy bei
+    // OpenRouteService berechnet. Danach dieselbe Liste wie bei Stammstrecken, dazu Migrol/Tesla aus den Bundesdaten.
+    // -----------------------------------------------------------------------
+
+    function orsSchluessel() {
+      try { return (localStorage.getItem(ORS_SPEICHER) || '').trim(); } catch (e) { return ''; }
+    }
+
+    async function ors(pfad, optionen) {
+      const schluessel = orsSchluessel();
+      if (!schluessel) throw new Error('kein OpenRouteService-Schlüssel – Menü → Einstellungen');
+      const o = optionen || {};
+      const kopf = { Authorization: schluessel, Accept: 'application/json, application/geo+json' };
+      if (o.body) kopf['Content-Type'] = 'application/json';
+      let antwort;
+      try { antwort = await fetch(ORS_BASIS + pfad, { method: o.method || 'GET', headers: kopf, body: o.body }); }
+      catch (e) { throw new Error('keine Verbindung zu OpenRouteService'); }
+      if (!antwort.ok) {
+        let text = '';
+        try { const j = await antwort.json(); const f = j.error || j; text = typeof f === 'string' ? f : f.message || ''; } catch (e) { /* ohne Text */ }
+        if (antwort.status === 401 || antwort.status === 403) throw new Error('Schlüssel abgelehnt – in den Einstellungen prüfen');
+        if (antwort.status === 429) throw new Error('Kontingent von OpenRouteService erschöpft – später nochmal');
+        throw new Error('OpenRouteService ' + antwort.status + (text ? ': ' + text : ''));
+      }
+      return antwort.json();
+    }
+
+    /** Orte (keine Straßen) zum Suchtext – Koordinate ist die Ortsmitte. */
+    async function sucheOrte(text) {
+      const j = await ors('/geocode/autocomplete?text=' + encodeURIComponent(text) + '&layers=locality,localadmin&size=6&lang=de');
+      return (j.features || []).map(f => ({ name: f.properties.name, label: f.properties.label || f.properties.name,
+        lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] }));
+    }
+
+    /** Ortsname zum Standort (für den Routennamen „Ovronnaz – Neuenrade"); leer, wenn nichts gefunden. */
+    async function ortsname(lat, lon) {
+      try {
+        const j = await ors('/geocode/reverse?point.lat=' + lat.toFixed(4) + '&point.lon=' + lon.toFixed(4) + '&layers=locality,localadmin&size=1&lang=de');
+        return (j.features && j.features[0] && j.features[0].properties.name) || '';
+      } catch (e) { return ''; }
+    }
+
+    /** Route start → ziel als Routenobjekt wie in routes.json (Linie mit km und geglätteten Höhenmetern). */
+    async function berechneAdhoc(start, ziel) {
+      const j = await ors('/v2/directions/driving-car/geojson', { method: 'POST', body: JSON.stringify({
+        coordinates: [[start.lon, start.lat], [ziel.lon, ziel.lat]],
+        elevation: true, instructions: false, radiuses: [5000, 5000],
+        options: { avoid_polygons: { type: 'Polygon', coordinates: MONT_BLANC } },
+      }) });
+      const f = j.features && j.features[0];
+      if (!f || !f.geometry || !f.geometry.coordinates || f.geometry.coordinates.length < 2) throw new Error('keine Route gefunden');
+      if (f.geometry.coordinates[0].length < 3) throw new Error('Route ohne Höhenwerte');
+      const linie = duenneAus(kumuliere(f.geometry.coordinates));
+      const ende = linie[linie.length - 1];
+      const summe = (f.properties && f.properties.summary) || {};
+      return {
+        id: ADHOC_ID, adhoc: true, name: start.name + ' – ' + ziel.name + ' (Route ab hier)', erzeugt: new Date().toISOString(),
+        laenge_km: runde(ende[2], 1), dauer_s: Math.round(summe.duration || 0), hm_hin: ende[3], hm_rueck: ende[4],
+        start: { name: start.name, lat: start.lat, lon: start.lon }, ziel: { name: ziel.name, lat: ziel.lat, lon: ziel.lon }, linie,
+      };
+    }
+
+    /** Fahrtrichtungs-Vektor einer Route bei km (für die Richtung einseitiger Raststätten). */
+    function richtungBei(route, km) {
+      const a = punktBeiKm(route, Math.max(0, km - 0.5)), b = punktBeiKm(route, km + 0.5);
+      return [b.lat - a.lat, (b.lon - a.lon) * Math.cos(a.lat * Math.PI / 180)];
+    }
+
+    /** „hin"/„rueck" einer Station gilt für ihre Stammstrecke; auf der Route ab hier je nachdem, ob beide gleich laufen. */
+    function adhocRichtung(p, route, km) {
+      if (p.richtung !== 'hin' && p.richtung !== 'rueck') return 'beide';
+      const z = (p.zuordnung || []).find(x => x.route !== ADHOC_ID);
+      const stamm = z && daten.routen.find(r => r.id === z.route);
+      if (!stamm) return p.richtung;
+      const s = richtungBei(stamm, z.km), a = richtungBei(route, km);
+      return s[0] * a[0] + s[1] * a[1] >= 0 ? p.richtung : (p.richtung === 'hin' ? 'rueck' : 'hin');
+    }
+
+    /** Route ab hier in die geladenen Daten einfügen: eigene Stationen und Migrol/Tesla (ohne Dubletten) bis 10 km zuordnen. */
+    function fuegeAdhocEin() {
+      if (!daten) return;
+      daten.routen = daten.routen.filter(r => !r.adhoc);
+      daten.punkte = daten.punkte.filter(p => !p.fremd);
+      for (const p of daten.punkte) if (p.zuordnung) p.zuordnung = p.zuordnung.filter(z => z.route !== ADHOC_ID);
+      const r = adhocRoute;
+      if (!r || !r.linie || r.linie.length < 2) return;
+      delete r.lat0;
+      daten.routen.push(r);
+      const eigene = daten.punkte.slice();
+      for (const f of (fremde && fremde.punkte) || []) {
+        if (eigene.some(p => haversine(p.lat, p.lon, f.lat, f.lon) * 1000 <= FREMD_DUBLETTE_M)) continue;
+        daten.punkte.push({ ...f, fremd: true, richtung: 'beide', favorit: false, notiz: '', link: '', zuordnung: [] });
+      }
+      for (const p of daten.punkte) {
+        const pr = projiziere(r.linie, p.lat, p.lon, lat0Von(r));
+        if (pr.q > QUER_MAX_KM) continue;
+        const strasse = String(p.strasse || '').split(/[,/;]/)[0].trim();
+        (p.zuordnung = p.zuordnung || []).push({
+          route: ADHOC_ID, km: pr.km, hm_hin: pr.hm_hin, hm_rueck: pr.hm_rueck, quer_km: runde(pr.q, 1),
+          strasse: strasse === '–' ? '' : strasse, raststaette: pr.q <= 0.5 && p.richtung !== 'beide' && !p.fremd,
+          richtung: adhocRichtung(p, r, pr.km),
+        });
+      }
+    }
+
+    /** Ziele zum Antippen: Start und Ziel aller Stammstrecken (Koordinate = Anfang bzw. Ende der Linie). */
+    function bekannteOrte() {
+      const orte = new Map();
+      for (const r of daten.routen) {
+        if (r.adhoc) continue;
+        const t = routenTeile(r), l = r.linie;
+        if (!orte.has(t.start)) orte.set(t.start, { name: t.start, lat: l[0][0], lon: l[0][1] });
+        if (!orte.has(t.ziel)) orte.set(t.ziel, { name: t.ziel, lat: l[l.length - 1][0], lon: l[l.length - 1][1] });
+      }
+      return [...orte.values()];
+    }
+
+    let adhocWahl = { start: 'hier', ziel: null };
+    let sucheTimer = null;
+
+    function adhocStatus(text) { $('adhoc-status').textContent = text || ''; }
+
+    function zeigeAdhocWahl() {
+      const s = adhocWahl.start === 'hier' ? 'Mein Standort' : adhocWahl.start ? adhocWahl.start.name : '(Startort suchen)';
+      $('adhoc-wahl').textContent = adhocWahl.ziel ? s + ' → ' + adhocWahl.ziel.name : '';
+      $('adhoc-ziele').querySelectorAll('.chip').forEach(c => c.classList.toggle('gewaehlt', !!adhocWahl.ziel && c.dataset.ort === adhocWahl.ziel.name));
+    }
+
+    function ortKnoepfe(box, orte, waehle) {
+      box.replaceChildren();
+      for (const o of orte) {
+        const k = el('button', 'chip', o.label || o.name);
+        k.type = 'button';
+        k.dataset.ort = o.name;
+        k.addEventListener('click', () => waehle(o));
+        box.append(k);
+      }
+    }
+
+    function ortSuche(eingabe, box, waehle) {
+      clearTimeout(sucheTimer);
+      const text = eingabe.value.trim();
+      if (text.length < 3) { box.replaceChildren(); return; }
+      sucheTimer = setTimeout(async () => {
+        try {
+          const orte = await sucheOrte(text);
+          if (eingabe.value.trim() !== text) return;   // inzwischen weitergetippt
+          ortKnoepfe(box, orte, waehle);
+          adhocStatus(orte.length ? '' : 'Kein Ort „' + text + '" gefunden');
+        } catch (e) { adhocStatus('Suche: ' + e.message); }
+      }, 400);
+    }
+
+    function oeffneAdhoc() {
+      if (!orsSchluessel()) { toast('Zuerst den OpenRouteService-Schlüssel eintragen'); oeffneEinstellungen(); return; }
+      adhocWahl = { start: 'hier', ziel: null };
+      for (const id of ['adhoc-start-text', 'adhoc-ziel-text']) $(id).value = '';
+      $('adhoc-start-vorschlaege').replaceChildren();
+      $('adhoc-ziel-vorschlaege').replaceChildren();
+      $('adhoc-start-ort').hidden = true;
+      $('adhoc-form').querySelectorAll('[data-start]').forEach(c => c.classList.toggle('gewaehlt', c.dataset.start === 'hier'));
+      ortKnoepfe($('adhoc-ziele'), bekannteOrte(), o => {
+        adhocWahl.ziel = o;
+        $('adhoc-ziel-text').value = '';
+        $('adhoc-ziel-vorschlaege').replaceChildren();
+        zeigeAdhocWahl();
+      });
+      $('adhoc-entfernen').hidden = !adhocRoute;
+      $('adhoc-los').disabled = false;
+      adhocStatus(adhocRoute ? 'Aktuell: ' + adhocRoute.name.replace(/\s*\(Route ab hier\)$/, '') + ', ' + fmtKm(adhocRoute.laenge_km) + ' km' : '');
+      zeigeAdhocWahl();
+      $('adhoc-dlg').showModal();
+    }
+
+    async function berechneAdhocKnopf() {
+      if (!adhocWahl.ziel) { adhocStatus('Bitte ein Ziel wählen.'); return; }
+      let start;
+      if (adhocWahl.start === 'hier') {
+        const pos = aktuellePosition();
+        if (!pos) { adhocStatus('Standort unbekannt – erst „Standort" tippen oder einen Startort wählen.'); return; }
+        start = { name: '', lat: pos.lat, lon: pos.lon, hier: true };
+      } else if (adhocWahl.start) start = adhocWahl.start;
+      else { adhocStatus('Bitte einen Startort suchen und antippen.'); return; }
+      $('adhoc-los').disabled = true;
+      adhocStatus('Route wird berechnet …');
+      try {
+        if (start.hier) start.name = (await ortsname(start.lat, start.lon)) || 'Standort';
+        const r = await berechneAdhoc(start, adhocWahl.ziel);
+        adhocRoute = r;
+        try { localStorage.setItem(ADHOC_SPEICHER, JSON.stringify(r)); } catch (e) { /* zu groß/gesperrt: gilt bis zum Neuladen */ }
+        fuegeAdhocEin();
+        zustand.route = ADHOC_ID;
+        zustand.richtung = 'hin';
+        zustand.abStandort = false;
+        speichere();
+        $('adhoc-dlg').close();
+        render();
+        toast('Route ab hier: ' + fmtKm(r.laenge_km) + ' km');
+      } catch (e) {
+        adhocStatus('Fehler: ' + e.message);
+      } finally {
+        $('adhoc-los').disabled = false;
+      }
+    }
+
+    function entferneAdhoc() {
+      adhocRoute = null;
+      try { localStorage.removeItem(ADHOC_SPEICHER); } catch (e) { /* egal */ }
+      fuegeAdhocEin();
+      if (zustand.route === ADHOC_ID) zustand.route = null;
+      speichere();
+      $('adhoc-dlg').close();
+      render();
+      toast('Route ab hier entfernt');
+    }
+
+    // -----------------------------------------------------------------------
+    // Karte (Christof, 14.10.2026): ganze Strecke, Standort, Weg bis zur gewählten Station. Leaflet erst beim Öffnen laden.
+    // -----------------------------------------------------------------------
+
+    let karte = null, karteEbene = null, karteWahl = null, leafletLaedt = null;
+
+    function ladeLeaflet() {
+      if (window.L) return Promise.resolve();
+      if (leafletLaedt) return leafletLaedt;
+      leafletLaedt = new Promise((ja, nein) => {
+        const css = document.createElement('link');
+        css.rel = 'stylesheet'; css.href = LEAFLET_URL + 'leaflet.css'; css.integrity = LEAFLET_CSS_SRI; css.crossOrigin = 'anonymous';
+        document.head.append(css);
+        const s = document.createElement('script');
+        s.src = LEAFLET_URL + 'leaflet.js'; s.integrity = LEAFLET_JS_SRI; s.crossOrigin = 'anonymous';
+        s.onload = () => ja();
+        s.onerror = () => { leafletLaedt = null; s.remove(); nein(new Error('Kartenbibliothek nicht ladbar – keine Verbindung?')); };
+        document.head.append(s);
+      });
+      return leafletLaedt;
+    }
+
+    function akkuKurz(pg) {
+      if (pg.nichtErreichbar) return 'nicht erreichbar';
+      return pg.angenommen ? 'braucht ≈ ' + Math.round(pg.prozent) + ' %' : 'Rest ≈ ' + Math.round(pg.ankunft) + ' %';
+    }
+
+    /** Öffnet die Karte; ohne Eintrag mit der nächsten Station voraus. */
+    async function zeigeKarte(e) {
+      const a = letzteAnsicht;
+      if (!a || !a.route) return;
+      if ($('karte-seite').hidden) {
+        $('karte-seite').hidden = false;
+        history.pushState({ karte: true }, '');
+      }
+      nachVorn('karte-seite');
+      $('karte-details').hidden = true;
+      $('karte-text').textContent = 'Karte wird geladen …';
+      try { await ladeLeaflet(); } catch (err) { $('karte-text').textContent = err.message; return; }
+      if (!karte) {
+        karte = L.map('karte');
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(karte);
+      }
+      karte.invalidateSize();
+      const liste = (a.erg && a.erg.eintraege) || [];
+      const wahl = e ? liste.find(x => x.punkt.id === e.punkt.id) || null : liste[0] || null;
+      zeichneKarte(wahl, true);
+    }
+
+    function zeichneKarte(wahl, zoomen) {
+      const a = letzteAnsicht;
+      if (!karte || !a || !a.route) return;
+      const route = a.route, erg = a.erg;
+      karteWahl = wahl;
+      if (karteEbene) karteEbene.remove();
+      karteEbene = L.layerGroup().addTo(karte);
+      const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+      const akzent = css('--akzent'), rot = css('--rot');
+      const pkt = km => { const p = punktBeiKm(route, km); return [p.lat, p.lon]; };
+      const strecke = L.polyline(route.linie.map(p => [p[0], p[1]]), { color: '#6b6b6b', weight: 4, opacity: 0.8 }).addTo(karteEbene);
+      const ich = a.pos ? [a.pos.lat, a.pos.lon] : null;
+      const ab = erg && erg.pos ? erg.pos : null;              // Linienposition, ab der gerechnet wird
+      const abStart = !!(a.planPos && a.planPos.planung);       // weit weg: geplant ab Startort der Route
+      const bezug = abStart && ab ? pkt(ab.km) : ich;
+
+      if (wahl && wahl.z && ab) {
+        const lo = Math.min(ab.km, wahl.z.km), hi = Math.max(ab.km, wahl.z.km);
+        const weg = [pkt(lo)].concat(route.linie.filter(p => p[2] > lo && p[2] < hi).map(p => [p[0], p[1]]), [pkt(hi)]);
+        L.polyline(weg, { color: akzent, weight: 7, opacity: 0.95 }).addTo(karteEbene);
+        if (wahl.z.quer_km > 0.2) L.polyline([pkt(wahl.z.km), [wahl.punkt.lat, wahl.punkt.lon]], { color: akzent, weight: 4, dashArray: '6 6' }).addTo(karteEbene);
+      } else if (wahl && ich) {
+        L.polyline([ich, [wahl.punkt.lat, wahl.punkt.lon]], { color: akzent, weight: 3, dashArray: '6 6' }).addTo(karteEbene);   // Luftlinie
+      }
+      if (abStart && ab) L.circleMarker(pkt(ab.km), { radius: 7, color: '#ffffff', weight: 2, fillColor: '#444444', fillOpacity: 1 })
+        .bindTooltip('Geplant ab hier').addTo(karteEbene);
+
+      for (const e of (erg && erg.eintraege) || []) {
+        const pg = e.prognose, gewaehlt = e === wahl;
+        const farbe = e.punkt.fremd ? css('--leise') : pg && pg.nichtErreichbar ? '#9a9a9a' : pg && pg.unterReserve ? rot : akzent;
+        const m = L.circleMarker([e.punkt.lat, e.punkt.lon], {
+          radius: gewaehlt ? 11 : 7, color: gewaehlt ? '#000000' : farbe, weight: gewaehlt ? 3 : 2, fillColor: farbe,
+          fillOpacity: e.punkt.fremd ? 0.15 : pg && pg.nichtErreichbar ? 0.4 : 0.9, dashArray: e.punkt.fremd ? '3 3' : null,
+        }).addTo(karteEbene);
+        m.on('click', () => zeichneKarte(e, false));
+        if (gewaehlt) m.bindTooltip(fmtKm(e.km) + ' km' + (pg ? ' · ' + akkuKurz(pg) : ''), { permanent: true, direction: 'top', offset: [0, -10], className: 'schild' });
+      }
+      if (ich) L.circleMarker(ich, { radius: 8, color: '#ffffff', weight: 3, fillColor: '#1a73e8', fillOpacity: 1 }).bindTooltip('Du').addTo(karteEbene);
+
+      $('karte-text').textContent = wahl
+        ? kurzname(wahl.punkt.name) + ' · ' + fmtKm(wahl.km) + ' km' + (wahl.prognose ? ' · ' + akkuText(wahl.prognose) : '') + (wahl.punkt.fremd ? ' · nicht in deiner Liste' : '')
+        : (erg && erg.eintraege.length ? 'Station antippen' : 'Keine Ladepunkte voraus');
+      $('karte-details').hidden = !wahl;
+      if (zoomen) {
+        if (bezug && wahl) karte.fitBounds(L.latLngBounds([bezug, [wahl.punkt.lat, wahl.punkt.lon]]), { padding: [60, 60], maxZoom: 13 });
+        else karte.fitBounds(strecke.getBounds(), { padding: [30, 30] });
+      }
+    }
+
+    // -----------------------------------------------------------------------
     // Zwischenablage — synchron im Klick-Handler, Rückfall über textarea
     // -----------------------------------------------------------------------
 
@@ -1583,6 +2096,7 @@
       $('e-adapter').textContent = ad ? 'Letzter Adapterwert ' + uhrzeit(ad.zeit) + ': ' + ad.soc + ' % (BMS ' + String(ad.bms).replace('.', ',') + ' %' +
         (ad.km_stand ? ', ' + ad.km_stand.toLocaleString('de-CH') + ' km' : '') + ')' : '';
       $('version').textContent = 'App v' + APP_VERSION + ' · Daten v' + (daten.version || '?');
+      $('e-ors').value = orsSchluessel();
       einstellungenOffen = true;
       $('dlg').showModal();
     }
@@ -1599,6 +2113,10 @@
       zustand.einst.obd = $('e-obd').checked;
       const temp = $('e-temperatur').value.trim();
       zustand.einst.temperatur = temp !== '' && Number(temp) >= -30 && Number(temp) <= 45 ? Number(temp) : '';
+      try {
+        const s = $('e-ors').value.trim();
+        if (s) localStorage.setItem(ORS_SPEICHER, s); else localStorage.removeItem(ORS_SPEICHER);
+      } catch (e) { toast('Schlüssel konnte nicht gespeichert werden'); }
       speichere();
       render();
     }
@@ -1680,8 +2198,43 @@
       $('menue-dlg').querySelectorAll('a.knopf').forEach(a => a.addEventListener('click', () => $('menue-dlg').close()));
       $('menue-dlg').querySelectorAll('button[data-m]').forEach(k => k.addEventListener('click', () => {
         $('menue-dlg').close();
-        ({ einstellungen: oeffneEinstellungen, simulation: oeffneSimulation, preise: zeigePreise, info: zeigeInfo })[k.dataset.m]();
+        ({ adhoc: oeffneAdhoc, einstellungen: oeffneEinstellungen, simulation: oeffneSimulation, preise: zeigePreise, info: zeigeInfo })[k.dataset.m]();
       }));
+      // Route ab hier
+      $('adhoc-form').querySelectorAll('[data-start]').forEach(k => k.addEventListener('click', () => {
+        $('adhoc-form').querySelectorAll('[data-start]').forEach(c => c.classList.toggle('gewaehlt', c === k));
+        const ort = k.dataset.start === 'ort';
+        $('adhoc-start-ort').hidden = !ort;
+        adhocWahl.start = ort ? null : 'hier';
+        if (ort) $('adhoc-start-text').focus();
+        zeigeAdhocWahl();
+      }));
+      $('adhoc-start-text').addEventListener('input', () => ortSuche($('adhoc-start-text'), $('adhoc-start-vorschlaege'), o => {
+        adhocWahl.start = { name: o.name, lat: o.lat, lon: o.lon };
+        $('adhoc-start-text').value = o.label;
+        $('adhoc-start-vorschlaege').replaceChildren();
+        zeigeAdhocWahl();
+      }));
+      $('adhoc-ziel-text').addEventListener('input', () => ortSuche($('adhoc-ziel-text'), $('adhoc-ziel-vorschlaege'), o => {
+        adhocWahl.ziel = { name: o.name, lat: o.lat, lon: o.lon };
+        $('adhoc-ziel-text').value = o.label;
+        $('adhoc-ziel-vorschlaege').replaceChildren();
+        zeigeAdhocWahl();
+      }));
+      // Enter im Suchfeld würde den Dialog über „Abbrechen" schließen
+      for (const id of ['adhoc-start-text', 'adhoc-ziel-text']) $(id).addEventListener('keydown', ev => { if (ev.key === 'Enter') ev.preventDefault(); });
+      $('adhoc-los').addEventListener('click', berechneAdhocKnopf);
+      $('adhoc-entfernen').addEventListener('click', entferneAdhoc);
+      // Karte
+      $('karte-knopf').addEventListener('click', () => zeigeKarte(null));
+      $('d-karte').addEventListener('click', () => { if (detailEintrag) zeigeKarte(detailEintrag); });
+      $('karte-zurueck').addEventListener('click', () => history.back());
+      $('karte-details').addEventListener('click', () => {
+        if (karteWahl) zeigeDetail(karteWahl, letzteAnsicht && letzteAnsicht.erg ? letzteAnsicht.erg.modus : 'strecke');
+      });
+      $('karte-ganz').addEventListener('click', () => {
+        if (karte && letzteAnsicht && letzteAnsicht.route) karte.fitBounds(L.polyline(letzteAnsicht.route.linie.map(p => [p[0], p[1]])).getBounds(), { padding: [30, 30] });
+      });
       $('dlg').querySelector('form').addEventListener('submit', schliesseEinstellungen);
       $('dlg').addEventListener('close', schliesseEinstellungen);
       $('sim-dlg').querySelector('form').addEventListener('submit', schliesseSimulation);
@@ -1689,10 +2242,12 @@
       $('preise-zurueck').addEventListener('click', () => history.back());
       $('los').addEventListener('submit', starteFahrt);
       $('zurueck').addEventListener('click', () => history.back());
+      // Zurück schließt nur die oberste Seite (z. B. Details über der Karte → zurück zur Karte)
       window.addEventListener('popstate', () => {
-        if (!$('detail').hidden) schliesseDetail();
-        $('info-seite').hidden = true;
-        $('preise-seite').hidden = true;
+        const offen = ['detail', 'info-seite', 'preise-seite', 'karte-seite'].filter(id => !$(id).hidden);
+        if (!offen.length) return;
+        offen.sort((x, y) => (Number($(y).style.zIndex) || 0) - (Number($(x).style.zIndex) || 0));
+        if (offen[0] === 'detail') schliesseDetail(); else $(offen[0]).hidden = true;
       });
       function zeigeInfo() {
         const d = daten && new Date(daten.erzeugt);
@@ -1700,6 +2255,7 @@
         const k = modell.kalibrierung || {};
         $('info-modell').textContent = 'Stand des Modells: ' + (k.fahrten ? k.methode + ', Ø Abweichung ' + String(k.abweichung_prozent).replace('.', ',') + ' % Akku.' : 'Physik-Startwerte, noch keine Fahrt kalibriert.');
         $('info-seite').hidden = false;
+        nachVorn('info-seite');
         $('info-seite').scrollTop = 0;
         history.pushState({ info: true }, '');
       }
@@ -1723,10 +2279,11 @@
     async function ladeDaten(still) {
       const mitZeit = url => url + (url.includes('?') ? '&' : '?') + 't=' + Date.now();
       try {
-        const [antwort, modellAntwort, preisAntwort] = await Promise.all([
+        const [antwort, modellAntwort, preisAntwort, fremdAntwort] = await Promise.all([
           fetch(mitZeit(datenUrl()), { cache: 'no-store' }),
           fetch(mitZeit('modell.json'), { cache: 'no-store' }).catch(() => null),
           fetch(mitZeit('preise.json'), { cache: 'no-store' }).catch(() => null),
+          fetch(mitZeit('fremde.json'), { cache: 'no-store' }).catch(() => null),
         ]);
         if (!antwort.ok) throw new Error('HTTP ' + antwort.status);
         const neu = await antwort.json();
@@ -1742,6 +2299,10 @@
         if (preisAntwort && preisAntwort.ok) {
           try { preise = await preisAntwort.json(); } catch (e) { /* ohne Preise weiter */ }
         }
+        if (fremdAntwort && fremdAntwort.ok) {
+          try { fremde = await fremdAntwort.json(); } catch (e) { /* ohne Bundesdaten weiter */ }
+        }
+        fuegeAdhocEin();
       } catch (e) {
         if (!still || !daten) $('liste').replaceChildren(el('p', 'leer', 'Daten konnten nicht geladen werden: ' + e.message));
         return false;
@@ -1772,6 +2333,9 @@
     window.ladeplanung = {
       berechneListe, projiziere, haversine, punktBeiKm, mapsUrl, abrpUrl, energieAnteile, energieKwh, streckenwerte, bedarf,
       routenTeile, routenZwischen, zieleVon, simPunkte, preisKurz, preisEintrag, landVon, prognose, tempo, leseAdapter,
+      kumuliere, duenneAus, fuegeAdhocEin, adhocRichtung, uebernehmenUrl, zeigeKarte,
+      get adhocRoute() { return adhocRoute; }, set adhocRoute(r) { adhocRoute = r; },
+      get fremde() { return fremde; },
       get preise() { return preise; },
       get daten() { return daten; }, get modell() { return modell; }, get zustand() { return zustand; },
     };

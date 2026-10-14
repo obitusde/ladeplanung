@@ -59,6 +59,8 @@ const vergleichsRouten = vergleichsRouten_(JSON.parse(fs.readFileSync(path.join(
 const seiten = {
   'vergleich.html': ['Vergleich.html', Object.assign({ routen: vergleichsRouten, vorwahl: { route: 'neuenrade', richtung: 'hin', nach: '' } }, basis)],
   'formular-neu.html': ['Formular.html', Object.assign({ modus: 'neu', punkt: { link: '', Richtung: 'beide' } }, basis)],
+  'formular-uebernehmen.html': ['Formular.html', Object.assign({ modus: 'neu', punkt: { link: 'https://www.google.com/maps/search/?api=1&query=46.23111,7.36222',
+    Name: 'Migrol Sion 2', Betreiber: 'Migrol', kW: '320', Anzahl: '4', Richtung: 'beide', uebernommen: true } }, basis)],
   'formular-bearbeiten.html': ['Formular.html', Object.assign({ modus: 'bearbeiten',
     punkt: { id: 'p023', link: 'https://maps.app.goo.gl/dnLiHt5op9KaWodL9', Adresse: 'JHV2+5W, 64653 Lorsch, Deutschland', Name: 'EnBW Ladestation Lorsch', Betreiber: 'EnBW', kW: '', Anzahl: '', Richtung: 'rueck', Favorit: false, Notiz: 'Raststätte </script><b>x</b>' } }, basis)],
   'wartung.html': ['Wartung.html', Object.assign({ status: status }, basis)],

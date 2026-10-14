@@ -1,0 +1,60 @@
+# Bundesdaten Ladestationen — Version 1.0.0
+#
+# Einmal im Monat (am 1., 05:00 UTC) und auf Knopfdruck (Actions → „Bundesdaten Ladestationen" → „Run workflow"):
+# lädt die Schweizer Ladestellen des Bundes (BFE, ich-tanke-strom.ch), filtert Migrol und Tesla ab 100 kW
+# und legt sie als fremde.json ins Repo. Die App zeigt sie bei „Route ab hier" als „nicht in deiner Liste".
+#
+# Version 1.0.0 — erste Fassung (14.10.2026).
+
+name: Bundesdaten Ladestationen
+
+on:
+  schedule:
+    - cron: '0 5 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+
+concurrency:
+  group: bundesdaten
+  cancel-in-progress: false
+
+jobs:
+  holen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Repo auschecken
+        uses: actions/checkout@v4
+
+      - name: Node einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Test der Auswertung
+        run: node tests/test-bundesdaten.js
+
+      - name: Bundesdaten holen
+        run: node tests/hole-bundesdaten.js
+
+      - name: Committen, wenn sich etwas geändert hat
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          if git diff --quiet -- fremde.json; then
+            echo "Keine Änderung." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add fremde.json
+          git commit -m "fremde.json: Migrol und Tesla aus den Bundesdaten aktualisiert"
+          git pull --rebase
+          git push
+          # Pushes mit dem Action-Schlüssel stoßen GitHub Pages nicht sicher an → Bau ausdrücklich anfordern
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/pages/builds" || echo "Pages-Bau nicht angefordert (kommt mit dem nächsten Push)"
+          echo "fremde.json aktualisiert." >> "$GITHUB_STEP_SUMMARY"

@@ -1,6 +1,8 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.20.0 — „Hinzufügen" lässt sich per Adresse vorbelegen (Name, Betreiber, kW, Anzahl, Link) – für „Übernehmen"
+ *                  aus den Bundesdaten in der App; Maps-Links mit „query=lat,lon" werden erkannt.
  * Version 0.19.4 — Texte: „Fahrt beenden" statt „Angekommen" (App v0.22.0).
  * Version 0.19.3 — Formularseiten auf dem Handy hochskaliert, wenn sie in Desktop-Breite erscheinen (Text war zu klein).
  * Version 0.19.2 — Kalibrierformular zeigt, wenn die km vom Kilometerzähler stammen (App v0.21.0).
@@ -50,7 +52,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.19.4';
+const VERSION = '0.20.0';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -225,7 +227,7 @@ function doGet(e) {
     modell.punkt = punkt;
   } else {
     modell.modus = 'neu';
-    modell.punkt = { link: p.link || '', Richtung: 'beide' };
+    modell.punkt = vorbelegungNeu_(p);
   }
   const vorlage = HtmlService.createTemplateFromFile('Formular');
   vorlage.modellJson = JSON.stringify(modell).replace(/</g, '\\u003c');
@@ -1107,6 +1109,20 @@ function liesPunkt_(id) {
   };
 }
 
+/**
+ * Vorbelegung für „Hinzufügen" aus der Adresse (…/exec?neu=1&link=…&name=…&betreiber=…&kw=…&anzahl=…),
+ * z. B. „Übernehmen" einer Station aus den Bundesdaten in der App. Nur Text und ganze Zahlen.
+ */
+function vorbelegungNeu_(p) {
+  const text = function (v, max) { return String(v || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, max); };
+  const ganz = function (v, max) { const s = String(v || '').trim(); return /^\d{1,4}$/.test(s) && Number(s) >= 1 && Number(s) <= max ? s : ''; };
+  return {
+    link: text(p.link, 500), Name: text(p.name, 120), Betreiber: text(p.betreiber, 60),
+    kW: ganz(p.kw, 1000), Anzahl: ganz(p.anzahl, 99), Richtung: 'beide',
+    uebernommen: !!(p.name || p.betreiber),
+  };
+}
+
 /** Prüft die Formulareingaben; gibt einen Fehlertext oder '' zurück. */
 function pruefeFormular_(d, neu) {
   if (!d || typeof d !== 'object') return 'Keine Daten übermittelt.';
@@ -1512,7 +1528,8 @@ function werteMapsUrlAus_(url) {
     return { name: name, lat: Number(letztes[1]), lon: Number(letztes[2]) };
   }
 
-  const ersatz = u.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || u.match(/[?&]q=(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
+  // query= aus „Übernehmen" in der App (…/maps/search/?api=1&query=lat,lon)
+  const ersatz = u.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || u.match(/[?&](?:q|query)=(-?\d+\.\d+)(?:,|%2C)\s*(-?\d+\.\d+)/i);
   if (ersatz) return { name: name, lat: Number(ersatz[1]), lon: Number(ersatz[2]) };
 
   // Neueres Teilen-Format ohne Koordinaten: „Name, Straße Nr, PLZ Ort, Land"

@@ -1,0 +1,818 @@
+{
+ "version": 1,
+ "stand": "2026-10-14",
+ "quelle": "BFE, ich-tanke-strom.ch",
+ "min_kw": 100,
+ "punkte": [
+  {
+   "id": "bfe-47.5485-7.5461",
+   "name": "Migrol Allschwil",
+   "betreiber": "Migrol",
+   "lat": 47.548464,
+   "lon": 7.546145,
+   "kw": 300,
+   "anzahl": 4,
+   "adresse": "Binningerstrasse, 4123 Allschwil, Schweiz"
+  },
+  {
+   "id": "bfe-46.8961-8.6266",
+   "name": "Migrol Altdorf",
+   "betreiber": "Migrol",
+   "lat": 46.896142,
+   "lon": 8.626626,
+   "kw": 300,
+   "anzahl": 4,
+   "adresse": "Flüelerstrasse, 6460 Altdorf, Schweiz"
+  },
+  {
+   "id": "bfe-46.1633-8.7744",
+   "name": "Migrol Ascona",
+   "betreiber": "Migrol",
+   "lat": 46.163299,
+   "lon": 8.774374,
+   "kw": 128,
+   "anzahl": 2,
+   "adresse": "Via Locarno, 6612 Ascona, Schweiz"
+  },
+  {
+   "id": "bfe-46.3076-7.9664",
+   "name": "Migrol Brig-Glis",
+   "betreiber": "Migrol",
+   "lat": 46.307596,
+   "lon": 7.966444,
+   "kw": 320,
+   "anzahl": 4,
+   "adresse": "Weidenweg, 3902 Glis, Schweiz"
+  },
+  {
+   "id": "bfe-47.5115-8.5439",
+   "name": "Migrol Bülach",
+   "betreiber": "Migrol",
+   "lat": 47.511548,
+   "lon": 8.543859,
+   "kw": 320,
+   "anzahl": 4,
+   "adresse": "Zürichstrasse, 8180 Bülach, Schweiz"
+  },
+  {
+   "id": "bfe-46.8514-9.5130",
+   "name": "Migrol Chur",
+   "betreiber": "Migrol",
+   "lat": 46.851421,
+   "lon": 9.512957,
+   "kw": 320,
+   "anzahl": 4,
+   "adresse": "Rheinfelsstrasse, 7000 Chur, Schweiz"
+  },
+  {
+   "id": "bfe-46.2676-6.9533",
+   "name": "Migrol Collombey",
+   "betreiber": "Migrol",
+   "lat": 46.267564,
+   "lon": 6.953292,
+   "kw": 320,
+   "anzahl": 4,
+   "adresse": "Route du Montagnier, 1868 Collombey, Schweiz"
+  },
+  {
+   "id": "bfe-47.3844-8.3959",
+   "name": "Migrol Dietikon",
+   "betreiber": "Migrol",
+   "lat": 47.384443,
+   "lon": 8.395877,
+   "kw": 128,
+   "anzahl": 2,
+   "adresse": "Bernstrasse, 8953 Dietikon, Schweiz"
+  },
+  {
+   "id": "bfe-47.5480-9.3717",
+   "name": "Migrol Egnach",
+   "betreiber": "Migrol",
+   "lat": 47.547961,
+   "lon": 9.371698,
+   "kw": 300,
+   "anzahl": 4,
+   "adresse": "Romanshornerstrasse, 9322 Egnach, Schweiz"
+  },
+  {
+   "id": "bfe-47.0723-8.2794",
+   "name": "Migrol Emmenbrücke",
+   "betreiber": "Migrol",
+   "lat": 47.072345,
+   "lon": 8.279387,
+   "kw": 320,
+   "anzahl": 4,
+   "adresse": "Gerliswilstrasse, 6020 Emmen, Schweiz"
+  },
+  {
+   "id": "bfe-46.8899-7.3237",
+   "name": "Migrol Flamatt",
+   "betreiber": "Migrol",
+   "lat": 46.88995,
+   "lon": 7.323708,
+   "kw": 320,
+   "anzahl": 4,
+   "adresse": "Bernstrasse, 3175 Flamatt, Schweiz"
+  },
+  {
+   "id": "bfe-47.4192-9.2351",
+   "name": "Migrol Gossau SG",
+   "betreiber": "Migrol",
+   "lat": 47.419178,
+   "lon": 9.235054,
+   "kw": 320,
+   "anzahl": 4,
+   "adresse": "Wilerstrasse, 9200 Gossau, Schweiz"
+  },
+  {
+   "id": "bfe-47.3598-7.9895",
+   "name": "Migrol Gretzenbach",
+   "betreiber": "Migrol",
+   "lat": 47.359781,
+   "lon": 7.989536,
+   "kw": 300,
+   "anzahl": 4,
+   "adresse": "Oltnerstrasse, 5014 Gretzenbach, Schweiz"
+  },
+  {
+   "id": "bfe-46.6880-7.8767",
+   "name": "Migrol Interlaken",
+   "betreiber": "Migrol",
+   "lat": 46.688045,
+   "lon": 7.876711,
+   "kw": 128,
+   "anzahl": 4,
+   "adresse": "Lindenallee, 3800 Interlaken, Schweiz"
+  },
+  {
+   "id": "bfe-47.6400-9.2001",
+   "name": "Migrol Kreuzlingen",
+   "betreiber": "Migrol",
+   "lat": 47.639981,
+   "lon": 9.200147,
+   "kw": 128,
+   "anzahl": 2,
+   "adresse": "Romanshornerstrasse, 8280 Kreuzlingen, Schweiz"
+  },
+  {
+   "id": "bfe-47.3902-8.1846",
+   "name": "Migrol Lenzburg",
+   "betreiber": "Migrol",
+   "lat": 47.390168,
+   "lon": 8.184631,
+   "kw": 128,
+   "anzahl": 2,
+   "adresse": "Othmarsingerstrasse, 5600 Lenzburg, Schweiz"
+  },
+  {
+   "id": "bfe-46.5173-6.5121",
+   "name": "Migrol Morges",
+   "betreiber": "Migrol",
+   "lat": 46.517279,
+   "lon": 6.512113,
+   "kw": 128,
+   "anzahl": 2,
+   "adresse": "Rue de Lausanne, 1110 Morges, Schweiz"
+  },
+  {
+   "id": "bfe-47.2665-8.3478",
+   "name": "Migrol Muri",
+   "betreiber": "Migrol",
+   "lat": 47.266535,
+   "lon": 8.347781,
+   "kw": 128,
+   "anzahl": 2,
+   "adresse": "Pilatusstrasse, 5630 Muri, Schweiz"
+  },
+  {
+   "id": "bfe-46.3864-6.9202",
+   "name": "Migrol Noville",
+   "betreiber": "Migrol",
+   "lat": 46.386411,
+   "lon": 6.920152,
+   "kw": 128,
+   "anzahl": 2,
+   "adresse": "Rte du Simplon, 1845 Noville, Schweiz"
+  },
+  {
+   "id": "bfe-47.4074-8.2199",
+   "name": "Migrol Othmarsingen",
+   "betreiber": "Migrol",
+   "lat": 47.407406,
+   "lon": 8.219939,
+   "kw": 320,
+   "anzahl": 4,
+   "adresse": "Ahornweg, 5504 Othmarsingen, Schweiz"
+  },
+  {
+   "id": "bfe-47.5237-7.7058",
+   "name": "Migrol Pratteln",
+   "betreiber": "Migrol",
+   "lat": 47.523727,
+   "lon": 7.705754,
+   "kw": 128,
+   "anzahl": 2,
+   "adresse": "Krummeneichstrasse, 4133 Pratteln, Schweiz"
+  },
+  {
+   "id": "bfe-46.5380-6.6013",
+   "name": "Migrol Prilly",
+   "betreiber": "Migrol",
+   "lat": 46.538,
+   "lon": 6.601326,
+   "kw": 320,
+   "anzahl": 4,
+   "adresse": "Rte de Cossonay, 1008 Prilly, Schweiz"
+  },
+  {
+   "id": "bfe-47.4892-7.5984",
+   "name": "Migrol Reinach",
+   "betreiber": "Migrol",
+   "lat": 47.489197,
+   "lon": 7.598369,
+   "kw": 128,
+   "anzahl": 2,
+   "adresse": "Kägenstrasse, 4153 Reinach, Schweiz"
+  },
+  {
+   "id": "bfe-46.5337-6.5850",
+   "name": "Migrol Renens",
+   "betreiber": "Migrol",
+   "lat": 46.533737,
+   "lon": 6.584993,
+   "kw": 128,
+   "anzahl": 2,
+   "adresse": "Avenue du Silo, 1020 Renens, Schweiz"
+  },
+  {
+   "id": "bfe-47.2496-7.8132",
+   "name": "Migrol Roggwil",
+   "betreiber": "Migrol",
+   "lat": 47.249552,
+   "lon": 7.813174,
+   "kw": 320,
+   "anzahl": 4,
+   "adresse": "Bahnhofstrasse, 4914 Roggwil, Schweiz"
+  },
+  {
+   "id": "bfe-47.3114-7.8942",
+   "name": "Migrol Rothrist",
+   "betreiber": "Migrol",
+   "lat": 47.311396,
+   "lon": 7.894165,
+   "kw": 128,
+   "anzahl": 2,
+   "adresse": "Neue Aarburgerstrasse, 4852 Rothrist, Schweiz"
+  },
+  {
+   "id": "bfe-46.1549-8.9629",
+   "name": "Migrol Sant Antonino",
+   "betreiber": "Migrol",
+   "lat": 46.154924,
+   "lon": 8.962893,
+   "kw": 300,
+   "anzahl": 4,
+   "adresse": "Via Serrai, 6592 Sant'Antonino, Schweiz"
+  },
+  {
+   "id": "bfe-47.4251-8.3688",
+   "name": "Migrol Spreitenbach",
+   "betreiber": "Migrol",
+   "lat": 47.425059,
+   "lon": 8.368848,
+   "kw": 320,
+   "anzahl": 4,
+   "adresse": "Industriestrasse, 8957 Spreitenbach, Schweiz"
+  },
+  {
+   "id": "bfe-47.4165-9.3440",
+   "name": "Migrol St. Gallen",
+   "betreiber": "Migrol",
+   "lat": 47.416474,
+   "lon": 9.344008,
+   "kw": 128,
+   "anzahl": 2,
+   "adresse": "Zürcherstrasse, 9000 St. Gallen, Schweiz"
+  },
+  {
+   "id": "bfe-47.4551-9.6381",
+   "name": "Migrol St. Margrethen",
+   "betreiber": "Migrol",
+   "lat": 47.455114,
+   "lon": 9.63809,
+   "kw": 320,
+   "anzahl": 4,
+   "adresse": "Grenzstrasse, 9430 St. Margrethen, Schweiz"
+  },
+  {
+   "id": "bfe-46.2471-7.8767",
+   "name": "Migrol Stalden",
+   "betreiber": "Migrol",
+   "lat": 46.247051,
+   "lon": 7.87673,
+   "kw": 128,
+   "anzahl": 2,
+   "adresse": "Talstrasse, 3922 Stalden, Schweiz"
+  },
+  {
+   "id": "bfe-46.9662-8.3530",
+   "name": "Migrol Stans",
+   "betreiber": "Migrol",
+   "lat": 46.966202,
+   "lon": 8.352972,
+   "kw": 320,
+   "anzahl": 4,
+   "adresse": "Rotzlochstrasse, 6370 Stans, Schweiz"
+  },
+  {
+   "id": "bfe-47.1910-8.4769",
+   "name": "Migrol Steinhausen",
+   "betreiber": "Migrol",
+   "lat": 47.190966,
+   "lon": 8.476895,
+   "kw": 300,
+   "anzahl": 4,
+   "adresse": "Hinterbergstrasse, 6312 Steinhausen, Schweiz"
+  },
+  {
+   "id": "bfe-47.1108-7.2999",
+   "name": "Migrol Studen",
+   "betreiber": "Migrol",
+   "lat": 47.110758,
+   "lon": 7.299932,
+   "kw": 320,
+   "anzahl": 4,
+   "adresse": "Petinescastrasse, 2557 Studen, Schweiz"
+  },
+  {
+   "id": "bfe-47.1736-8.1003",
+   "name": "Migrol Sursee",
+   "betreiber": "Migrol",
+   "lat": 47.173607,
+   "lon": 8.100315,
+   "kw": 128,
+   "anzahl": 2,
+   "adresse": "Zeughausstrasse, 6210 Sursee, Schweiz"
+  },
+  {
+   "id": "bfe-47.0753-9.4860",
+   "name": "Migrol Trübbach",
+   "betreiber": "Migrol",
+   "lat": 47.075263,
+   "lon": 9.486024,
+   "kw": 320,
+   "anzahl": 4,
+   "adresse": "Staatsstrasse, 9477 Trübbach, Schweiz"
+  },
+  {
+   "id": "bfe-46.5667-6.5587",
+   "name": "Migrol Villars Sainte Croix",
+   "betreiber": "Migrol",
+   "lat": 46.566745,
+   "lon": 6.558656,
+   "kw": 300,
+   "anzahl": 4,
+   "adresse": "route de Cossonay, 1029 Villars-Ste-Croix, Schweiz"
+  },
+  {
+   "id": "bfe-47.3805-8.6744",
+   "name": "Migrol Volketswil",
+   "betreiber": "Migrol",
+   "lat": 47.380544,
+   "lon": 8.674373,
+   "kw": 320,
+   "anzahl": 4,
+   "adresse": "Industriestrasse, 8604 Volketswil, Schweiz"
+  },
+  {
+   "id": "bfe-47.4081-8.6022",
+   "name": "Migrol Wallisellen",
+   "betreiber": "Migrol",
+   "lat": 47.408138,
+   "lon": 8.602153,
+   "kw": 320,
+   "anzahl": 4,
+   "adresse": "Husacherstrasse, 8304 Wallisellen, Schweiz"
+  },
+  {
+   "id": "bfe-46.9435-7.3709",
+   "name": "Migrol Westside",
+   "betreiber": "Migrol",
+   "lat": 46.943477,
+   "lon": 7.37092,
+   "kw": 320,
+   "anzahl": 10,
+   "adresse": "Riedbachstrasse, 3027 Bern, Schweiz"
+  },
+  {
+   "id": "bfe-47.4846-8.7046",
+   "name": "Migrol Winterthur In der Au",
+   "betreiber": "Migrol",
+   "lat": 47.484637,
+   "lon": 8.704575,
+   "kw": 320,
+   "anzahl": 4,
+   "adresse": "In der Au, 8406 Winterthur, Schweiz"
+  },
+  {
+   "id": "bfe-47.4955-8.7128",
+   "name": "Migrol Winterthur Zürcherstrasse",
+   "betreiber": "Migrol",
+   "lat": 47.4955,
+   "lon": 8.712835,
+   "kw": 128,
+   "anzahl": 2,
+   "adresse": "Zürcherstrasse, 8406 Winterthur, Schweiz"
+  },
+  {
+   "id": "bfe-46.9779-7.4606",
+   "name": "Migrol Worblaufen",
+   "betreiber": "Migrol",
+   "lat": 46.977932,
+   "lon": 7.460593,
+   "kw": 300,
+   "anzahl": 4,
+   "adresse": "Worblaufenstrasse, 3048 Ittigen, Schweiz"
+  },
+  {
+   "id": "bfe-47.5209-8.2426",
+   "name": "Migrol Würenlingen",
+   "betreiber": "Migrol",
+   "lat": 47.520928,
+   "lon": 8.242608,
+   "kw": 320,
+   "anzahl": 4,
+   "adresse": "Döttingerstrasse, 5303 Würenlingen, Schweiz"
+  },
+  {
+   "id": "bfe-47.4685-9.1089",
+   "name": "Migrol Zuzwil",
+   "betreiber": "Migrol",
+   "lat": 47.468482,
+   "lon": 9.108886,
+   "kw": 300,
+   "anzahl": 4,
+   "adresse": "St. Gallerstrasse, 9524 Zuzwil, Schweiz"
+  },
+  {
+   "id": "bfe-47.2711-8.4397",
+   "name": "Tesla Supercharger AffolternamAlbis",
+   "betreiber": "Tesla",
+   "lat": 47.271119,
+   "lon": 8.439705,
+   "kw": 250,
+   "anzahl": 12,
+   "adresse": "Moosbachstrasse, 8910 AffolternamAlbis, Schweiz"
+  },
+  {
+   "id": "bfe-46.2327-9.0400",
+   "name": "Tesla Supercharger Arbedo-Castione",
+   "betreiber": "Tesla",
+   "lat": 46.232692,
+   "lon": 9.040013,
+   "kw": 250,
+   "anzahl": 7,
+   "adresse": "ViaS.Gottardo, 6532 Arbedo-Castione, Schweiz"
+  },
+  {
+   "id": "bfe-46.9711-8.4592",
+   "name": "Tesla Supercharger Beckenried",
+   "betreiber": "Tesla",
+   "lat": 46.971079,
+   "lon": 8.459159,
+   "kw": 150,
+   "anzahl": 6,
+   "adresse": "Buochserstrasse, 6375 Beckenried, Schweiz"
+  },
+  {
+   "id": "bfe-46.9434-7.3706",
+   "name": "Tesla Supercharger Bern",
+   "betreiber": "Tesla",
+   "lat": 46.943415,
+   "lon": 7.370599,
+   "kw": 250,
+   "anzahl": 12,
+   "adresse": "Riedbachstrasse, 3027 Bern, Schweiz"
+  },
+  {
+   "id": "bfe-46.6250-7.0374",
+   "name": "Tesla Supercharger Bulle",
+   "betreiber": "Tesla",
+   "lat": 46.624982,
+   "lon": 7.037421,
+   "kw": 250,
+   "anzahl": 16,
+   "adresse": "Ruedel'industrie, 1630 Bulle, Schweiz"
+  },
+  {
+   "id": "bfe-46.5567-6.5616",
+   "name": "Tesla Supercharger Bussigny",
+   "betreiber": "Tesla",
+   "lat": 46.556717,
+   "lon": 6.56159,
+   "kw": 150,
+   "anzahl": 14,
+   "adresse": "RoutedeCondémine, 1030 Bussigny, Schweiz"
+  },
+  {
+   "id": "bfe-46.1521-8.9373",
+   "name": "Tesla Supercharger Cadenazzo",
+   "betreiber": "Tesla",
+   "lat": 46.152078,
+   "lon": 8.937309,
+   "kw": 250,
+   "anzahl": 4,
+   "adresse": "ViaStazione, 6593 Cadenazzo, Schweiz"
+  },
+  {
+   "id": "bfe-47.4179-8.3965",
+   "name": "Tesla Supercharger Dietikon",
+   "betreiber": "Tesla",
+   "lat": 47.417949,
+   "lon": 8.396533,
+   "kw": 150,
+   "anzahl": 24,
+   "adresse": "Moosmattstrasse, 8953 Dietikon, Schweiz"
+  },
+  {
+   "id": "bfe-47.4131-8.6168",
+   "name": "Tesla Supercharger Dietlikon",
+   "betreiber": "Tesla",
+   "lat": 47.413097,
+   "lon": 8.616783,
+   "kw": 150,
+   "anzahl": 8,
+   "adresse": "Erlenweg, 8305 Dietlikon, Schweiz"
+  },
+  {
+   "id": "bfe-47.3270-7.8055",
+   "name": "Tesla Supercharger Egerkingen",
+   "betreiber": "Tesla",
+   "lat": 47.327047,
+   "lon": 7.805503,
+   "kw": 150,
+   "anzahl": 10,
+   "adresse": "Höhenstrasse, 4622 Egerkingen, Schweiz"
+  },
+  {
+   "id": "bfe-46.9129-8.6229",
+   "name": "Tesla Supercharger Fluelen",
+   "betreiber": "Tesla",
+   "lat": 46.912919,
+   "lon": 8.622875,
+   "kw": 150,
+   "anzahl": 6,
+   "adresse": "Axenstrasse, 6454 Fluelen, Schweiz"
+  },
+  {
+   "id": "bfe-46.2191-6.1108",
+   "name": "Tesla Supercharger Geneva",
+   "betreiber": "Tesla",
+   "lat": 46.219054,
+   "lon": 6.110794,
+   "kw": 250,
+   "anzahl": 24,
+   "adresse": "Av.Louis-Casaï, 1209 Geneva, Schweiz"
+  },
+  {
+   "id": "bfe-45.9748-8.9280",
+   "name": "Tesla Supercharger Grancia",
+   "betreiber": "Tesla",
+   "lat": 45.974773,
+   "lon": 8.927978,
+   "kw": 250,
+   "anzahl": 12,
+   "adresse": "ViaCantonale, 6916 Grancia, Schweiz"
+  },
+  {
+   "id": "bfe-47.4519-8.7045",
+   "name": "Tesla Supercharger Kemptthal",
+   "betreiber": "Tesla",
+   "lat": 47.451853,
+   "lon": 8.704455,
+   "kw": 250,
+   "anzahl": 12,
+   "adresse": "Kemptpark, 8310 Kemptthal, Schweiz"
+  },
+  {
+   "id": "bfe-47.1756-7.5989",
+   "name": "Tesla Supercharger Kriegstetten",
+   "betreiber": "Tesla",
+   "lat": 47.175578,
+   "lon": 7.59887,
+   "kw": 150,
+   "anzahl": 12,
+   "adresse": "Hauptstrasse, 4566 Kriegstetten, Schweiz"
+  },
+  {
+   "id": "bfe-47.0172-8.3014",
+   "name": "Tesla Supercharger Kriens",
+   "betreiber": "Tesla",
+   "lat": 47.01725,
+   "lon": 8.301446,
+   "kw": 250,
+   "anzahl": 12,
+   "adresse": "Ringstrasse, 6010 Kriens, Schweiz"
+  },
+  {
+   "id": "bfe-46.9660-9.5527",
+   "name": "Tesla Supercharger Landquart",
+   "betreiber": "Tesla",
+   "lat": 46.965975,
+   "lon": 9.552659,
+   "kw": 250,
+   "anzahl": 20,
+   "adresse": "Tardisstrasse, 7302 Landquart, Schweiz"
+  },
+  {
+   "id": "bfe-46.1668-8.7960",
+   "name": "Tesla Supercharger Locarno",
+   "betreiber": "Tesla",
+   "lat": 46.166763,
+   "lon": 8.796003,
+   "kw": 250,
+   "anzahl": 4,
+   "adresse": "ViaVincenzoVela5, 6600 Locarno, Schweiz"
+  },
+  {
+   "id": "bfe-46.8323-6.8593",
+   "name": "Tesla Supercharger Lully",
+   "betreiber": "Tesla",
+   "lat": 46.832304,
+   "lon": 6.859252,
+   "kw": 150,
+   "anzahl": 10,
+   "adresse": "Restoroute, 1470 Lully, Schweiz"
+  },
+  {
+   "id": "bfe-47.0039-9.5258",
+   "name": "Tesla Supercharger Maienfeld",
+   "betreiber": "Tesla",
+   "lat": 47.003887,
+   "lon": 9.525805,
+   "kw": 150,
+   "anzahl": 14,
+   "adresse": "Werkhofstrasse, 7304 Maienfeld, Schweiz"
+  },
+  {
+   "id": "bfe-46.1273-7.0603",
+   "name": "Tesla Supercharger Martigny",
+   "betreiber": "Tesla",
+   "lat": 46.127291,
+   "lon": 7.060346,
+   "kw": 250,
+   "anzahl": 20,
+   "adresse": "MarchéRelaisSt.Bernard, 1920 Martigny, Schweiz"
+  },
+  {
+   "id": "bfe-45.9542-8.9506",
+   "name": "Tesla Supercharger Melide",
+   "betreiber": "Tesla",
+   "lat": 45.954206,
+   "lon": 8.950572,
+   "kw": 150,
+   "anzahl": 10,
+   "adresse": "ViaCantonale, 6815 Melide, Schweiz"
+  },
+  {
+   "id": "bfe-45.8443-9.0160",
+   "name": "Tesla Supercharger MorbioInferiore",
+   "betreiber": "Tesla",
+   "lat": 45.844338,
+   "lon": 9.01597,
+   "kw": 250,
+   "anzahl": 12,
+   "adresse": "VialeSerfontana, 6834 MorbioInferiore, Schweiz"
+  },
+  {
+   "id": "bfe-47.0119-6.9965",
+   "name": "Tesla Supercharger Neuchâtel",
+   "betreiber": "Tesla",
+   "lat": 47.011948,
+   "lon": 6.996499,
+   "kw": 250,
+   "anzahl": 16,
+   "adresse": "Av.desChamps-Montants, 2074 Neuchâtel, Schweiz"
+  },
+  {
+   "id": "bfe-47.2720-8.4378",
+   "name": "Tesla Supercharger Obfelden",
+   "betreiber": "Tesla",
+   "lat": 47.271998,
+   "lon": 8.437795,
+   "kw": 250,
+   "anzahl": 12,
+   "adresse": "Moosbachstrasse, 8912 Obfelden, Schweiz"
+  },
+  {
+   "id": "bfe-47.3108-7.9350",
+   "name": "Tesla Supercharger Oftringen",
+   "betreiber": "Tesla",
+   "lat": 47.310764,
+   "lon": 7.934981,
+   "kw": 150,
+   "anzahl": 14,
+   "adresse": "Zürichstrasse, 4665 Oftringen, Schweiz"
+  },
+  {
+   "id": "bfe-47.2000-8.7946",
+   "name": "Tesla Supercharger Pfäffikon",
+   "betreiber": "Tesla",
+   "lat": 47.199965,
+   "lon": 8.794586,
+   "kw": 250,
+   "anzahl": 15,
+   "adresse": "Gwattstrasse, 8808 Pfäffikon, Schweiz"
+  },
+  {
+   "id": "bfe-47.5246-7.6801",
+   "name": "Tesla Supercharger Pratteln",
+   "betreiber": "Tesla",
+   "lat": 47.524639,
+   "lon": 7.680143,
+   "kw": 150,
+   "anzahl": 18,
+   "adresse": "Hardstrasse, 4133 Pratteln, Schweiz"
+  },
+  {
+   "id": "bfe-46.5152-8.6706",
+   "name": "Tesla Supercharger Quinto",
+   "betreiber": "Tesla",
+   "lat": 46.515158,
+   "lon": 8.670621,
+   "kw": 150,
+   "anzahl": 10,
+   "adresse": "ViadiMezzo, 6776 Quinto, Schweiz"
+  },
+  {
+   "id": "bfe-46.1392-8.9072",
+   "name": "Tesla Supercharger Rivera",
+   "betreiber": "Tesla",
+   "lat": 46.139246,
+   "lon": 8.907225,
+   "kw": 150,
+   "anzahl": 6,
+   "adresse": "viaMonteCeneri, 6802 Rivera, Schweiz"
+  },
+  {
+   "id": "bfe-46.8919-7.5428",
+   "name": "Tesla Supercharger Rubigen",
+   "betreiber": "Tesla",
+   "lat": 46.891911,
+   "lon": 7.542801,
+   "kw": 150,
+   "anzahl": 16,
+   "adresse": "Belpstrasse, 3113 Rubigen, Schweiz"
+  },
+  {
+   "id": "bfe-47.7210-8.6467",
+   "name": "Tesla Supercharger Schaffhausen",
+   "betreiber": "Tesla",
+   "lat": 47.721014,
+   "lon": 8.646735,
+   "kw": 150,
+   "anzahl": 8,
+   "adresse": "Schweizersbildstrasse, 8207 Schaffhausen, Schweiz"
+  },
+  {
+   "id": "bfe-47.4084-9.3054",
+   "name": "Tesla Supercharger St.Gallen",
+   "betreiber": "Tesla",
+   "lat": 47.408425,
+   "lon": 9.305366,
+   "kw": 250,
+   "anzahl": 16,
+   "adresse": "Zürcherstrasse, 9015 St.Gallen, Schweiz"
+  },
+  {
+   "id": "bfe-46.4969-9.8427",
+   "name": "Tesla Supercharger St.Moritz",
+   "betreiber": "Tesla",
+   "lat": 46.496858,
+   "lon": 9.842659,
+   "kw": 150,
+   "anzahl": 4,
+   "adresse": "ViaGrevas, 7500 St.Moritz, Schweiz"
+  },
+  {
+   "id": "bfe-46.3104-7.7495",
+   "name": "Tesla Supercharger Steg-Hohtenn",
+   "betreiber": "Tesla",
+   "lat": 46.310377,
+   "lon": 7.749549,
+   "kw": 150,
+   "anzahl": 8,
+   "adresse": "BescheMattenstrasse, 3940 Steg-Hohtenn, Schweiz"
+  },
+  {
+   "id": "bfe-47.4080-8.5982",
+   "name": "Tesla Supercharger Wallisellen",
+   "betreiber": "Tesla",
+   "lat": 47.408042,
+   "lon": 8.598196,
+   "kw": 250,
+   "anzahl": 20,
+   "adresse": "NeueWinterthurerstrasse, 8304 Wallisellen, Schweiz"
+  }
+ ]
+}
