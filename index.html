@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.25.4 — Karte: Firma im Schild („Tesla · 26 km · 40 %"); Schild antippen wählt die Station (ließ den Tipp
+                   vorher durch); größere unsichtbare Tippfläche um jeden Punkt.
   Version 0.25.3 — Karte: alle erreichbaren Stationen deutlich mit Schild „km · Rest %" (überdeckte Schilder erst beim
                    Hineinzoomen), Knopf „Karte" zeigt dich und alle erreichbaren Stationen; nicht erreichbare klein grau.
   Version 0.25.2 — Stationen ausgeblendet, deren Abzweig länger ist als der Weg entlang der Route bis dorthin (liegen
@@ -206,7 +208,7 @@
     #karte-info { display: flex; gap: 10px; align-items: center; padding: 8px 12px calc(env(safe-area-inset-bottom) + 8px); border-top: 2px solid var(--linie); }
     #karte-info .text { flex: 1; font-weight: 600; font-variant-numeric: tabular-nums; }
     #karte-info .knopf { min-height: 44px; }
-    .leaflet-tooltip.schild { font: 700 14px/1.2 system-ui, sans-serif; }
+    .leaflet-tooltip.schild { font: 700 14px/1.2 system-ui, sans-serif; pointer-events: auto; cursor: pointer; }
     .leaflet-tooltip.schild.klein { font-size: 12px; padding: 1px 5px; }
     .leaflet-tooltip.schild.rot { color: #c00018; }
 
@@ -537,7 +539,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.25.3';
+    const APP_VERSION = '0.25.4';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -2070,13 +2072,23 @@
           radius: gewaehlt ? 11 : geht ? 8 : 5, color: gewaehlt ? '#000000' : farbe, weight: gewaehlt ? 3 : 2,
           fillColor: e.punkt.fremd ? '#ffffff' : farbe, fillOpacity: geht ? 0.95 : 0.5, dashArray: e.punkt.fremd ? '4 3' : null,
         }).addTo(karteEbene);
-        m.on('click', () => zeichneKarte(e, false));
+        const waehle = () => zeichneKarte(e, false);
+        m.on('click', waehle);
+        // Punkt ist nur 16 px groß – unsichtbare Tippfläche drumherum, sonst trifft der Finger daneben (Christof, 14.10.2026)
+        L.circleMarker([e.punkt.lat, e.punkt.lon], { radius: 20, stroke: false, fillColor: '#000000', fillOpacity: 0 })
+          .on('click', waehle).addTo(karteEbene);
         if (!geht && !gewaehlt) continue;
         erreichbar.push([e.punkt.lat, e.punkt.lon]);
-        const text = gewaehlt ? fmtKm(e.weg) + ' km' + (pg ? ' · ' + akkuKurz(pg) : '')
-          : fmtKm(e.weg) + ' km' + (pg && !pg.angenommen ? ' · ' + Math.round(pg.ankunft) + ' %' : '');
-        m.bindTooltip(text, { permanent: true, direction: 'top', offset: [0, gewaehlt ? -10 : -7],
+        const firma = firmaVon(e.punkt);
+        const text = (firma ? firma + ' · ' : '') + fmtKm(e.weg) + ' km' + (gewaehlt ? (pg ? ' · ' + akkuKurz(pg) : '')
+          : (pg && !pg.angenommen ? ' · ' + Math.round(pg.ankunft) + ' %' : ''));
+        m.bindTooltip(text, { permanent: true, interactive: true, direction: 'top', offset: [0, gewaehlt ? -10 : -7],
           className: 'schild' + (gewaehlt ? '' : ' klein') + (pg && pg.unterReserve ? ' rot' : '') });
+        // Schild antippen wählt die Station ebenfalls (vorher ließ es den Tipp durch – nichts passierte)
+        m.on('tooltipopen', ev => {
+          const el = ev.tooltip.getElement();
+          if (el && !el.dataset.tipp) { el.dataset.tipp = '1'; L.DomEvent.on(el, 'click', x => { L.DomEvent.stop(x); waehle(); }); }
+        });
         karteSchilder.push({ m, text, gewaehlt });
       }
       // Schilder: gewählte zuerst, danach die nächsten zuerst
@@ -2095,6 +2107,15 @@
         else karte.fitBounds(strecke.getBounds(), { padding: [30, 30] });
       }
       ordneSchilder();
+    }
+
+    /** Firma für das Kartenschild: „Tesla", „EnBW", „Migrol" – ohne „Supercharger", Ort usw. */
+    function firmaVon(p) {
+      if (p.betreiber) return String(p.betreiber).trim();
+      const name = kurzname(p.name);
+      const bekannt = ['EnBW', 'Tesla', 'Migrol', 'AMAG', 'Porsche', 'EWE Go', 'Ionity', 'Fastned', 'Shell', 'Aral', 'GoFast', 'Electra'];
+      const treffer = bekannt.find(b => name.toLowerCase().startsWith(b.toLowerCase()));
+      return treffer || name.split(/\s+/)[0] || '';
     }
 
     /** Schilder, die sich überdecken würden, ausblenden (gewählte und nähere haben Vorrang); beim Zoomen neu. */
