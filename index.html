@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.25.5 — Karte: Route violett mit weißem Rand (grau sah aus wie Grenzen). Details ohne Annahmen, Favorit,
+                   Koordinaten und id; Notiz direkt nach dem Akkubedarf.
   Version 0.25.4 — Karte: Firma im Schild („Tesla · 26 km · 40 %"); Schild antippen wählt die Station (ließ den Tipp
                    vorher durch); größere unsichtbare Tippfläche um jeden Punkt.
   Version 0.25.3 — Karte: alle erreichbaren Stationen deutlich mit Schild „km · Rest %" (überdeckte Schilder erst beim
@@ -539,7 +541,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.25.4';
+    const APP_VERSION = '0.25.5';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -1372,12 +1374,11 @@
         (e.hm === null ? '' : ' · + ' + e.hm + ' hm') + (pg ? ' · ' + akkuText(pg, true) : '');
       $('d-gross').className = 'gross' + (pg && pg.unterReserve ? ' rot' : '');
 
-      const t = temperatur();
+      // Ohne Annahmen, Favorit, Koordinaten, id; Notiz gleich nach dem Akkubedarf (Christof, 14.10.2026)
       const felder = [
         ['Lage', lageText(e.z) || '–'],
         ['Akkubedarf', pg ? '≈ ' + zahl(pg.kwh, 1) + ' kWh = ' + Math.round(pg.prozent) + ' %' : '–'],
-        ['Annahmen', tempo().wert + ' km/h (' + tempo().quelle + ') · ' + zahl(t.wert, 0) + ' °C (' + t.quelle + ')' +
-          (Number(zustand.einst.zusatzgewicht) ? ' · +' + zustand.einst.zusatzgewicht + ' kg' : '')],
+        ['Notiz', p.notiz || '–'],
         ['Adresse', p.adresse || '–'],
         ['Betreiber', p.betreiber || '–'],
         ['Preis', (() => {
@@ -1389,13 +1390,9 @@
         ['Leistung', p.kw ? p.kw + ' kW' : '–'],
         ['Ladepunkte', p.anzahl ? String(p.anzahl) : '–'],
         ['Richtung', { hin: 'nur Hinfahrt', rueck: 'nur Rückfahrt', beide: 'beide' }[p.richtung] || p.richtung],
-        ['Favorit', p.favorit ? 'ja' : 'nein'],
-        ['Notiz', p.notiz || '–'],
         ['Streckenkm', e.z ? zahl(e.z.km, 1) + ' km ab Start' : '–'],
-        ['Koordinaten', zahl(p.lat, 5) + ', ' + zahl(p.lon, 5)],
-        p.fremd ? ['Quelle', 'Bundesdaten (ich-tanke-strom.ch), Stand ' + datumText(fremde && fremde.stand) + ' – nicht in deiner Liste']
-          : ['id', p.id],
       ];
+      if (p.fremd) felder.push(['Quelle', 'Bundesdaten (ich-tanke-strom.ch), Stand ' + datumText(fremde && fremde.stand) + ' – nicht in deiner Liste']);
       const dl = $('d-felder');
       dl.replaceChildren();
       for (const [k, v] of felder) dl.append(el('dt', '', k), el('dd', '', v));
@@ -2040,7 +2037,9 @@
       const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
       const akzent = css('--akzent'), rot = css('--rot');
       const pkt = km => { const p = punktBeiKm(route, km); return [p.lat, p.lon]; };
-      const strecke = L.polyline(route.linie.map(p => [p[0], p[1]]), { color: '#6b6b6b', weight: 4, opacity: 0.8 }).addTo(karteEbene);
+      // Route violett mit weißem Rand – grau sah aus wie Landesgrenzen, rot ist für „unter Reserve" vergeben (Christof, 14.10.2026)
+      L.polyline(route.linie.map(p => [p[0], p[1]]), { color: '#ffffff', weight: 8, opacity: 0.9 }).addTo(karteEbene);
+      const strecke = L.polyline(route.linie.map(p => [p[0], p[1]]), { color: '#6a2fd6', weight: 5, opacity: 0.9 }).addTo(karteEbene);
       const ich = a.pos ? [a.pos.lat, a.pos.lon] : null;
       const ab = erg && erg.pos ? erg.pos : null;              // Linienposition, ab der gerechnet wird
       const abStart = !!(a.planPos && a.planPos.planung);       // weit weg: geplant ab Startort der Route
