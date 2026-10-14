@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.25.3 — Karte: alle erreichbaren Stationen deutlich mit Schild „km · Rest %" (überdeckte Schilder erst beim
+                   Hineinzoomen), Knopf „Karte" zeigt dich und alle erreichbaren Stationen; nicht erreichbare klein grau.
   Version 0.25.2 — Stationen ausgeblendet, deren Abzweig länger ist als der Weg entlang der Route bis dorthin (liegen
                    neben/hinter dir); große Zahl = ganzer Weg (entlang + abseits); fremde Stationen nur bis 3 km neben
                    der Route (eigene weiter bis 10 km).
@@ -205,6 +207,8 @@
     #karte-info .text { flex: 1; font-weight: 600; font-variant-numeric: tabular-nums; }
     #karte-info .knopf { min-height: 44px; }
     .leaflet-tooltip.schild { font: 700 14px/1.2 system-ui, sans-serif; }
+    .leaflet-tooltip.schild.klein { font-size: 12px; padding: 1px 5px; }
+    .leaflet-tooltip.schild.rot { color: #c00018; }
 
     .vorschlaege { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
     .chip { min-height: 40px; padding: 0 12px; border-radius: 20px; border: 2px solid var(--linie); background: var(--flaeche); font-weight: 600; cursor: pointer; }
@@ -533,7 +537,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.25.2';
+    const APP_VERSION = '0.25.3';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -1977,6 +1981,7 @@
     // -----------------------------------------------------------------------
 
     let karte = null, karteEbene = null, karteWahl = null, leafletLaedt = null;
+    let karteSchilder = [];   // [{ m, text, gewaehlt }] in Vorrang-Reihenfolge
 
     function ladeLeaflet() {
       if (window.L) return Promise.resolve();
@@ -2014,11 +2019,13 @@
       if (!karte) {
         karte = L.map('karte');
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(karte);
+        karte.on('zoomend', ordneSchilder);
       }
       karte.invalidateSize();
       const liste = (a.erg && a.erg.eintraege) || [];
       const wahl = e ? liste.find(x => x.punkt.id === e.punkt.id) || null : liste[0] || null;
-      zeichneKarte(wahl, true);
+      // aus den Details: dich und diese Station zeigen; Knopf „Karte“: dich und alle erreichbaren Stationen
+      zeichneKarte(wahl, e ? true : 'alle');
     }
 
     function zeichneKarte(wahl, zoomen) {
@@ -2048,25 +2055,59 @@
       if (abStart && ab) L.circleMarker(pkt(ab.km), { radius: 7, color: '#ffffff', weight: 2, fillColor: '#444444', fillOpacity: 1 })
         .bindTooltip('Geplant ab hier').addTo(karteEbene);
 
-      for (const e of (erg && erg.eintraege) || []) {
+      // Alle erreichbaren Stationen deutlich mit Schild „26 km · 39 %“, nicht erreichbare klein und grau ohne Schild
+      // (Christof, 14.10.2026). Zeichenreihenfolge: grau, erreichbar, gewählt – die gewählte liegt oben.
+      const eintraege = ((erg && erg.eintraege) || []).slice();
+      const rang = e => e === wahl ? 2 : e.prognose && e.prognose.nichtErreichbar ? 0 : 1;
+      eintraege.sort((x, y) => rang(x) - rang(y));
+      const erreichbar = [];
+      karteSchilder = [];
+      for (const e of eintraege) {
         const pg = e.prognose, gewaehlt = e === wahl;
-        const farbe = e.punkt.fremd ? css('--leise') : pg && pg.nichtErreichbar ? '#9a9a9a' : pg && pg.unterReserve ? rot : akzent;
+        const geht = !(pg && pg.nichtErreichbar);
+        const farbe = !geht ? '#9a9a9a' : pg && pg.unterReserve ? rot : akzent;
         const m = L.circleMarker([e.punkt.lat, e.punkt.lon], {
-          radius: gewaehlt ? 11 : 7, color: gewaehlt ? '#000000' : farbe, weight: gewaehlt ? 3 : 2, fillColor: farbe,
-          fillOpacity: e.punkt.fremd ? 0.15 : pg && pg.nichtErreichbar ? 0.4 : 0.9, dashArray: e.punkt.fremd ? '3 3' : null,
+          radius: gewaehlt ? 11 : geht ? 8 : 5, color: gewaehlt ? '#000000' : farbe, weight: gewaehlt ? 3 : 2,
+          fillColor: e.punkt.fremd ? '#ffffff' : farbe, fillOpacity: geht ? 0.95 : 0.5, dashArray: e.punkt.fremd ? '4 3' : null,
         }).addTo(karteEbene);
         m.on('click', () => zeichneKarte(e, false));
-        if (gewaehlt) m.bindTooltip(fmtKm(e.weg) + ' km' + (pg ? ' · ' + akkuKurz(pg) : ''), { permanent: true, direction: 'top', offset: [0, -10], className: 'schild' });
+        if (!geht && !gewaehlt) continue;
+        erreichbar.push([e.punkt.lat, e.punkt.lon]);
+        const text = gewaehlt ? fmtKm(e.weg) + ' km' + (pg ? ' · ' + akkuKurz(pg) : '')
+          : fmtKm(e.weg) + ' km' + (pg && !pg.angenommen ? ' · ' + Math.round(pg.ankunft) + ' %' : '');
+        m.bindTooltip(text, { permanent: true, direction: 'top', offset: [0, gewaehlt ? -10 : -7],
+          className: 'schild' + (gewaehlt ? '' : ' klein') + (pg && pg.unterReserve ? ' rot' : '') });
+        karteSchilder.push({ m, text, gewaehlt });
       }
+      // Schilder: gewählte zuerst, danach die nächsten zuerst
+      karteSchilder.sort((x, y) => (y.gewaehlt - x.gewaehlt));
       if (ich) L.circleMarker(ich, { radius: 8, color: '#ffffff', weight: 3, fillColor: '#1a73e8', fillOpacity: 1 }).bindTooltip('Du').addTo(karteEbene);
 
+      const anzahl = erreichbar.length - (wahl && wahl.prognose && wahl.prognose.nichtErreichbar ? 1 : 0);
       $('karte-text').textContent = wahl
         ? kurzname(wahl.punkt.name) + ' · ' + fmtKm(wahl.weg) + ' km' + (wahl.prognose ? ' · ' + akkuText(wahl.prognose) : '') + (wahl.punkt.fremd ? ' · nicht in deiner Liste' : '')
-        : (erg && erg.eintraege.length ? 'Station antippen' : 'Keine Ladepunkte voraus');
+        : (erg && erg.eintraege.length ? anzahl + ' Stationen erreichbar – antippen' : 'Keine Ladepunkte voraus');
       $('karte-details').hidden = !wahl;
-      if (zoomen) {
+      if (zoomen === 'alle' && erreichbar.length) {
+        karte.fitBounds(L.latLngBounds(erreichbar.concat(bezug ? [bezug] : [])), { padding: [50, 50], maxZoom: 13 });
+      } else if (zoomen) {
         if (bezug && wahl) karte.fitBounds(L.latLngBounds([bezug, [wahl.punkt.lat, wahl.punkt.lon]]), { padding: [60, 60], maxZoom: 13 });
         else karte.fitBounds(strecke.getBounds(), { padding: [30, 30] });
+      }
+      ordneSchilder();
+    }
+
+    /** Schilder, die sich überdecken würden, ausblenden (gewählte und nähere haben Vorrang); beim Zoomen neu. */
+    function ordneSchilder() {
+      if (!karte) return;
+      const belegt = [];
+      for (const s of karteSchilder) {
+        const p = karte.latLngToContainerPoint(s.m.getLatLng());
+        const breite = s.text.length * 7 + 14, hoehe = 22;
+        const box = { x0: p.x - breite / 2, x1: p.x + breite / 2, y0: p.y - 12 - hoehe, y1: p.y - 8 };
+        const frei = s.gewaehlt || !belegt.some(o => box.x0 < o.x1 && box.x1 > o.x0 && box.y0 < o.y1 && box.y1 > o.y0);
+        if (frei) { belegt.push(box); if (!s.m.isTooltipOpen()) s.m.openTooltip(); }
+        else if (s.m.isTooltipOpen()) s.m.closeTooltip();
       }
     }
 
