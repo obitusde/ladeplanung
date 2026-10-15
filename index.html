@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.28.0 — Route ab hier: auf bekannten Abschnitten ohne eine einzige eigene Station (z. B. Rhonetal) erscheinen
+                   auch die fremden. Tesla nur noch, wo andere Autos laden dürfen (fremde.json).
   Version 0.27.1 — Ortssuche bei Route ab hier ging im Browser nicht: der Geocoder von OpenRouteService erlaubt keinen
                    Authorization-Kopf (CORS) → Schlüssel dort als api_key; Status „Suche …" sichtbar.
   Version 0.27.0 — Route ab hier: auf Abschnitten deiner Stammstrecken nur deine Stationen, fremde nur auf unbekannten
@@ -385,7 +387,7 @@
       <li><b>Große Zahl:</b> ganzer Weg bis zur Station – entlang der Route und, wenn sie abseits liegt, der Abzweig dazu („3 km abseits"). Stationen, deren Abzweig länger ist als der Weg entlang der Route bis dorthin, blendet die App aus: Sie liegen neben oder hinter dir, nicht auf dem Weg.</li>
       <li><b>braucht ≈ 23 %</b>: so viel Akku kostet der Weg bis dorthin. <b>Rest bei Ankunft ≈ 34 %</b>: so viel ist dort noch übrig – wenn oben „Akku jetzt" eingetragen ist. Ohne Eintrag rechnet die App mit vollem Akku (100 %). <span class="rot"><b>Rot</b></span> = Rest unter deiner Reserve, <b>nicht erreichbar</b> = Akku reicht nicht bis dorthin.</li>
       <li><b>Grau</b>: nicht erreichbar mit dem Akkustand.</li>
-      <li><b>Gestrichelt, „nicht in deiner Liste"</b> (nur bei „Route ab hier"): Station aus amtlichen Registern, ab 100 kW, monatlich aktualisiert: Schweiz AMAG, Migrol, Tesla (ich-tanke-strom.ch), Deutschland EnBW und Tesla (Ladesäulenregister der Bundesnetzagentur). Sie erscheinen nur auf Abschnitten, die zu keiner deiner Stammstrecken gehören – wo du eine Strecke schon kennst, zeigt die App nur deine Stationen. In den Details <b>In meine Liste übernehmen</b> – das Formular ist schon ausgefüllt.</li>
+      <li><b>Gestrichelt, „nicht in deiner Liste"</b> (nur bei „Route ab hier"): Station aus amtlichen Registern, ab 100 kW, monatlich aktualisiert: Schweiz AMAG, Migrol, Tesla (ich-tanke-strom.ch), Deutschland EnBW und Tesla (Ladesäulenregister der Bundesnetzagentur); Tesla nur, wo auch andere Autos laden dürfen (supercharge.info). Sie erscheinen nur auf Abschnitten, die zu keiner deiner Stammstrecken gehören – wo du eine Strecke schon kennst und dort Stationen hast, zeigt die App nur deine. Hast du auf einem bekannten Abschnitt keine einzige Station (z. B. Rhonetal), erscheinen dort auch die fremden. In den Details <b>In meine Liste übernehmen</b> – das Formular ist schon ausgefüllt.</li>
       <li><b>letzte vor Reserve</b>: die letzte Station, die du noch über deiner Reserve erreichst.</li>
       <li><b>danach 38 km bis zur nächsten</b>: Abstand zur nächsten Station voraus – so siehst du lange Lücken.</li>
       <li><b>4 × 150 kW:</b> Anzahl Ladepunkte × Leistung, sofern eingetragen.</li>
@@ -548,7 +550,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.27.1';
+    const APP_VERSION = '0.28.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -1913,18 +1915,41 @@
         daten.punkte.push({ ...f, fremd: true, richtung: 'beide', favorit: false, notiz: '', link: '', zuordnung: [] });
       }
       const bekannt = bekannteAbschnitte(r);
-      for (const p of daten.punkte) {
-        const pr = projiziere(r.linie, p.lat, p.lon, lat0Von(r));
-        // eigene Stationen bis 10 km (bewusst eingetragen), fremde nur bis 3 km (Christof, 14.10.2026)
-        if (pr.q > (p.fremd ? FREMD_MAX_KM : QUER_MAX_KM)) continue;
-        // Auf Abschnitten deiner Stammstrecken nur deine Stationen – dort hast du selbst geprüft, was Sinn macht
-        if (p.fremd && bekannt[Math.min(bekannt.length - 1, Math.max(0, Math.round(pr.km)))]) continue;
+      const kmIndex = km => Math.min(bekannt.length - 1, Math.max(0, Math.round(km)));
+      const eigeneKm = [];
+      const ordneZu = (p, pr) => {
         const strasse = String(p.strasse || '').split(/[,/;]/)[0].trim();
-        (p.zuordnung = p.zuordnung || []).push({
+        const z = {
           route: ADHOC_ID, km: pr.km, hm_hin: pr.hm_hin, hm_rueck: pr.hm_rueck, quer_km: runde(pr.q, 1),
           strasse: strasse === '–' ? '' : strasse, raststaette: pr.q <= 0.5 && p.richtung !== 'beide' && !p.fremd,
           richtung: adhocRichtung(p, r, pr.km),
-        });
+        };
+        (p.zuordnung = p.zuordnung || []).push(z);
+        return z;
+      };
+      // eigene Stationen bis 10 km (bewusst eingetragen), fremde nur bis 3 km (Christof, 14.10.2026)
+      for (const p of daten.punkte) {
+        if (p.fremd) continue;
+        const pr = projiziere(r.linie, p.lat, p.lon, lat0Von(r));
+        if (pr.q > QUER_MAX_KM) continue;
+        const z = ordneZu(p, pr);
+        if (z.richtung !== 'rueck') eigeneKm.push(kmIndex(pr.km));   // Route ab hier fährt immer „hin"
+      }
+      // Auf Abschnitten deiner Stammstrecken nur deine Stationen – dort hast du selbst geprüft, was Sinn macht.
+      // Liegt auf einem bekannten Abschnitt keine einzige eigene Station, gelten dort die fremden (Christof, 15.10.2026:
+      // Rhonetal bei Ovronnaz → Villars, Variante b).
+      const nurEigene = bekannt.slice();
+      for (let k = 0; k < nurEigene.length;) {
+        if (!nurEigene[k]) { k++; continue; }
+        let e = k; while (e + 1 < nurEigene.length && nurEigene[e + 1]) e++;
+        if (!eigeneKm.some(x => x >= k && x <= e)) for (let j = k; j <= e; j++) nurEigene[j] = false;
+        k = e + 1;
+      }
+      for (const p of daten.punkte) {
+        if (!p.fremd) continue;
+        const pr = projiziere(r.linie, p.lat, p.lon, lat0Von(r));
+        if (pr.q > FREMD_MAX_KM || nurEigene[kmIndex(pr.km)]) continue;
+        ordneZu(p, pr);
       }
     }
 

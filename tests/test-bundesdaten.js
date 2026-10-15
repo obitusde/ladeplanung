@@ -1,6 +1,6 @@
 // Test der Auswertung der Bundesdaten (tests/hole-bundesdaten.js) mit kleinen Beispieldaten.
 // Aufruf: node tests/test-bundesdaten.js
-const { auswerten, auswertenDE, standortName, neuesterCsvLink } = require('./hole-bundesdaten.js');
+const { auswerten, auswertenDE, standortName, neuesterCsvLink, nurOffeneTesla } = require('./hole-bundesdaten.js');
 
 let fehler = 0;
 const pruefe = (bedingung, text) => { if (!bedingung) { fehler++; console.log('FEHLER ' + text); } };
@@ -71,6 +71,18 @@ const seite = '<a href="https://data.bundesnetzagentur.de/Bundesnetzagentur/DE/x
 const link = neuesterCsvLink(seite);
 pruefe(link && link.stand === '2026-09-01' && link.url.endsWith('_2026-09-01.csv'), 'neuester CSV-Link: ' + JSON.stringify(link));
 pruefe(neuesterCsvLink('<html>nichts</html>') === null, 'ohne Link null');
+
+// Tesla nur, wo auch andere Autos laden dürfen (supercharge.info)
+const site = (lat, lon, otherEVs, status) => ({ gps: { latitude: lat, longitude: lon }, otherEVs, status: status || 'OPEN' });
+const teslaTest = nurOffeneTesla([
+  { name: 'Tesla Supercharger Martigny', betreiber: 'Tesla', lat: 46.1000, lon: 7.0800 },
+  { name: 'Tesla Supercharger Bern', betreiber: 'Tesla', lat: 46.9500, lon: 7.4400 },
+  { name: 'Tesla Supercharger Alt', betreiber: 'Tesla', lat: 48.0000, lon: 9.0000 },
+  { name: 'Tesla Supercharger Neu', betreiber: 'Tesla', lat: 47.5000, lon: 8.5000 },        // nicht bei supercharge.info
+  { name: 'Migrol Martigny', betreiber: 'Migrol', lat: 46.1000, lon: 7.0800 },
+], [site(46.1003, 7.0803, false), site(46.9502, 7.4401, true), site(48.0001, 9.0001, true, 'CLOSED_PERM'), site(47.6, 8.5, false)]);
+pruefe(teslaTest.bleiben.map(p => p.name).join('|') === 'Tesla Supercharger Bern|Tesla Supercharger Neu|Migrol Martigny',
+  'Tesla-Filter: ' + teslaTest.bleiben.map(p => p.name).join('|'));
 
 console.log(fehler === 0 ? 'Alle Prüfungen bestanden.' : fehler + ' Prüfungen fehlgeschlagen.');
 process.exit(fehler === 0 ? 0 : 1);

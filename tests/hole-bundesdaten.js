@@ -1,10 +1,12 @@
 // Ladestationen aus amtlichen Registern → fremde.json
+// Version 1.2.0 (15.10.2026) — Tesla nur, wo auch andere Autos laden dürfen (supercharge.info „otherEVs"); Anlass:
+//                              Martigny ist nur für Teslas (Christof).
 // Version 1.1.0 (14.10.2026) — zusätzlich Deutschland (Ladesäulenregister der Bundesnetzagentur: EnBW mobility+ und
 //                              Tesla Germany) und AMAG in der Schweiz.
 // Version 1.0.0 (14.10.2026) — Schweiz (BFE, ich-tanke-strom.ch): Migrol und Tesla ab 100 kW, je Standort zusammengefasst.
 //
-// Aufruf: node tests/hole-bundesdaten.js                         (lädt beide Quellen aus dem Netz)
-//         node tests/hole-bundesdaten.js ch.json[.gz] de.csv     (lokale Dateien)
+// Aufruf: node tests/hole-bundesdaten.js                                  (lädt alle Quellen aus dem Netz)
+//         node tests/hole-bundesdaten.js ch.json[.gz] de.csv [sc.json]    (lokale Dateien)
 // Läuft monatlich als GitHub Action (.github/workflows/bundesdaten.yml).
 // In der App erscheinen diese Stationen nur bei „Route ab hier", gestrichelt mit „nicht in deiner Liste".
 'use strict';
@@ -14,7 +16,9 @@ const zlib = require('zlib');
 
 const CH_URL = 'https://data.geo.admin.ch/ch.bfe.ladestellen-elektromobilitaet/data/oicp/ch.bfe.ladestellen-elektromobilitaet.json';
 const DE_SEITE = 'https://www.bundesnetzagentur.de/DE/Fachthemen/ElektrizitaetundGas/E-Mobilitaet/start.html';
+const SC_URL = 'https://supercharge.info/service/supercharge/allSites';
 const MIN_KW = 100;
+const SC_ZUORDNUNG_M = 500;   // Tesla-Standort und Eintrag bei supercharge.info: höchstens so weit auseinander
 const STANDORT_M = 80;   // Ladepunkte eines Betreibers bis 80 m auseinander = ein Standort
 const KENNUNG = 'ladeplanung (github.com/obitusde/ladeplanung)';
 
@@ -173,6 +177,37 @@ function auswertenDE(text) {
 }
 
 // ---------------------------------------------------------------------------
+// Tesla: nur Supercharger, die für andere Autos offen sind (supercharge.info, Feld otherEVs)
+// ---------------------------------------------------------------------------
+
+/** Entfernt Tesla-Standorte, die laut supercharge.info nur für Teslas sind oder dauerhaft geschlossen; ohne Eintrag bleiben sie. */
+function nurOffeneTesla(punkte, sites) {
+  const raster = new Map();
+  for (const s of sites) {
+    if (!s.gps) continue;
+    const k = Math.round(s.gps.latitude * 100) + ',' + Math.round(s.gps.longitude * 100);
+    if (!raster.has(k)) raster.set(k, []);
+    raster.get(k).push(s);
+  }
+  const entfernt = [];
+  const bleiben = punkte.filter(p => {
+    if (p.betreiber !== 'Tesla') return true;
+    let best = null, bd = Infinity;
+    const zl = Math.round(p.lat * 100), zo = Math.round(p.lon * 100);
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+      for (const s of raster.get((zl + a) + ',' + (zo + b)) || []) {
+        const d = abstandM(p, { lat: s.gps.latitude, lon: s.gps.longitude });
+        if (d < bd) { bd = d; best = s; }
+      }
+    }
+    if (!best || bd > SC_ZUORDNUNG_M) return true;
+    if (best.otherEVs === false || best.status === 'CLOSED_PERM') { entfernt.push(p.name + (best.otherEVs === false ? ' (nur Tesla)' : ' (geschlossen)')); return false; }
+    return true;
+  });
+  return { bleiben, entfernt };
+}
+
+// ---------------------------------------------------------------------------
 // Ablauf
 // ---------------------------------------------------------------------------
 
@@ -202,13 +237,19 @@ async function main() {
   const de = auswertenDE(deText);
   if (de.length < 500) throw new Error('Deutschland: nur ' + de.length + ' Standorte – Datenformat geändert? fremde.json bleibt unverändert');
 
-  const punkte = ch.concat(de);
+  const scDatei = process.argv[4];
+  const sites = JSON.parse(alsText(scDatei ? fs.readFileSync(scDatei) : await lade(SC_URL)));
+  if (!Array.isArray(sites) || sites.length < 1000) throw new Error('supercharge.info: unerwartete Antwort – fremde.json bleibt unverändert');
+  const tesla = nurOffeneTesla(ch.concat(de), sites);
+  const punkte = tesla.bleiben;
+  if (tesla.entfernt.length) console.log('Tesla ohne Fremdfahrzeuge/geschlossen, weggelassen: ' + tesla.entfernt.join(', '));
   const ziel = path.join(__dirname, '..', 'fremde.json');
   let alt = null;
   try { alt = JSON.parse(fs.readFileSync(ziel, 'utf8')); } catch (e) { /* erste Fassung */ }
   const gleich = alt && JSON.stringify(alt.punkte) === JSON.stringify(punkte);
   const stand = gleich ? alt.stand : new Date().toISOString().slice(0, 10);
-  const quellen = { CH: 'BFE, ich-tanke-strom.ch', DE: 'Bundesnetzagentur, Ladesäulenregister' + (deStand ? ' vom ' + deStand : '') };
+  const quellen = { CH: 'BFE, ich-tanke-strom.ch', DE: 'Bundesnetzagentur, Ladesäulenregister' + (deStand ? ' vom ' + deStand : ''),
+    Tesla: 'supercharge.info (nur offen für andere Autos)' };
   // Ein Punkt je Zeile: lesbar im Diff, aber deutlich kleiner als eingerückt (≈ 2000 Standorte)
   const text = '{"version":2,"stand":' + JSON.stringify(stand) + ',"min_kw":' + MIN_KW + ',"quellen":' + JSON.stringify(quellen) +
     ',"punkte":[\n' + punkte.map(p => JSON.stringify(p)).join(',\n') + '\n]}\n';
@@ -218,5 +259,5 @@ async function main() {
   console.log('fremde.json: ' + punkte.length + ' Standorte ' + JSON.stringify(z) + (gleich ? ' (unverändert)' : ' (neu, Stand ' + stand + ')'));
 }
 
-module.exports = { auswerten, auswertenDE, standortName, betreiberVon, betreiberDE, neuesterCsvLink, zerlegeCsv };
+module.exports = { auswerten, auswertenDE, standortName, betreiberVon, betreiberDE, neuesterCsvLink, zerlegeCsv, nurOffeneTesla };
 if (require.main === module) main().catch(e => { console.error('Fehler: ' + e.message); process.exit(1); });
