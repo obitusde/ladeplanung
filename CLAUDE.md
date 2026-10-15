@@ -1,6 +1,6 @@
 # Ladeplanung Cupra Born — Projektstand für Claude
 
-**Stand 14.10.2026** · App (`index.html`) v0.27.0 · Apps Script (`apps-script/Code.js`) v0.20.0 · Veröffentlichen per GitHub Action (`.github/workflows/apps-script.yml`) v1.0.0 · Bundesdaten-Action (`.github/workflows/bundesdaten.yml`) v1.1.0
+**Stand 15.10.2026** · App (`index.html`) v0.27.1 · Apps Script (`apps-script/Code.js`) v0.20.0 · Veröffentlichen per GitHub Action (`.github/workflows/apps-script.yml`) v1.0.0 · Bundesdaten-Action (`.github/workflows/bundesdaten.yml`) v1.1.0
 Ursprünglicher Auftrag: [`docs/Umsetzungsbrief_v5.0.md`](docs/Umsetzungsbrief_v5.0.md). Diese Datei beschreibt den **tatsächlichen** Stand inklusive aller späteren Entscheidungen und hat Vorrang vor dem Brief.
 
 ---
@@ -268,3 +268,4 @@ Weiter gültig aus dem Brief: keine Google Directions/Distance Matrix/Places API
 - Geocoder mit nur Straße + Hausnummer findet irgendeine gleichnamige Straße (Wuppertal statt Neuenrade) → immer die ganze Adresse.
 - Dialoge: Übernahme im `submit`-Handler, `close` nur als Rückfall mit Sperre (gilt für Einstellungen und Simulation).
 - Action rot bei „clasp show-authorized-user"/`invalid_grant` → Secret abgelaufen oder widerrufen (z. B. nach `clasp logout` am PC). Erneuern siehe §4.
+- **ORS-Ortssuche (geocode) im Browser nur mit `api_key=` in der Adresse**: deren CORS-Vorabprüfung erlaubt keinen `Authorization`-Kopf (der Routendienst `/v2/directions` schon) → Chrome bricht ab, die App sah nur „keine Verbindung" (bis v0.27.0, Christof 15.10.2026: Villars-sur-Ollon ließ sich nicht eingeben). Fehlerantworten (403 falscher Schlüssel) tragen keinen CORS-Kopf → im Browser nicht von „kein Netz" zu unterscheiden.

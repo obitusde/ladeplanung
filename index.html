@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.27.1 — Ortssuche bei Route ab hier ging im Browser nicht: der Geocoder von OpenRouteService erlaubt keinen
+                   Authorization-Kopf (CORS) → Schlüssel dort als api_key; Status „Suche …" sichtbar.
   Version 0.27.0 — Route ab hier: auf Abschnitten deiner Stammstrecken nur deine Stationen, fremde nur auf unbekannten
                    Abschnitten (je km geprüft, ≤ 1,5 km neben einer Stammstrecke; Kreuzungen und kurze Abweichungen geglättet).
   Version 0.26.0 — Fremde Stationen auch aus Deutschland (EnBW, Tesla; Ladesäulenregister) und AMAG Schweiz; Karte mit
@@ -222,6 +224,7 @@
     .chip { min-height: 40px; padding: 0 12px; border-radius: 20px; border: 2px solid var(--linie); background: var(--flaeche); font-weight: 600; cursor: pointer; }
     .chip.gewaehlt { background: var(--akzent); color: var(--akzent-text); border-color: var(--akzent); }
     #adhoc-dlg .wahl { font-weight: 700; margin: 0 0 6px; }
+    #adhoc-status { font-weight: 600; min-height: 1.3em; }
 
     footer {
       position: sticky; bottom: 0;
@@ -545,7 +548,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.27.0';
+    const APP_VERSION = '0.27.1';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -1756,11 +1759,15 @@
       const schluessel = orsSchluessel();
       if (!schluessel) throw new Error('kein OpenRouteService-Schlüssel – Menü → Einstellungen');
       const o = optionen || {};
-      const kopf = { Authorization: schluessel, Accept: 'application/json, application/geo+json' };
-      if (o.body) kopf['Content-Type'] = 'application/json';
+      // Die Ortssuche (geocode) lässt im Browser keinen Authorization-Kopf zu (CORS) → Schlüssel dort als api_key
+      // in der Adresse; der Routendienst nimmt den Kopf an.
+      const kopf = { Accept: 'application/json, application/geo+json' };
+      let url = ORS_BASIS + pfad;
+      if (o.body) { kopf.Authorization = schluessel; kopf['Content-Type'] = 'application/json'; }
+      else url += (url.includes('?') ? '&' : '?') + 'api_key=' + encodeURIComponent(schluessel);
       let antwort;
-      try { antwort = await fetch(ORS_BASIS + pfad, { method: o.method || 'GET', headers: kopf, body: o.body }); }
-      catch (e) { throw new Error('keine Verbindung zu OpenRouteService'); }
+      try { antwort = await fetch(url, { method: o.method || 'GET', headers: kopf, body: o.body }); }
+      catch (e) { throw new Error('keine Antwort von OpenRouteService – Internet oder Schlüssel prüfen'); }
       if (!antwort.ok) {
         let text = '';
         try { const j = await antwort.json(); const f = j.error || j; text = typeof f === 'string' ? f : f.message || ''; } catch (e) { /* ohne Text */ }
@@ -1959,6 +1966,7 @@
       clearTimeout(sucheTimer);
       const text = eingabe.value.trim();
       if (text.length < 3) { box.replaceChildren(); return; }
+      adhocStatus('Suche „' + text + '" …');
       sucheTimer = setTimeout(async () => {
         try {
           const orte = await sucheOrte(text);
