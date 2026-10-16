@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const quelle = fs.readFileSync(path.join(__dirname, '..', 'apps-script', 'Code.js'), 'utf8');
-const gs = new Function(quelle + '; return { preisFrage_, preisAntwortLesen_, ortAusText_ };')();
+const gs = new Function(quelle + '; return { preisFrage_, preisAntwortLesen_, ortAusText_, seitenText_, preisAuszug_ };')();
 
 let fehler = 0;
 const pruefe = (bedingung, text) => { if (!bedingung) { fehler++; console.log('FEHLER ' + text); } };
@@ -33,6 +33,19 @@ pruefe(!preise.anbieter.some(a => a.betreiber === 'Tesla' && a.tarife.length !==
 const a = gs.preisAntwortLesen_('Hier: ```json\n{"tarife":[{"name":"S","kwh":"0.56","grund_monat":0},{"name":"L","kwh":0.39,"grund_monat":11.99,"kwh_bis":0.2}],"hinweis":"x","quelle":"https://enbw.com","sicher":true}\n```');
 pruefe(a.tarife.length === 2 && a.tarife[0].kwh === 0.56 && a.tarife[1].grund_monat === 11.99 && a.tarife[1].kwh_bis === undefined && a.sicher, 'Antwort gelesen: ' + JSON.stringify(a));
 pruefe(gs.preisAntwortLesen_('{"tarife":[],"sicher":false}').sicher === false, 'unsicher');
+const unsicher = gs.preisAntwortLesen_('{"tarife":[],"sicher":false,"grund":"Preis je Standort verschieden"}');
+pruefe(unsicher.grund === 'Preis je Standort verschieden', 'Grund bei unsicher: ' + unsicher.grund);
+pruefe(gs.preisAntwortLesen_('{"tarife":[],"sicher":true,"grund":"x"}').grund === '', 'kein Grund bei sicher');
+
+// Text der offiziellen Seite
+const html = '<html><script>var p="9,99 €"</script><style>.a{}</style><p>Migrol Geb&uuml;hr &lt; 400 kW: CHF 0.59/kWh</p><div>EWE Go 0,52&nbsp;€ / kWh</div></html>';
+const text = gs.seitenText_(html);
+pruefe(text === 'Migrol Gebühr < 400 kW: CHF 0.59/kWh EWE Go 0,52 € / kWh', 'Seitentext: ' + text);
+const auszug = gs.preisAuszug_(text);
+pruefe(/CHF 0\.59/.test(auszug) && /0,52 €/.test(auszug) && !/9,99/.test(auszug), 'Preisauszug: ' + auszug);
+pruefe(gs.preisAuszug_('Der Preis steht in der App.') === '', 'ohne Preis kein Auszug');
+pruefe(/offiziellen Seite, heute abgerufen[\s\S]*CHF 0\.59/.test(gs.preisFrage_(enbw, auszug)) && !/heute abgerufen/.test(gs.preisFrage_(enbw, '')), 'Seitentext in der Frage');
+pruefe(/"grund"/.test(frage), 'Frage verlangt Grund');
 pruefe(wirft(() => gs.preisAntwortLesen_('keine Ahnung')), 'ohne JSON → Fehler');
 pruefe(wirft(() => gs.preisAntwortLesen_('{"tarife":[{"name":"S","kwh":56}]}')), 'Cent statt Euro → Fehler');
 

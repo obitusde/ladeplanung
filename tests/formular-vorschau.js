@@ -31,8 +31,10 @@ const attrappe = `<script>
         const alt = window.__preise.anbieter;
         antwort(this, { ok: true, modell: 'google/gemini-3.8-flash', vorschlaege: alt.map((a, i) => i === 0
           ? { alt: a, neu: { tarife: [{ name: 'S', kwh: 0.59, grund_monat: 0 }, { name: 'M', kwh: 0.49, grund_monat: 5.99 }, { name: 'L', kwh: 0.42, grund_monat: 11.99 }], hinweis: 'ab 1.10.2026', quelle: 'https://www.enbw.com', sicher: true } }
-          : i === 1 ? { alt: a, fehler: 'OpenRouter HTTP 429: Rate limit' } : { alt: a, neu: { tarife: a.tarife, hinweis: a.hinweis, quelle: '', sicher: true } }) }); },
-      preiseSpeichern(anbieter) { __aufrufe.push(['preiseSpeichern', anbieter]); antwort(this, { ok: true, text: 'Gespeichert – in der App nach 1–2 Minuten sichtbar.', preise: { stand: '2026-09-20', anbieter } }); },
+          : i === 1 ? { alt: a, fehler: 'OpenRouter HTTP 429: Rate limit' }
+          : i === 3 ? { alt: a, neu: { tarife: [{ name: 'Fremdfahrzeug', kwh: 0.45, kwh_bis: 0.79, grund_monat: 0 }], hinweis: '', quelle: 'https://www.tesla.com', sicher: false, grund: 'Preis je Standort und Uhrzeit verschieden' } }
+          : { alt: a, neu: { tarife: a.tarife, hinweis: a.hinweis, quelle: 'https://example.org/preise', sicher: true } }), suche: 'Google-Suche des Modells' }); },
+      preiseSpeichern(anbieter) { __aufrufe.push(['preiseSpeichern', anbieter]); antwort(this, { ok: true, text: 'Gespeichert – in der App nach 1–2 Minuten sichtbar.', preise: { stand: '2026-10-16', anbieter } }); },
       wartungAusfuehren(aktion) { __aufrufe.push(['wartungAusfuehren', aktion]);
         const texte = { bereinigen_vorschau: 'Punkte bereinigen v0.12.0 — Vorschau, nichts geändert\\nZusammenführen: p032 → p010 (EnBW Ladestation Haiger)', routen: 'Routen berechnen v0.12.0\\nneuenrade: unverändert, übersprungen\\n\\nExport v0.12.0\\nneuenrade: 26 Punkte, 716.36 km' };
         antwort(this, { ok: true, text: texte[aktion] || 'Export v0.12.0\\n41 Punkte exportiert', status: Object.assign({}, window.__status, { routen: window.__status.routen.map(x => Object.assign({}, x, { aktuell: true, stand: '15.09.2026 11:40' })) }) }); },

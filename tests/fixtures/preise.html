@@ -2,6 +2,8 @@
 <!--
   Ladeplanung — Seite „Ladepreise": zeigt preise.json und holt neue Werte über OpenRouter (mit Websuche).
   Übernommen wird erst nach Bestätigung. Wird von doGet() in Code.js ausgeliefert (…/exec?seite=preise).
+  Version 0.20.0 — Übersicht nach der Suche (bestätigt / neuer Preis / unsicher mit Grund), Speichern setzt den Stand
+                   immer auf heute (= zuletzt geprüft).
   Version 0.19.0 — Auf dem Handy nicht mehr winzig: hochskalieren, wenn die Seite in Desktop-Breite erscheint.
   Version 0.18.1 — kleiner, Tarife in zwei Spalten, Link zur Android-App, „auch" (Porsche → AMAG).
   Version 0.18.0
@@ -34,8 +36,10 @@
         const alt = window.__preise.anbieter;
         antwort(this, { ok: true, modell: 'google/gemini-3.8-flash', vorschlaege: alt.map((a, i) => i === 0
           ? { alt: a, neu: { tarife: [{ name: 'S', kwh: 0.59, grund_monat: 0 }, { name: 'M', kwh: 0.49, grund_monat: 5.99 }, { name: 'L', kwh: 0.42, grund_monat: 11.99 }], hinweis: 'ab 1.10.2026', quelle: 'https://www.enbw.com', sicher: true } }
-          : i === 1 ? { alt: a, fehler: 'OpenRouter HTTP 429: Rate limit' } : { alt: a, neu: { tarife: a.tarife, hinweis: a.hinweis, quelle: '', sicher: true } }) }); },
-      preiseSpeichern(anbieter) { __aufrufe.push(['preiseSpeichern', anbieter]); antwort(this, { ok: true, text: 'Gespeichert – in der App nach 1–2 Minuten sichtbar.', preise: { stand: '2026-09-20', anbieter } }); },
+          : i === 1 ? { alt: a, fehler: 'OpenRouter HTTP 429: Rate limit' }
+          : i === 3 ? { alt: a, neu: { tarife: [{ name: 'Fremdfahrzeug', kwh: 0.45, kwh_bis: 0.79, grund_monat: 0 }], hinweis: '', quelle: 'https://www.tesla.com', sicher: false, grund: 'Preis je Standort und Uhrzeit verschieden' } }
+          : { alt: a, neu: { tarife: a.tarife, hinweis: a.hinweis, quelle: 'https://example.org/preise', sicher: true } }), suche: 'Google-Suche des Modells' }); },
+      preiseSpeichern(anbieter) { __aufrufe.push(['preiseSpeichern', anbieter]); antwort(this, { ok: true, text: 'Gespeichert – in der App nach 1–2 Minuten sichtbar.', preise: { stand: '2026-10-16', anbieter } }); },
       wartungAusfuehren(aktion) { __aufrufe.push(['wartungAusfuehren', aktion]);
         const texte = { bereinigen_vorschau: 'Punkte bereinigen v0.12.0 — Vorschau, nichts geändert\nZusammenführen: p032 → p010 (EnBW Ladestation Haiger)', routen: 'Routen berechnen v0.12.0\nneuenrade: unverändert, übersprungen\n\nExport v0.12.0\nneuenrade: 26 Punkte, 716.36 km' };
         antwort(this, { ok: true, text: texte[aktion] || 'Export v0.12.0\n41 Punkte exportiert', status: Object.assign({}, window.__status, { routen: window.__status.routen.map(x => Object.assign({}, x, { aktuell: true, stand: '15.09.2026 11:40' })) }) }); },
@@ -79,6 +83,13 @@
     .knopf.haupt { background: var(--akzent); border-color: var(--akzent); color: var(--akzent-text); }
     .knopf:disabled { opacity: .6; }
     #meldung { white-space: pre-wrap; }
+    .summe { font-weight: 700; font-size: 16px; margin: 8px 0; }
+    .zeile { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+    .zeichen { font-weight: 700; white-space: nowrap; }
+    .zeichen.ok { color: var(--gut); }
+    .zeichen.neu { color: var(--akzent); }
+    .zeichen.unsicher, .zeichen.fehler { color: var(--fehler); }
+    .alt { color: var(--leise); }
   </style>
   <script>
     // Auf dem Handy erscheint die Seite teils in Desktop-Breite und damit winzig (03.10.2026) → auf Gerätebreite hochskalieren
@@ -95,11 +106,13 @@
     <div id="liste"></div>
 
     <h2>Aktualisieren</h2>
-    <p class="leise">Sucht für jeden Anbieter die aktuellen Direktpreise im Netz (Sprachmodell über OpenRouter, wenige Cent). Danach siehst du alt und neu und entscheidest je Anbieter.</p>
+    <p class="leise">Sucht für jeden Anbieter die aktuellen Direktpreise im Netz (Sprachmodell über OpenRouter mit Google-Suche, ca. 10 Cent je Durchgang).</p>
     <button id="holen" class="knopf haupt">Neue Preise suchen (ca. 1 Minute)</button>
     <p id="meldung" class="leise"></p>
+    <p id="zusammenfassung" class="summe" hidden></p>
     <div id="vorschlaege"></div>
-    <button id="speichern" class="knopf haupt" hidden>Ausgewählte übernehmen</button>
+    <p id="speichern-hinweis" class="leise" hidden>Speichern übernimmt die angekreuzten neuen Preise und setzt den Stand auf heute – auch wenn sich nichts geändert hat.</p>
+    <button id="speichern" class="knopf haupt" hidden>Speichern (Stand heute)</button>
 
     <a id="zur-app" class="knopf" href="#">Zur App</a>
     <p id="version" class="leise"></p>
@@ -157,30 +170,57 @@
       }
     }
 
+    // Je Anbieter ein Ergebnis: ✓ bestätigt (unverändert), ✎ neuer Preis, ? unsicher (mit Grund), ⚠ keine Antwort
+    function art(v) {
+      if (v.fehler) return 'fehler';
+      if (!v.neu.sicher) return 'unsicher';
+      return JSON.stringify(v.neu.tarife) === JSON.stringify(v.alt.tarife) ? 'ok' : 'neu';
+    }
+    const ZEICHEN = { ok: '✓ bestätigt', neu: '✎ neuer Preis', unsicher: '? unsicher', fehler: '⚠ keine Antwort' };
+    const REIHE = { neu: 0, unsicher: 1, fehler: 2, ok: 3 };
+
+    function quelleLink(url) {
+      const q = el('a', 'leise', 'Quelle ›'); q.href = url; q.target = '_blank'; q.rel = 'noopener';
+      return q;
+    }
+
     function zeigeVorschlaege() {
       const box = $('vorschlaege');
       box.replaceChildren();
-      vorschlaege.forEach((v, i) => {
-        const a = v.alt;
+      const zahl = { ok: 0, neu: 0, unsicher: 0, fehler: 0 };
+      vorschlaege.forEach(v => zahl[art(v)]++);
+      const teile = [zahl.ok + ' bestätigt', zahl.neu + ' mit neuem Preis', zahl.unsicher + ' unsicher'];
+      if (zahl.fehler) teile.push(zahl.fehler + ' ohne Antwort');
+      $('zusammenfassung').textContent = vorschlaege.length + ' Anbieter: ' + teile.join(', ');
+      $('zusammenfassung').hidden = false;
+
+      const reihenfolge = vorschlaege.map((v, i) => i).sort((x, y) => REIHE[art(vorschlaege[x])] - REIHE[art(vorschlaege[y])]);
+      for (const i of reihenfolge) {
+        const v = vorschlaege[i], a = v.alt, typ = art(v);
         const k = el('div', 'karte');
-        k.append(kopf(a, a.betreiber + ' · ' + (LAND[a.land] || a.land)));
-        if (v.fehler) { k.append(el('p', 'fehler', 'Keine Antwort: ' + v.fehler)); box.append(k); return; }
-        const gleich = JSON.stringify(v.neu.tarife) === JSON.stringify(a.tarife);
-        k.append(el('p', 'leise', 'bisher:'), tarifBlock(a.tarife, a.waehrung));
-        k.append(el('p', 'leise', gleich ? 'neu: unverändert' : 'neu:'));
-        if (!gleich) k.append(tarifBlock(v.neu.tarife, a.waehrung, 'neu'));
-        if (v.neu.hinweis) k.append(el('p', 'leise', v.neu.hinweis));
-        if (v.neu.quelle) { const q = el('a', 'leise', 'Quelle'); q.href = v.neu.quelle; q.target = '_blank'; q.rel = 'noopener'; k.append(q); }
-        if (!v.neu.sicher) k.append(el('p', 'fehler', 'Modell ist unsicher – lieber nicht übernehmen.'));
-        if (!gleich) {
-          const l = el('label', 'wahl');
-          const c = el('input'); c.type = 'checkbox'; c.checked = v.neu.sicher; c.dataset.i = i;
-          l.append(c, 'übernehmen');
-          k.append(l);
+        const z = el('div', 'zeile');
+        z.append(el('b', '', a.betreiber + ' · ' + (LAND[a.land] || a.land)), el('span', 'zeichen ' + typ, ZEICHEN[typ]));
+        k.append(z);
+        if (typ === 'fehler') { k.append(el('p', 'leise', v.fehler)); box.append(k); continue; }
+        if (typ === 'ok') {
+          k.append(tarifBlock(a.tarife, a.waehrung));
+        } else {
+          const gleich = JSON.stringify(v.neu.tarife) === JSON.stringify(a.tarife);
+          if (typ === 'unsicher') k.append(el('p', 'fehler', v.neu.grund || 'keine verlässliche aktuelle Quelle gefunden'));
+          k.append(el('p', 'leise', gleich ? 'bisher (bleibt):' : 'bisher:'), tarifBlock(a.tarife, a.waehrung, 'alt'));
+          if (!gleich) {
+            k.append(el('p', 'leise', typ === 'unsicher' ? 'gefunden (nicht sicher):' : 'neu:'), tarifBlock(v.neu.tarife, a.waehrung, 'neu'));
+            const l = el('label', 'wahl');
+            const c = el('input'); c.type = 'checkbox'; c.checked = typ === 'neu'; c.dataset.i = i;
+            l.append(c, 'neuen Preis übernehmen');
+            k.append(l);
+          }
         }
+        if (v.neu.hinweis && typ !== 'ok') k.append(el('p', 'leise', v.neu.hinweis));
+        if (v.neu.quelle) k.append(quelleLink(v.neu.quelle));
         box.append(k);
-      });
-      $('speichern').hidden = !box.querySelector('input[type=checkbox]');
+      }
+      $('speichern').hidden = $('speichern-hinweis').hidden = false;
     }
 
     $('holen').addEventListener('click', () => {
@@ -188,13 +228,13 @@
       $('holen').disabled = true;
       $('meldung').textContent = 'Suche läuft … bitte warten.';
       $('vorschlaege').replaceChildren();
-      $('speichern').hidden = true;
+      $('speichern').hidden = $('speichern-hinweis').hidden = $('zusammenfassung').hidden = true;
       google.script.run
         .withSuccessHandler(erg => {
           $('holen').disabled = false;
           if (!erg.ok) { $('meldung').textContent = '⚠ ' + erg.text; return; }
           vorschlaege = erg.vorschlaege;
-          $('meldung').textContent = 'Fertig (Modell ' + erg.modell + '). Grün = neuer Wert. Bitte prüfen und auswählen.';
+          $('meldung').textContent = 'Fertig (Modell ' + erg.modell + (erg.suche ? ', ' + erg.suche : '') + ').';
           zeigeVorschlaege();
         })
         .withFailureHandler(f => { $('holen').disabled = false; $('meldung').textContent = 'Fehler: ' + ((f && f.message) || f); })
@@ -202,8 +242,8 @@
     });
 
     $('speichern').addEventListener('click', () => {
+      // Auch ohne Änderung speichern: der Stand heißt dann „zuletzt geprüft" (Christof, 16.10.2026)
       const gewaehlt = new Set([...document.querySelectorAll('#vorschlaege input:checked')].map(c => Number(c.dataset.i)));
-      if (!gewaehlt.size) { $('meldung').textContent = 'Nichts ausgewählt.'; return; }
       const neu = aktuell.anbieter.map((a, i) => {
         const v = vorschlaege[i];
         if (!gewaehlt.has(i) || !v || v.fehler) return a;
@@ -213,8 +253,11 @@
       google.script.run
         .withSuccessHandler(erg => {
           $('speichern').disabled = false;
-          $('meldung').textContent = (erg.ok ? '✓ ' : '⚠ ') + erg.text;
-          if (erg.ok) { aktuell = erg.preise; vorschlaege = []; zeige(); $('vorschlaege').replaceChildren(); $('speichern').hidden = true; }
+          $('meldung').textContent = erg.ok ? '✓ ' + (gewaehlt.size ? gewaehlt.size + ' Anbieter mit neuem Preis, ' : 'Preise unverändert, ') + 'Stand ' + datum(erg.preise.stand) + '. ' + erg.text : '⚠ ' + erg.text;
+          if (erg.ok) {
+            aktuell = erg.preise; vorschlaege = []; zeige(); $('vorschlaege').replaceChildren();
+            $('speichern').hidden = $('speichern-hinweis').hidden = $('zusammenfassung').hidden = true;
+          }
         })
         .withFailureHandler(f => { $('speichern').disabled = false; $('meldung').textContent = 'Fehler: ' + ((f && f.message) || f); })
         .preiseSpeichern(neu);

@@ -1,6 +1,9 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.21.0 — Ladepreise: Suche über die eingebaute Google-Suche des Modells (OpenRouter engine native, Rückfall
+ *                  Standardsuche), dazu der Text der offiziellen Preisseite, soweit abrufbar; bei „unsicher" ein Grund.
+ *                  Speichern setzt den Stand auch ohne Änderung auf heute (= zuletzt geprüft).
  * Version 0.20.0 — „Hinzufügen" lässt sich per Adresse vorbelegen (Name, Betreiber, kW, Anzahl, Link) – für „Übernehmen"
  *                  aus den Bundesdaten in der App; Maps-Links mit „query=lat,lon" werden erkannt.
  * Version 0.19.4 — Texte: „Fahrt beenden" statt „Angekommen" (App v0.22.0).
@@ -52,7 +55,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.20.0';
+const VERSION = '0.21.0';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -2541,8 +2544,8 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const PREIS_MODELL_STANDARD = 'google/gemini-3.8-flash'; // änderbar über die Skripteigenschaft PREIS_MODELL
 const LAENDER = { CH: 'Schweiz', DE: 'Deutschland', AT: 'Österreich', IT: 'Italien' };
 
-/** Frage an das Modell für einen Anbieter-Eintrag. Rein rechnerisch (testbar). */
-function preisFrage_(a) {
+/** Frage an das Modell für einen Anbieter-Eintrag, optional mit dem Text der offiziellen Seite. Rein rechnerisch (testbar). */
+function preisFrage_(a, seitenText) {
   const land = LAENDER[a.land] || a.land;
   const besonders = a.betreiber === 'EnBW' ? ' Nur die Tarife S, M und L der EnBW mobility+ App an EnBW-eigenen Ladesäulen, keinen Ad-hoc-Preis.'
     : a.betreiber === 'Tesla' ? ' Nur der Preis für Fremdfahrzeuge (Nicht-Tesla) ohne Mitgliedschaft, als ein Tarif „Fremdfahrzeug" mit Spanne von–bis, weil je Standort verschieden.'
@@ -2551,11 +2554,14 @@ function preisFrage_(a) {
   return 'Aktuelle Ladepreise des Betreibers ' + a.betreiber + ' in ' + land + ' an seinen eigenen Ladestationen, ' +
     'nur Direktangebote des Betreibers (App oder Ladekarte des Betreibers), kein Roaming über andere Anbieter.' + besonders +
     '\nOffizielle Quelle, wenn möglich: ' + (a.suche || '–') +
+    (seitenText ? '\nText dieser offiziellen Seite, heute abgerufen (Ausschnitte, kann unvollständig sein):\n"""\n' + seitenText + '\n"""' : '') +
     '\nBisherige Werte (' + a.waehrung + '): ' + JSON.stringify({ tarife: a.tarife, hinweis: a.hinweis }) +
     '\nAntworte NUR mit JSON in genau dieser Form: {"tarife":[{"name":"…","kwh":0.00,"kwh_bis":0.00,"grund_monat":0,"minute":0,"kw_bis":0}],' +
-    '"hinweis":"kurz, deutsch","quelle":"URL","sicher":true}. kwh in ' + a.waehrung + ' je kWh, kwh_bis nur bei Spannen, minute nur bei ' +
-    'Minutenpreisen, kw_bis nur bei leistungsabhängigen Preisen. Findest du keine verlässliche aktuelle Quelle, gib die bisherigen Werte ' +
-    'zurück und setze "sicher":false. Nichts erfinden.';
+    '"hinweis":"kurz, deutsch","quelle":"URL","sicher":true,"grund":""}. kwh in ' + a.waehrung + ' je kWh, kwh_bis nur bei Spannen, minute nur bei ' +
+    'Minutenpreisen, kw_bis nur bei leistungsabhängigen Preisen. "sicher":true, wenn du die Preise heute auf der offiziellen Seite oder in ' +
+    'einer verlässlichen aktuellen Quelle bestätigt hast – auch wenn sie gleich geblieben sind; eine Spanne ist in Ordnung, wenn die Quelle ' +
+    'eine nennt. Sonst gib die bisherigen Werte zurück, setze "sicher":false und nenne in "grund" kurz auf Deutsch, warum ' +
+    '(z. B. „Seite nennt keine Preise", „Preis je Standort verschieden"). Nichts erfinden.';
 }
 
 /** Antwort des Modells → { tarife, hinweis, quelle, sicher } oder Fehler. Rein rechnerisch (testbar). */
@@ -2572,7 +2578,41 @@ function preisAntwortLesen_(text) {
     if (e.kwh_bis !== undefined && !(e.kwh_bis > e.kwh && e.kwh_bis <= 2)) delete e.kwh_bis;
     return e;
   });
-  return { tarife: tarife, hinweis: String(j.hinweis || '').slice(0, 200), quelle: String(j.quelle || '').slice(0, 300), sicher: j.sicher !== false };
+  const sicher = j.sicher !== false;
+  return { tarife: tarife, hinweis: String(j.hinweis || '').slice(0, 200), quelle: String(j.quelle || '').slice(0, 300), sicher: sicher,
+    grund: sicher ? '' : String(j.grund || '').slice(0, 200) };
+}
+
+/** Sichtbarer Text einer HTML-Seite (ohne Skripte, Stile, Tags). Rein rechnerisch (testbar). */
+function seitenText_(html) {
+  return String(html || '')
+    .replace(/<(script|style|noscript|svg)[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;|&#160;/g, ' ')
+    .replace(/&(euro|lt|gt|quot|szlig|[aouAOU]uml);/g, function (m, n) {
+      return { euro: '€', lt: '<', gt: '>', quot: '"', szlig: 'ß', auml: 'ä', ouml: 'ö', uuml: 'ü', Auml: 'Ä', Ouml: 'Ö', Uuml: 'Ü' }[n];
+    })
+    .replace(/&#(\d+);/g, function (m, n) { return String.fromCharCode(Number(n)); })
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ').trim();
+}
+
+/** Ausschnitte rund um Preisangaben (Zahl mit Währung), höchstens 4000 Zeichen; ohne Preisangabe leer. Rein rechnerisch. */
+function preisAuszug_(text) {
+  const muster = /\d+[.,]\d{2}\s*(€|EUR|CHF|Fr\.|Rp\.|ct|Cent)|(€|EUR|CHF|Fr\.)\s*\d+[.,]\d{2}/gi;
+  const stellen = [];
+  let m;
+  while ((m = muster.exec(text)) !== null && stellen.length < 40) stellen.push(m.index);
+  if (!stellen.length) return '';
+  const stuecke = [];
+  let bis = -1;
+  stellen.forEach(function (i) {
+    const von = Math.max(i - 200, bis + 1), ende = Math.min(text.length, i + 200);
+    if (ende <= von) return;
+    stuecke.push(text.slice(von, ende));
+    bis = ende;
+  });
+  return stuecke.join(' … ').slice(0, 4000);
 }
 
 /** Seite „Preise": Vorschläge für alle Anbieter holen (parallel). Übernimmt nichts. */
@@ -2581,35 +2621,50 @@ function preiseVorschlagen() {
   if (!schluessel) return { ok: false, text: 'OPENROUTER_API_KEY fehlt in den Skripteigenschaften.' };
   const modell = PropertiesService.getScriptProperties().getProperty('PREIS_MODELL') || PREIS_MODELL_STANDARD;
   const preise = JSON.parse(githubLies_(PREISE_DATEI) || '{"anbieter":[]}');
-  const anfragen = preise.anbieter.map(function (a) {
+  // Offizielle Preisseiten selbst lesen, soweit sie Preise im Text haben (EWE Go ja; Tesla sperrt, EnBW/AMAG laden per Skript nach)
+  const seiten = UrlFetchApp.fetchAll(preise.anbieter.map(function (a) {
+    return { url: a.suche || 'https://example.invalid/', muteHttpExceptions: true, followRedirects: true };
+  }));
+  const auszuege = seiten.map(function (s) {
+    try { return s.getResponseCode() === 200 ? preisAuszug_(seitenText_(s.getContentText())) : ''; } catch (e) { return ''; }
+  });
+  // Erst mit der eingebauten Suche des Modells (Gemini: Google-Suche), bei Fehler nochmal mit der Standardsuche von OpenRouter
+  const anfrage = function (a, i, plugin) {
     return {
       url: OPENROUTER_URL, method: 'post', contentType: 'application/json', muteHttpExceptions: true,
       headers: { Authorization: 'Bearer ' + schluessel, 'HTTP-Referer': APP_URL, 'X-Title': 'Ladeplanung' },
       payload: JSON.stringify({
         model: modell, temperature: 0,
-        plugins: [{ id: 'web', max_results: 5 }],
+        plugins: [plugin],
         messages: [
           { role: 'system', content: 'Du recherchierst Ladepreise für Elektroautos. Antworte nur mit gültigem JSON.' },
-          { role: 'user', content: preisFrage_(a) },
+          { role: 'user', content: preisFrage_(a, auszuege[i]) },
         ],
       }),
     };
-  });
-  const antworten = UrlFetchApp.fetchAll(anfragen);
+  };
+  let antworten = UrlFetchApp.fetchAll(preise.anbieter.map(function (a, i) { return anfrage(a, i, { id: 'web', engine: 'native', max_results: 5 }); }));
+  const nochmal = [];
+  antworten.forEach(function (r, i) { if (r.getResponseCode() !== 200) nochmal.push(i); });
+  if (nochmal.length) {
+    const zweite = UrlFetchApp.fetchAll(nochmal.map(function (i) { return anfrage(preise.anbieter[i], i, { id: 'web', max_results: 5 }); }));
+    antworten = antworten.slice();
+    nochmal.forEach(function (i, k) { antworten[i] = zweite[k]; });
+  }
   const vorschlaege = preise.anbieter.map(function (a, i) {
     try {
       const code = antworten[i].getResponseCode();
       const j = JSON.parse(antworten[i].getContentText());
       if (code !== 200) throw new Error('OpenRouter HTTP ' + code + ': ' + ((j.error && j.error.message) || '').slice(0, 150));
-      return { alt: a, neu: preisAntwortLesen_(j.choices[0].message.content) };
+      return { alt: a, neu: preisAntwortLesen_(j.choices[0].message.content), seite: !!auszuege[i] };
     } catch (e) {
       return { alt: a, fehler: e.message };
     }
   });
-  return { ok: true, modell: modell, vorschlaege: vorschlaege };
+  return { ok: true, modell: modell, suche: nochmal.length ? 'teils Standardsuche' : 'Google-Suche des Modells', vorschlaege: vorschlaege };
 }
 
-/** Seite „Preise": bestätigte Werte übernehmen → preise.json mit neuem Stand (Datum). */
+/** Seite „Preise": bestätigte Werte übernehmen → preise.json mit neuem Stand (Datum = zuletzt geprüft, auch ohne Änderung). */
 function preiseSpeichern(anbieter) {
   const sperre = LockService.getScriptLock();
   sperre.waitLock(30000);
