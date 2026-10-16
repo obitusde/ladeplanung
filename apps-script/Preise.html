@@ -2,6 +2,7 @@
 <!--
   Ladeplanung — Seite „Ladepreise": zeigt preise.json und holt neue Werte über OpenRouter (mit Websuche).
   Übernommen wird erst nach Bestätigung. Wird von doGet() in Code.js ausgeliefert (…/exec?seite=preise).
+  Version 0.20.1 — „Suche läuft … x s“ im Knopf, Meldungen fett bzw. rot (vorher fiel der graue Text nicht auf).
   Version 0.20.0 — Übersicht nach der Suche (bestätigt / neuer Preis / unsicher mit Grund), Speichern setzt den Stand
                    immer auf heute (= zuletzt geprüft).
   Version 0.19.0 — Auf dem Handy nicht mehr winzig: hochskalieren, wenn die Seite in Desktop-Breite erscheint.
@@ -187,21 +188,29 @@
       $('speichern').hidden = $('speichern-hinweis').hidden = false;
     }
 
+    // Meldung gut sichtbar (Christof, 16.10.2026: „nichts passiert" – der graue Text fiel nicht auf)
+    function melde(text, art) { $('meldung').textContent = text; $('meldung').className = art || 'summe'; }
+    const KNOPF_TEXT = $('holen').textContent;
     $('holen').addEventListener('click', () => {
-      if (!MODELL.schluessel) { $('meldung').textContent = '⚠ Der OpenRouter-Schlüssel ist noch nicht im Script hinterlegt.'; return; }
-      $('holen').disabled = true;
-      $('meldung').textContent = 'Suche läuft … bitte warten.';
+      if (!MODELL.schluessel) { melde('⚠ Der OpenRouter-Schlüssel ist noch nicht im Script hinterlegt.', 'fehler'); return; }
+      const knopf = $('holen'), beginn = Date.now();
+      knopf.disabled = true;
+      const uhr = setInterval(() => { knopf.textContent = 'Suche läuft … ' + Math.round((Date.now() - beginn) / 1000) + ' s'; }, 1000);
+      knopf.textContent = 'Suche läuft … 0 s';
+      const fertig = () => { clearInterval(uhr); knopf.disabled = false; knopf.textContent = KNOPF_TEXT; };
+      melde('Suche läuft – das dauert 1–2 Minuten. Seite bitte offen lassen.');
       $('vorschlaege').replaceChildren();
       $('speichern').hidden = $('speichern-hinweis').hidden = $('zusammenfassung').hidden = true;
       google.script.run
         .withSuccessHandler(erg => {
-          $('holen').disabled = false;
-          if (!erg.ok) { $('meldung').textContent = '⚠ ' + erg.text; return; }
+          fertig();
+          if (!erg.ok) { melde('⚠ ' + erg.text, 'fehler'); return; }
           vorschlaege = erg.vorschlaege;
-          $('meldung').textContent = 'Fertig (Modell ' + erg.modell + (erg.suche ? ', ' + erg.suche : '') + ').';
+          melde('Fertig nach ' + Math.round((Date.now() - beginn) / 1000) + ' s (Modell ' + erg.modell + (erg.suche ? ', ' + erg.suche : '') + ').', 'leise');
           zeigeVorschlaege();
+          $('zusammenfassung').scrollIntoView({ behavior: 'smooth', block: 'start' });
         })
-        .withFailureHandler(f => { $('holen').disabled = false; $('meldung').textContent = 'Fehler: ' + ((f && f.message) || f); })
+        .withFailureHandler(f => { fertig(); melde('⚠ Fehler: ' + ((f && f.message) || f), 'fehler'); })
         .preiseVorschlagen();
     });
 

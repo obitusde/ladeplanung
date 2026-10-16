@@ -1,6 +1,7 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.21.1 — Ladepreise: Preisseiten einzeln abrufen (ein Verbindungsfehler brach sonst die ganze Suche ab).
  * Version 0.21.0 — Ladepreise: Suche über die eingebaute Google-Suche des Modells (OpenRouter engine native, Rückfall
  *                  Standardsuche), dazu der Text der offiziellen Preisseite, soweit abrufbar; bei „unsicher" ein Grund.
  *                  Speichern setzt den Stand auch ohne Änderung auf heute (= zuletzt geprüft).
@@ -55,7 +56,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.21.0';
+const VERSION = '0.21.1';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -2622,11 +2623,13 @@ function preiseVorschlagen() {
   const modell = PropertiesService.getScriptProperties().getProperty('PREIS_MODELL') || PREIS_MODELL_STANDARD;
   const preise = JSON.parse(githubLies_(PREISE_DATEI) || '{"anbieter":[]}');
   // Offizielle Preisseiten selbst lesen, soweit sie Preise im Text haben (EWE Go ja; Tesla sperrt, EnBW/AMAG laden per Skript nach)
-  const seiten = UrlFetchApp.fetchAll(preise.anbieter.map(function (a) {
-    return { url: a.suche || 'https://example.invalid/', muteHttpExceptions: true, followRedirects: true };
-  }));
-  const auszuege = seiten.map(function (s) {
-    try { return s.getResponseCode() === 200 ? preisAuszug_(seitenText_(s.getContentText())) : ''; } catch (e) { return ''; }
+  // Einzeln abrufen: ein Verbindungsfehler (nicht nur ein HTTP-Fehler) würde fetchAll für alle abbrechen
+  const auszuege = preise.anbieter.map(function (a) {
+    if (!a.suche) return '';
+    try {
+      const s = UrlFetchApp.fetch(a.suche, { muteHttpExceptions: true, followRedirects: true });
+      return s.getResponseCode() === 200 ? preisAuszug_(seitenText_(s.getContentText())) : '';
+    } catch (e) { return ''; }
   });
   // Erst mit der eingebauten Suche des Modells (Gemini: Google-Suche), bei Fehler nochmal mit der Standardsuche von OpenRouter
   const anfrage = function (a, i, plugin) {
