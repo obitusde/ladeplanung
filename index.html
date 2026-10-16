@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.29.0 — Akku-Prognose Abschnitt für Abschnitt entlang der Route, gedeckelt bei 100 %: Rückgewinnung bergab
+                   mit vollem Akku geht verloren (akkuProfil; Liste, Fußzeile, „Akku jetzt", erwarteter Wert bei Fahrt beenden).
   Version 0.28.0 — Route ab hier: auf bekannten Abschnitten ohne eine einzige eigene Station (z. B. Rhonetal) erscheinen
                    auch die fremden. Tesla nur noch, wo andere Autos laden dürfen (fremde.json).
   Version 0.27.1 — Ortssuche bei Route ab hier ging im Browser nicht: der Geocoder von OpenRouteService erlaubt keinen
@@ -402,7 +404,7 @@
     <h3>Akku-Prognose</h3>
     <p>Der Akkubedarf bis zu jeder Station wird aus Strecke, Höhenmetern, dem <b>Reisetempo</b>, dem <b>Zusatzgewicht</b> (Menü → Einstellungen) und der <b>Außentemperatur</b> geschätzt. Die Temperatur ist der Durchschnitt aus jetzt und in drei Stunden am Standort – oder dein eigener Wert.</p>
     <p><b>Das Reisetempo</b> stellst du nicht mehr selbst ein: Es ist der Schnitt der gewählten Route laut Routendienst (inklusive Kurven und Ortsdurchfahrten), also z. B. 103 km/h nach Ingolstadt und 87 km/h über den Simplon. Sobald du echte Fahrten mit dem Ø-Tempo des Bordcomputers kalibriert hast, passt die App diesen Schnitt an deine Fahrweise an; unten steht dann „(gemessen)" statt „(Route)".</p>
-    <p>Das Tempo hat den größten Einfluss: 130 statt 110 km/h brauchen rund ein Viertel mehr. 1000 Höhenmeter bergauf kosten etwa 11 % Akku, bergab kommt gut ein Drittel davon zurück.</p>
+    <p>Das Tempo hat den größten Einfluss: 130 statt 110 km/h brauchen rund ein Viertel mehr. 1000 Höhenmeter bergauf kosten etwa 11 % Akku, bergab kommt gut ein Drittel davon zurück – aber nur, solange der Akku nicht voll ist: Die App rechnet den Akkustand Kilometer für Kilometer und deckelt ihn bei 100 %. Wer voll losfährt und erst ins Tal rollt, verliert diese Energie (z. B. Ovronnaz → Rhonetal ≈ 1–2 %).</p>
     <p><b>Mit Akkustand</b> (von Hand oder per Adapter) zieht die Liste unterwegs den geschätzten Verbrauch ab („jetzt ≈"). Jeder neue Adapterwert ersetzt die Schätzung; zeigt er mehr Akku als vorher, erkennt die App das Laden und beginnt eine neue Fahrt. <b>Kalibriert</b> wird nur, wenn du eine Fahrt mit „Fahrt beenden" abschließt – „Standort" allein ändert am Modell nichts.</p>
     <p><b>Vergleichswerte:</b> In den Details einer Station „Vergleichswert eintragen" – Strecke in ABRP oder My CUPRA planen und die beiden Akkuwerte abschreiben. Das hilft dem Modell schon vor der ersten Fahrt; echte Fahrten zählen aber mehr.</p>
     <p id="info-modell" class="klein-hinweis"></p>
@@ -550,7 +552,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.28.0';
+    const APP_VERSION = '0.29.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -1060,14 +1062,54 @@
       return { kwh, prozent: kwh / modell.fahrzeug.kapazitaet_kwh * 100, strecke: w };
     }
 
+    /**
+     * Akkuverlauf ab einer Linienposition in Fahrtrichtung bis zum Routenende, Abschnitt für Abschnitt (≤ 250 m),
+     * gedeckelt bei 100 %: was bergab nicht mehr in den vollen Akku passt, geht verloren (Christof, 16.10.2026 –
+     * Ovronnaz mit 100 % ins Tal). bei(z) liefert den Akkustand an einer Linienposition (z.km), dahinter den Startwert.
+     */
+    function akkuProfil(route, richtung, von, startSoc) {
+      const hin = richtung === 'hin', l = route.linie, k = modell.korrektur;
+      const kmh = tempo().wert, temp = temperatur().wert, zusatz = zustand.einst.zusatzgewicht;
+      const proKwh = 100 / modell.fahrzeug.kapazitaet_kwh;
+      const prozent = (km, auf, ab) => {
+        const a = energieAnteile(modell, km, auf, ab, kmh, temp, zusatz);
+        return k.gesamt * (k.fahrt * a.fahrt + k.hoehe * a.hoehe + k.heizung * a.heiz) * proKwh;   // bergab auch negativ
+      };
+      const pkt = [{ km: von.km, hm_hin: von.hm_hin, hm_rueck: von.hm_rueck }];
+      if (hin) { for (const r of l) if (r[2] > von.km) pkt.push({ km: r[2], hm_hin: r[3], hm_rueck: r[4] }); }
+      else for (let i = l.length - 1; i >= 0; i--) if (l[i][2] < von.km) pkt.push({ km: l[i][2], hm_hin: l[i][3], hm_rueck: l[i][4] });
+      let soc = Math.min(100, startSoc);
+      const start = soc, socs = [soc];
+      for (let i = 1; i < pkt.length; i++) {
+        const w = streckenwerte(richtung, pkt[i - 1], pkt[i]);
+        soc = Math.min(100, soc - prozent(w.km, w.auf, w.ab));
+        socs.push(soc);
+      }
+      return {
+        start,
+        flach: km => prozent(km, 0, 0),
+        bei(z) {
+          const ziel = z.km, jenseits = x => hin ? x > ziel : x < ziel;   // Punkt liegt in Fahrtrichtung schon hinter z
+          if (jenseits(pkt[0].km)) return start;              // z liegt hinter dem Startpunkt
+          let lo = 1, hi = pkt.length - 1;
+          if (!jenseits(pkt[hi].km)) return socs[hi];         // am Routenende
+          while (lo < hi) { const m = (lo + hi) >> 1; if (jenseits(pkt[m].km)) hi = m; else lo = m + 1; }
+          const a = pkt[lo - 1], b = pkt[lo], t = b.km !== a.km ? (ziel - a.km) / (b.km - a.km) : 1;
+          return socs[lo - 1] + t * (socs[lo] - socs[lo - 1]);
+        },
+      };
+    }
+
     /** Geschätzter Akkustand jetzt aus dem letzten bekannten Wert – für jede gewählte Route und Richtung
         (Christof, 03.10.2026). Ohne Akkustand null (dann rechnet die Liste mit vollem Akku). */
     function akkuJetzt(routeId, pos) {
       const f = zustand.fahrt;
       if (!f || !pos) return null;
       if (f.route === routeId && f.richtung === zustand.richtung) {
-        if (f.stand) return f.stand.soc - bedarf(f.richtung, f.stand, pos, 0).prozent;   // letzter Adapterwert unterwegs
-        return f.start_soc - bedarf(f.richtung, f.start, pos, 0).prozent;
+        const route = daten.routen.find(r => r.id === routeId);
+        if (!route) return f.stand ? f.stand.soc : f.start_soc;
+        if (f.stand) return akkuProfil(route, f.richtung, f.stand, f.stand.soc).bei(pos);   // letzter Adapterwert unterwegs
+        return akkuProfil(route, f.richtung, f.start, f.start_soc).bei(pos);
       }
       // Andere Auswahl: Ort des letzten Werts auf diese Route legen und den Verbrauch bis hierher abziehen;
       // liegt er weit neben dieser Route (oder ist ohne Position), gilt der Wert unverändert.
@@ -1076,19 +1118,17 @@
       if (!route || letzt.lat === undefined) return letzt.soc;
       const pr = projiziere(route.linie, letzt.lat, letzt.lon, lat0Von(route));
       if (pr.q > QUER_MAX_KM) return letzt.soc;
-      return letzt.soc - bedarf(zustand.richtung, pr, pos, 0).prozent;
+      return akkuProfil(route, zustand.richtung, pr, letzt.soc).bei(pos);
     }
 
-    /** Prognose für einen Listeneintrag. */
-    function prognose(e, pos, jetzt) {
-      if (!pos) return null;
+    /** Prognose für einen Listeneintrag; profil = akkuProfil ab der Position mit „Akku jetzt" (ohne Eingabe 100 %). */
+    function prognose(e, profil) {
+      if (!profil) return null;
       const umweg = e.z && e.z.quer_km > 1 ? e.z.quer_km : 0;
-      const b = bedarf(zustand.richtung, pos, e.z, umweg);
-      // ohne „Akku jetzt" mit vollem Akku rechnen – mehr als 100 % gibt es nicht, also ist alles darüber sicher unerreichbar
-      const angenommen = jetzt === null;
-      const ankunft = (angenommen ? 100 : jetzt) - b.prozent;
-      return { kwh: b.kwh, prozent: b.prozent, ankunft, angenommen, nichtErreichbar: ankunft < 0,
-        unterReserve: ankunft < Number(zustand.einst.reserve || 0) };
+      const ankunft = profil.bei(e.z) - (umweg ? profil.flach(umweg) : 0);
+      const prozent = Math.max(0, profil.start - ankunft);
+      return { kwh: prozent * modell.fahrzeug.kapazitaet_kwh / 100, prozent, ankunft, angenommen: profil.angenommen,
+        nichtErreichbar: ankunft < 0, unterReserve: ankunft < Number(zustand.einst.reserve || 0) };
     }
 
     let wetterLaeuft = false;
@@ -1243,7 +1283,10 @@
         liste.append(el('p', 'leer', 'Keine Ladepunkte voraus.'));
       }
       // Prognosen vorab: „letzte vor Reserve" = letzte Station über der Reserve, wenn danach eine darunter liegt
-      for (const e of erg.eintraege) e.prognose = erg.modus === 'strecke' ? prognose(e, erg.pos, jetzt) : null;
+      // ein Akkuverlauf für alle Stationen (gedeckelt bei 100 %); ohne „Akku jetzt" mit vollem Akku
+      const profil = erg.modus === 'strecke'
+        ? Object.assign(akkuProfil(route, zustand.richtung, erg.pos, jetzt === null ? 100 : jetzt), { angenommen: jetzt === null }) : null;
+      for (const e of erg.eintraege) e.prognose = prognose(e, profil);
       let letzteVorReserve = null;
       if (erg.eintraege.some(e => e.prognose && e.prognose.unterReserve)) {
         for (const e of erg.eintraege) if (e.prognose && !e.prognose.unterReserve) letzteVorReserve = e;
@@ -1351,14 +1394,14 @@
       // Akku am Ziel: mit „Los" der Rest bei Ankunft, sonst der Bedarf bis dorthin
       if (erg && erg.modus === 'strecke') {
         const l = route.linie, ende = zustand.richtung === 'hin' ? l[l.length - 1] : l[0];
-        const b = bedarf(zustand.richtung, erg.pos, { km: ende[2], hm_hin: ende[3], hm_rueck: ende[4] }, 0);
         const jetzt = akkuJetzt(route.id, erg.pos);
+        const amZiel = akkuProfil(route, zustand.richtung, erg.pos, jetzt === null ? 100 : jetzt).bei({ km: ende[2] });
         if (jetzt === null) {
-          const s = el('span', 100 - b.prozent < Number(zustand.einst.reserve || 0) ? 'rot' : '', 'braucht ');
-          s.append(el('b', '', '≈ ' + Math.round(b.prozent) + ' %'));
+          const s = el('span', amZiel < Number(zustand.einst.reserve || 0) ? 'rot' : '', 'braucht ');
+          s.append(el('b', '', '≈ ' + Math.round(Math.max(0, 100 - amZiel)) + ' %'));
           fuss.append(s);
         } else {
-          const rest = jetzt - b.prozent;
+          const rest = amZiel;
           const s = el('span', rest < Number(zustand.einst.reserve || 0) ? 'rot' : '', 'am Ziel ');
           s.append(el('b', '', rest < 0 ? 'nicht erreichbar' : '≈ ' + Math.round(rest) + ' %'));
           fuss.append(s);
@@ -1489,6 +1532,9 @@
       const pr = projiziere(route.linie, pos.lat, pos.lon, lat0Von(route));
       const b = bedarf(f.richtung, f.start, pr, 0);
       if (b.strecke.km < 5) { toast('Noch keine 5 km in Fahrtrichtung gefahren – die Fahrt läuft weiter'); return; }
+      // erwartet mit 100-%-Deckel; was bergab nicht in den vollen Akku passte, gilt auch beim Kilometerzähler als verloren
+      const erwartetSoc = akkuProfil(route, f.richtung, f.start, f.start_soc).bei(pr);
+      const verloren = Math.max(0, (f.start_soc - b.prozent) - erwartetSoc);
 
       const fahrt = {
         route: f.route, route_name: f.route_name, richtung: f.richtung,
@@ -1497,7 +1543,7 @@
         ende_lat: Number(pos.lat.toFixed(5)), ende_lon: Number(pos.lon.toFixed(5)),
         start_soc: f.start_soc, km: Math.round(b.strecke.km * 10) / 10,
         hm_auf: Math.round(b.strecke.auf), hm_ab: Math.round(b.strecke.ab),
-        erwartet: Math.round((f.start_soc - b.prozent) * 10) / 10,
+        erwartet: Math.round(erwartetSoc * 10) / 10,
         geschwindigkeit: tempo(route).wert, zusatzgewicht: Number(zustand.einst.zusatzgewicht) || 0,
         quer_warnung: f.start.q > 2 || pr.q > 2,
       };
@@ -1511,7 +1557,7 @@
           fahrt.km = gefahren;
           fahrt.km_quelle = 'Kilometerzähler';
           fahrt.km_route = Math.round(b.strecke.km * 10) / 10;
-          fahrt.erwartet = Math.round((f.start_soc - energieKwh(modell, a) / modell.fahrzeug.kapazitaet_kwh * 100) * 10) / 10;
+          fahrt.erwartet = Math.round((f.start_soc - energieKwh(modell, a) / modell.fahrzeug.kapazitaet_kwh * 100 - verloren) * 10) / 10;
           fahrt.quer_warnung = false;
         }
       }
@@ -2531,7 +2577,7 @@
     window.ladeplanung = {
       berechneListe, projiziere, haversine, punktBeiKm, mapsUrl, abrpUrl, energieAnteile, energieKwh, streckenwerte, bedarf,
       routenTeile, routenZwischen, zieleVon, simPunkte, preisKurz, preisEintrag, landVon, prognose, tempo, leseAdapter,
-      kumuliere, duenneAus, fuegeAdhocEin, bekannteAbschnitte, adhocRichtung, uebernehmenUrl, zeigeKarte, durchMontBlanc, berechneAdhoc,
+      kumuliere, duenneAus, fuegeAdhocEin, bekannteAbschnitte, akkuProfil, bedarf, akkuJetzt, adhocRichtung, uebernehmenUrl, zeigeKarte, durchMontBlanc, berechneAdhoc,
       get adhocRoute() { return adhocRoute; }, set adhocRoute(r) { adhocRoute = r; },
       get fremde() { return fremde; },
       get preise() { return preise; },
