@@ -1,6 +1,6 @@
 // Test der Auswertung der Bundesdaten (tests/hole-bundesdaten.js) mit kleinen Beispieldaten.
 // Aufruf: node tests/test-bundesdaten.js
-const { auswerten, auswertenDE, standortName, neuesterCsvLink, nurOffeneTesla } = require('./hole-bundesdaten.js');
+const { auswerten, auswertenDE, standortName, neuesterCsvLink, nurOffeneTesla, eindeutigeNamen } = require('./hole-bundesdaten.js');
 
 let fehler = 0;
 const pruefe = (bedingung, text) => { if (!bedingung) { fehler++; console.log('FEHLER ' + text); } };
@@ -83,6 +83,15 @@ const teslaTest = nurOffeneTesla([
 ], [site(46.1003, 7.0803, false), site(46.9502, 7.4401, true), site(48.0001, 9.0001, true, 'CLOSED_PERM'), site(47.6, 8.5, false)]);
 pruefe(teslaTest.bleiben.map(p => p.name).join('|') === 'Tesla Supercharger Bern|Tesla Supercharger Neu|Migrol Martigny',
   'Tesla-Filter: ' + teslaTest.bleiben.map(p => p.name).join('|'));
+
+// gleiche Namen unterscheiden
+const namen = eindeutigeNamen([
+  { name: 'EnBW Pfungstadt', adresse: 'Raststätte Pfungstadt Ost 0, 64319 Pfungstadt, Deutschland' },
+  { name: 'EnBW Pfungstadt', adresse: 'Autobahnraststätte Pfungstadt West 0, 64319 Pfungstadt, Deutschland' },
+  { name: 'EnBW Pfungstadt', adresse: 'Mainstr. 128, 64319 Pfungstadt, Deutschland' },
+  { name: 'Migrol Gossau SG', adresse: 'Herisauerstrasse 2, 9200 Gossau SG, Schweiz' },
+]).map(p => p.name).join('|');
+pruefe(namen === 'EnBW Pfungstadt (Raststätte Ost)|EnBW Pfungstadt (Raststätte West)|EnBW Pfungstadt (Mainstr.)|Migrol Gossau SG', 'eindeutige Namen: ' + namen);
 
 console.log(fehler === 0 ? 'Alle Prüfungen bestanden.' : fehler + ' Prüfungen fehlgeschlagen.');
 process.exit(fehler === 0 ? 0 : 1);

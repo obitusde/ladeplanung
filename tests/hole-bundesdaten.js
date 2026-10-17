@@ -1,4 +1,5 @@
 // Ladestationen aus amtlichen Registern → fremde.json
+// Version 1.3.0 (17.10.2026) — gleiche Namen mit der Straße unterscheiden („EnBW Pfungstadt (Raststätte Ost)“).
 // Version 1.2.0 (15.10.2026) — Tesla nur, wo auch andere Autos laden dürfen (supercharge.info „otherEVs"); Anlass:
 //                              Martigny ist nur für Teslas (Christof).
 // Version 1.1.0 (14.10.2026) — zusätzlich Deutschland (Ladesäulenregister der Bundesnetzagentur: EnBW mobility+ und
@@ -207,6 +208,24 @@ function nurOffeneTesla(punkte, sites) {
   return { bleiben, entfernt };
 }
 
+/**
+ * Gleiche Namen mit der Straße unterscheiden (Christof, 17.10.2026: „EnBW Pfungstadt" dreimal):
+ * „EnBW Pfungstadt (Raststätte Ost)", „EnBW Pfungstadt (Mainstr.)". Ort und Hausnummer fallen weg.
+ */
+function eindeutigeNamen(punkte) {
+  const anzahl = new Map();
+  for (const p of punkte) anzahl.set(p.name, (anzahl.get(p.name) || 0) + 1);
+  return punkte.map(p => {
+    if (anzahl.get(p.name) < 2) return p;
+    const ort = (String(p.adresse).match(/,\s*\d{4,5}\s+([^,]+),/) || [])[1] || '';
+    let strasse = sauber(String(p.adresse).split(',')[0]).replace(/\s+\d+\s*[a-z]?(\s*-\s*\d+)?$/i, '');
+    if (ort) strasse = strasse.split(' ').filter(w => !ort.split(' ').includes(w)).join(' ');
+    strasse = sauber(strasse.replace(/^Autobahn\s*rast/i, 'Rast'));
+    if (!strasse || strasse.length > 40) return p;
+    return Object.assign({}, p, { name: p.name + ' (' + strasse + ')' });
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Ablauf
 // ---------------------------------------------------------------------------
@@ -241,7 +260,7 @@ async function main() {
   const sites = JSON.parse(alsText(scDatei ? fs.readFileSync(scDatei) : await lade(SC_URL)));
   if (!Array.isArray(sites) || sites.length < 1000) throw new Error('supercharge.info: unerwartete Antwort – fremde.json bleibt unverändert');
   const tesla = nurOffeneTesla(ch.concat(de), sites);
-  const punkte = tesla.bleiben;
+  const punkte = eindeutigeNamen(tesla.bleiben);
   if (tesla.entfernt.length) console.log('Tesla ohne Fremdfahrzeuge/geschlossen, weggelassen: ' + tesla.entfernt.join(', '));
   const ziel = path.join(__dirname, '..', 'fremde.json');
   let alt = null;
@@ -259,5 +278,5 @@ async function main() {
   console.log('fremde.json: ' + punkte.length + ' Standorte ' + JSON.stringify(z) + (gleich ? ' (unverändert)' : ' (neu, Stand ' + stand + ')'));
 }
 
-module.exports = { auswerten, auswertenDE, standortName, betreiberVon, betreiberDE, neuesterCsvLink, zerlegeCsv, nurOffeneTesla };
+module.exports = { auswerten, auswertenDE, standortName, betreiberVon, betreiberDE, neuesterCsvLink, zerlegeCsv, nurOffeneTesla, eindeutigeNamen };
 if (require.main === module) main().catch(e => { console.error('Fehler: ' + e.message); process.exit(1); });

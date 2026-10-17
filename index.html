@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.30.0 — Standort von selbst beim Öffnen/Zurückkehren und alle 2 min, solange die App offen ist. Route ab hier:
+                   fremde Station desselben Anbieters bis 1 km um eine eigene ausgeblendet, unter fremden je Anbieter und 1 km nur
+                   eine (Pfungstadt dreimal); fremde.json mit eindeutigen Namen („EnBW Pfungstadt (Raststätte Ost)").
   Version 0.29.0 — Akku-Prognose Abschnitt für Abschnitt entlang der Route, gedeckelt bei 100 %: Rückgewinnung bergab
                    mit vollem Akku geht verloren (akkuProfil; Liste, Fußzeile, „Akku jetzt", erwarteter Wert bei Fahrt beenden).
   Version 0.28.0 — Route ab hier: auf bekannten Abschnitten ohne eine einzige eigene Station (z. B. Rhonetal) erscheinen
@@ -348,7 +351,7 @@
     <h3>Kurz: so nutzt du sie</h3>
     <ol>
       <li><b>Vor der Fahrt:</b> oben <b>von</b> und <b>nach</b> wählen (bei mehreren Wegen auch <b>über</b>). Akkustand bei „Akku jetzt" eintragen und <b>✓</b> tippen – mit OBD-Adapter genügt ein Tipp auf <b>Standort</b>.</li>
-      <li><b>Unterwegs:</b> <b>Standort</b> tippen, wann immer du sehen willst, was als Nächstes kommt und wie viel Akku dort übrig ist. Eine Station antippen für Details, Navigation und die Adresse für My CUPRA.</li>
+      <li><b>Unterwegs:</b> Der Standort aktualisiert sich von selbst, sobald du die App öffnest, und alle 2 Minuten, solange sie offen ist. <b>Standort</b> tippen holt ihn sofort (und liest mit Adapter den Akku). Eine Station antippen für Details, Navigation und die Adresse für My CUPRA.</li>
       <li><b>Vor dem Laden und am Ziel (freiwillig):</b> <b>Fahrt beenden</b> – im Formular den echten Akkustand prüfen (mit Adapter schon eingetragen) und speichern. Daraus lernt die Prognose; ein paar Fahrten reichen.</li>
       <li><b>Nach dem Laden:</b> neuen Akkustand eintragen bzw. mit Adapter <b>Standort</b> tippen – das Laden erkennt die App dann selbst.</li>
     </ol>
@@ -552,7 +555,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.29.0';
+    const APP_VERSION = '0.30.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -568,6 +571,8 @@
     const ADHOC_SPEICHER = 'ladeplanung.adhoc';
     const ADHOC_ID = 'adhoc';
     const FREMD_DUBLETTE_M = 150;   // Station aus den Bundesdaten so nah an einer eigenen → ist dieselbe, nicht doppelt zeigen
+    const STANDORT_INTERVALL_MS = 2 * 60e3;   // GPS von selbst, solange die App sichtbar ist
+    const FREMD_GLEICHER_ORT_M = 1000;   // gleicher Anbieter so nah: Gegenseite der Raststätte bzw. Ladepark im Ort → nur einmal
     const FREMD_MAX_KM = 3;         // fremde Stationen höchstens so weit neben der Route (≈ 6–8 km Umweg hin und zurück)
     const BEKANNT_Q_KM = 1.5;       // Route ab hier liegt auf einer Stammstrecke, wenn diese höchstens so weit entfernt ist
     const BEKANNT_MIN_KM = 3;       // kürzere bekannte Stücke (Kreuzungen) bzw. Lücken (andere Ausfahrt) werden geglättet
@@ -1957,7 +1962,11 @@
       const rand = FREMD_MAX_KM / 100;   // ≈ 0,03° – großzügig genug für 3 km in jeder Richtung
       for (const f of (fremde && fremde.punkte) || []) {
         if (f.lat < s - rand || f.lat > n + rand || f.lon < w - 2 * rand || f.lon > o + 2 * rand) continue;
-        if (eigene.some(p => haversine(p.lat, p.lon, f.lat, f.lon) * 1000 <= FREMD_DUBLETTE_M)) continue;
+        // dieselbe Station oder derselbe Anbieter im Umkreis von 1 km um eine eigene (Christof, 17.10.2026: Pfungstadt dreimal)
+        if (eigene.some(p => {
+          const m = haversine(p.lat, p.lon, f.lat, f.lon) * 1000;
+          return m <= FREMD_DUBLETTE_M || (m <= FREMD_GLEICHER_ORT_M && gleicheFirma(p, f));
+        })) continue;
         daten.punkte.push({ ...f, fremd: true, richtung: 'beide', favorit: false, notiz: '', link: '', zuordnung: [] });
       }
       const bekannt = bekannteAbschnitte(r);
@@ -1991,12 +2000,26 @@
         if (!eigeneKm.some(x => x >= k && x <= e)) for (let j = k; j <= e; j++) nurEigene[j] = false;
         k = e + 1;
       }
+      const zugeordnet = [];
       for (const p of daten.punkte) {
         if (!p.fremd) continue;
         const pr = projiziere(r.linie, p.lat, p.lon, lat0Von(r));
         if (pr.q > FREMD_MAX_KM || nurEigene[kmIndex(pr.km)]) continue;
-        ordneZu(p, pr);
+        zugeordnet.push({ p, z: ordneZu(p, pr) });
       }
+      // Fremde untereinander: je Anbieter im Umkreis von 1 km nur die nächste an der Route
+      zugeordnet.sort((a, b) => a.z.quer_km - b.z.quer_km);
+      const behalten = [];
+      for (const x of zugeordnet) {
+        if (behalten.some(b => gleicheFirma(b.p, x.p) && haversine(b.p.lat, b.p.lon, x.p.lat, x.p.lon) * 1000 <= FREMD_GLEICHER_ORT_M)) {
+          x.p.zuordnung = x.p.zuordnung.filter(z => z !== x.z);
+        } else behalten.push(x);
+      }
+    }
+
+    function gleicheFirma(a, b) {
+      const x = firmaVon(a).toLowerCase(), y = firmaVon(b).toLowerCase();
+      return !!x && x === y;
     }
 
     /** Ziele zum Antippen: Start und Ziel aller Stammstrecken (Koordinate = Anfang bzw. Ende der Linie). */
@@ -2568,9 +2591,17 @@
       if (!zustand.sim.aktiv) holeStandort();
 
       // Zurück aus dem Formular (oder App wieder geöffnet): Daten still neu laden
+      // Standort von selbst: beim Zurückkehren sofort, solange die App offen ist alle 2 min (Christof, 17.10.2026).
+      // Kostet keine OpenRouteService-Abfragen; im Hintergrund oder bei ausgeschaltetem Bildschirm läuft nichts.
+      const standortVonSelbst = () => {
+        if (document.visibilityState === 'visible' && !zustand.sim.aktiv && !gpsLaeuft) holeStandort();
+      };
       document.addEventListener('visibilitychange', async () => {
-        if (document.visibilityState === 'visible' && Date.now() - geladenUm > 30000 && await ladeDaten(true)) render();
+        if (document.visibilityState !== 'visible') return;
+        standortVonSelbst();
+        if (Date.now() - geladenUm > 30000 && await ladeDaten(true)) render();
       });
+      setInterval(standortVonSelbst, STANDORT_INTERVALL_MS);
     }
 
     // Für automatisierte Tests zugänglich machen
