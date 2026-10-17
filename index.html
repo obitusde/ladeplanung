@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.31.0 — Messwerte statt „Fahrt beenden": jeder Akkuwert ist ein Messpunkt, ab 50 km auf derselben Strecke ohne
+                   Laden entsteht ein Messstück, „Messwerte senden (n)" öffnet die Seite „Messwerte". Verbrauch mit Verbrauchstempo
+                   (Reisetempo × modell.tempo.verbrauch aus GPX-Auswertungen). Menü → „Fahrt auswerten (GPX)" (auswertung.html).
   Version 0.30.0 — Standort von selbst beim Öffnen/Zurückkehren und alle 2 min, solange die App offen ist. Route ab hier:
                    fremde Station desselben Anbieters bis 1 km um eine eigene ausgeblendet, unter fremden je Anbieter und 1 km nur
                    eine (Pfungstadt dreimal); fremde.json mit eindeutigen Namen („EnBW Pfungstadt (Raststätte Ost)").
@@ -352,7 +355,7 @@
     <ol>
       <li><b>Vor der Fahrt:</b> oben <b>von</b> und <b>nach</b> wählen (bei mehreren Wegen auch <b>über</b>). Akkustand bei „Akku jetzt" eintragen und <b>✓</b> tippen – mit OBD-Adapter genügt ein Tipp auf <b>Standort</b>.</li>
       <li><b>Unterwegs:</b> Der Standort aktualisiert sich von selbst, sobald du die App öffnest, und alle 2 Minuten, solange sie offen ist. <b>Standort</b> tippen holt ihn sofort (und liest mit Adapter den Akku). Eine Station antippen für Details, Navigation und die Adresse für My CUPRA.</li>
-      <li><b>Vor dem Laden und am Ziel (freiwillig):</b> <b>Fahrt beenden</b> – im Formular den echten Akkustand prüfen (mit Adapter schon eingetragen) und speichern. Daraus lernt die Prognose; ein paar Fahrten reichen.</li>
+      <li><b>Vor dem Laden und am Ziel (freiwillig):</b> Akkustand eintragen bzw. mit Adapter <b>Standort</b> tippen. Liegen seit dem letzten Wert mindestens 50 km auf derselben Strecke, merkt sich die App daraus einen <b>Messwert</b>. Mit <b>Messwerte senden</b> speicherst du sie (auch später) – daraus lernt die Prognose.</li>
       <li><b>Nach dem Laden:</b> neuen Akkustand eintragen bzw. mit Adapter <b>Standort</b> tippen – das Laden erkennt die App dann selbst.</li>
     </ol>
     <p>Alles außer von/nach ist freiwillig: Ohne Akkustand rechnet die App mit vollem Akku.</p>
@@ -360,11 +363,12 @@
     <h3>Die Knöpfe</h3>
     <ul>
       <li><b>Standort:</b> holt die aktuelle GPS-Position und rechnet die Liste neu (beim Öffnen der App passiert das von selbst). Mit eingeschaltetem Adapter liest derselbe Tipp auch Akku und Kilometerstand. Aufgezeichnet wird nichts – nur in dem Moment, in dem du tippst.</li>
-      <li><b>Akku jetzt … ✓:</b> Akkustand von Hand; damit beginnt eine „Fahrt".</li>
+      <li><b>Akku jetzt … ✓:</b> Akkustand von Hand.</li>
       <li><b>Fahrt-Leiste</b> („Akku jetzt ≈ 62 %"): letzter Akkustand minus dem geschätzten Verbrauch seither.
-        <b>Fahrt beenden</b> öffnet das Kalibrierformular (vor dem Laden oder am Ziel).
-        <b>✕</b> verwirft die Fahrt ohne Kalibrierung – z. B. nach einem Test oder einem Tippfehler; danach erscheint wieder „Akku jetzt".</li>
-      <li><b>„Fahrt beendet … – Kalibrierung noch offen?":</b> Erinnerung, falls das Formular nicht abgeschickt wurde. <b>Kalibrieren</b> öffnet es nochmals, <b>✕</b> blendet die Erinnerung aus.</li>
+        <b>Messwerte senden (n)</b> öffnet die Seite „Messwerte" mit allen gesammelten Stücken; dort einmal speichern.
+        <b>✕</b> verwirft den Akkustand – z. B. nach einem Test oder einem Tippfehler; danach erscheint wieder „Akku jetzt".</li>
+      <li><b>„Messwerte geöffnet … – gespeichert?":</b> Erinnerung, falls die Seite nicht gespeichert wurde. <b>Öffnen</b> zeigt sie nochmals, <b>✕</b> blendet die Erinnerung aus.</li>
+      <li><b>☰ → Fahrt auswerten (GPX):</b> eine aufgezeichnete Fahrt (z. B. von der Garmin-Uhr) auswerten – nur im Browser, die Datei verlässt das Gerät nicht. Mit den Akkuständen an den Ladestopps entstehen daraus Messwerte mit echtem Tempoverlauf.</li>
       <li><b>Karte:</b> ganze Strecke, dein Standort (blau) und der Weg bis zur nächsten Station. Eine andere Station antippen zeigt den Weg dorthin; <b>Ganze Strecke</b> zoomt heraus, <b>Details</b> öffnet die Station. In den Details jeder Station gibt es dafür auch <b>Auf Karte</b>.</li>
       <li><b>⇄</b> tauscht von und nach. Der letzte bekannte Akkustand gilt für jede Strecke, die du oben wählst – die Liste zeigt sofort, was damit erreichbar ist.</li>
       <li><b>☰ Menü:</b> Ladepunkt oder Route hinzufügen, Einstellungen, Simulation, Ladepreise, Preise aktualisieren, Wartung &amp; Status und diese Seite.</li>
@@ -408,7 +412,7 @@
     <p>Der Akkubedarf bis zu jeder Station wird aus Strecke, Höhenmetern, dem <b>Reisetempo</b>, dem <b>Zusatzgewicht</b> (Menü → Einstellungen) und der <b>Außentemperatur</b> geschätzt. Die Temperatur ist der Durchschnitt aus jetzt und in drei Stunden am Standort – oder dein eigener Wert.</p>
     <p><b>Das Reisetempo</b> stellst du nicht mehr selbst ein: Es ist der Schnitt der gewählten Route laut Routendienst (inklusive Kurven und Ortsdurchfahrten), also z. B. 103 km/h nach Ingolstadt und 87 km/h über den Simplon. Sobald du echte Fahrten mit dem Ø-Tempo des Bordcomputers kalibriert hast, passt die App diesen Schnitt an deine Fahrweise an; unten steht dann „(gemessen)" statt „(Route)".</p>
     <p>Das Tempo hat den größten Einfluss: 130 statt 110 km/h brauchen rund ein Viertel mehr. 1000 Höhenmeter bergauf kosten etwa 11 % Akku, bergab kommt gut ein Drittel davon zurück – aber nur, solange der Akku nicht voll ist: Die App rechnet den Akkustand Kilometer für Kilometer und deckelt ihn bei 100 %. Wer voll losfährt und erst ins Tal rollt, verliert diese Energie (z. B. Ovronnaz → Rhonetal ≈ 1–2 %).</p>
-    <p><b>Mit Akkustand</b> (von Hand oder per Adapter) zieht die Liste unterwegs den geschätzten Verbrauch ab („jetzt ≈"). Jeder neue Adapterwert ersetzt die Schätzung; zeigt er mehr Akku als vorher, erkennt die App das Laden und beginnt eine neue Fahrt. <b>Kalibriert</b> wird nur, wenn du eine Fahrt mit „Fahrt beenden" abschließt – „Standort" allein ändert am Modell nichts.</p>
+    <p><b>Mit Akkustand</b> (von Hand oder per Adapter) zieht die Liste unterwegs den geschätzten Verbrauch ab („jetzt ≈"). Jeder neue Adapterwert ersetzt die Schätzung; zeigt er mehr Akku als vorher, erkennt die App das Laden und beginnt eine neue Fahrt. <b>Kalibriert</b> wird nur mit gespeicherten Messwerten (ab 50 km zwischen zwei Akkuwerten, oder aus „Fahrt auswerten") – „Standort" allein ändert am Modell nichts. Für den Verbrauch rechnet die App mit einem etwas höheren „Verbrauchstempo" als dem Ø-Tempo, sobald GPX-Auswertungen gezeigt haben, wie ungleichmäßig du fährst (Stau und zügige Abschnitte brauchen mehr als gleichmäßiges Fahren).</p>
     <p><b>Vergleichswerte:</b> In den Details einer Station „Vergleichswert eintragen" – Strecke in ABRP oder My CUPRA planen und die beiden Akkuwerte abschreiben. Das hilft dem Modell schon vor der ersten Fahrt; echte Fahrten zählen aber mehr.</p>
     <p id="info-modell" class="klein-hinweis"></p>
 
@@ -481,6 +485,7 @@
       <button type="button" class="knopf" data-m="simulation">⌖ Simulation</button>
       <button type="button" class="knopf" data-m="preise">€ Ladepreise</button>
       <a id="m-preise" class="knopf" href="#" target="_blank" rel="noopener">↻ Preise aktualisieren</a>
+      <a class="knopf" href="auswertung.html">📈 Fahrt auswerten (GPX)</a>
       <a id="m-wartung" class="knopf" href="#" target="_blank" rel="noopener">🔧 Wartung &amp; Status</a>
       <button type="button" class="knopf" data-m="info">ⓘ So funktioniert die App</button>
       <button class="knopf haupt" value="zu">Schließen</button>
@@ -555,7 +560,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.30.0';
+    const APP_VERSION = '0.31.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -564,7 +569,9 @@
     const FORMULAR_URL = 'https://script.google.com/macros/s/AKfycbzTwwwZcQBuUdfmyoniHH5-gALKnrMlvl50VWtuM_JjZ7tBn7nk-AUwPO37bpPNBjsmuw/exec';
     const ABSEITS = { label: 'Weit abseits (Annecy)', lat: 45.8992, lon: 6.1294 };
     const TEMPERATUR_ERSATZ_C = 15;
-    const ANKUNFT_OFFEN_MS = 12 * 3600e3;  // so lange erinnert die Leiste an eine noch nicht kalibrierte Ankunft
+    const ANKUNFT_OFFEN_MS = 12 * 3600e3;  // so lange erinnert die Leiste an geöffnete, vielleicht nicht gespeicherte Messwerte
+    const MESSSTUECK_MIN_KM = 50;          // kürzere Stücke sind zu ungenau (Akku ±0,5 % je Wert; Christof, 17.10.2026)
+    const MESSSTUECKE_MAX = 20;            // so viele passen in eine Adresse an die Seite „Messwerte"
     // Route ab hier (v0.25.0): OpenRouteService direkt aus dem Handy; Schlüssel nur in localStorage, nie im Repo
     const ORS_BASIS = 'https://api.openrouteservice.org';
     const ORS_SPEICHER = 'ladeplanung.ors';
@@ -838,7 +845,9 @@
         adapter: null,   // { soc, bms, zeit } — letzter Wert vom OBD-Adapter
         wetter: null,    // { temp, zeit, lat, lon }
         fahrt: null,     // { start_soc, start_zeit, start_lat, start_lon, route, route_name, richtung, start: {km, hm_hin, hm_rueck, q} }
-        ankunft: null,   // { url, zeit } — Kalibrierung geöffnet, zur Erinnerung
+        ankunft: null,   // { url, zeit, anzahl } — Seite „Messwerte" geöffnet, zur Erinnerung
+        messung: null,   // letzter Akkuwert als Messpunkt { soc, zeit, lat, lon, km_stand, route, richtung, km, hm_hin, hm_rueck, q }
+        stuecke: [],     // Messstücke ab 50 km, noch nicht gesendet
         abStandort: false,     // true = auch weit weg von der Route ab dem eigenen Standort rechnen (Luftlinie)
         letzterStandort: null, // { lat, lon, genauigkeit, zeit } — gilt, bis das GPS antwortet
       };
@@ -1058,11 +1067,20 @@
       };
     }
 
+    /**
+     * Tempo für den Verbrauch: Reisetempo mal dem Verbrauchsfaktor aus GPX-Auswertungen (modell.tempo.verbrauch) –
+     * wer abwechselnd zügig fährt und im Stau steht, braucht mehr als bei gleichmäßigem Ø-Tempo (Christof, 17.10.2026).
+     */
+    function verbrauchsTempo(route) {
+      const f = Number(modell.tempo && modell.tempo.verbrauch);
+      return tempo(route).wert * (f > 0 ? f : 1);
+    }
+
     /** Akkubedarf zwischen zwei Linienpositionen in Fahrtrichtung, plus Umweg zu einer abseits liegenden Station. */
     function bedarf(richtung, von, bis, umwegKm) {
       const w = streckenwerte(richtung, von, bis);
       const a = energieAnteile(modell, w.km + (umwegKm || 0), w.auf, w.ab,
-        tempo().wert, temperatur().wert, zustand.einst.zusatzgewicht);
+        verbrauchsTempo(), temperatur().wert, zustand.einst.zusatzgewicht);
       const kwh = energieKwh(modell, a);
       return { kwh, prozent: kwh / modell.fahrzeug.kapazitaet_kwh * 100, strecke: w };
     }
@@ -1074,7 +1092,7 @@
      */
     function akkuProfil(route, richtung, von, startSoc) {
       const hin = richtung === 'hin', l = route.linie, k = modell.korrektur;
-      const kmh = tempo().wert, temp = temperatur().wert, zusatz = zustand.einst.zusatzgewicht;
+      const kmh = verbrauchsTempo(route), temp = temperatur().wert, zusatz = zustand.einst.zusatzgewicht;
       const proKwh = 100 / modell.fahrzeug.kapazitaet_kwh;
       const prozent = (km, auf, ab) => {
         const a = energieAnteile(modell, km, auf, ab, kmh, temp, zusatz);
@@ -1374,14 +1392,22 @@
           text = 'Akku ' + letzt.soc + ' % um ' + uhrzeit(letzt.zeit);
           if (f.route !== route.id || f.richtung !== zustand.richtung) text += ' (' + f.route_name + ', ' + (f.richtung === 'hin' ? 'Hinfahrt' : 'Rückfahrt') + ')';
         }
-        leiste.append(el('span', 'text', text), knopf('Fahrt beenden', 'haupt', angekommen, 'Fahrt beenden – vor dem Laden oder am Ziel, für die Kalibrierung'), knopf('✕', '', verwerfeFahrt, 'Akkustand verwerfen'));
+        leiste.append(el('span', 'text', text));
+        if (zustand.stuecke.length) leiste.append(knopf('Messwerte senden (' + zustand.stuecke.length + ')', 'haupt', sendeMesswerte, 'Messstücke für die Kalibrierung speichern'));
+        leiste.append(knopf('✕', '', verwerfeFahrt, 'Akkustand verwerfen'));
+        return;
+      }
+      if (zustand.stuecke.length) {
+        $('los').hidden = false;   // Akku eintragen bleibt möglich
+        leiste.append(el('span', 'text', zustand.stuecke.length + ' Messwert(e) für die Kalibrierung bereit'),
+          knopf('Senden', 'haupt', sendeMesswerte, 'Messstücke für die Kalibrierung speichern'));
         return;
       }
       const a = zustand.ankunft;
       if (a && Date.now() - a.zeit < ANKUNFT_OFFEN_MS) {
-        const link = el('a', 'knopf', 'Kalibrieren');
+        const link = el('a', 'knopf', 'Öffnen');
         link.href = a.url; link.target = '_blank'; link.rel = 'noopener';
-        leiste.append(el('span', 'text', 'Fahrt beendet ' + uhrzeit(a.zeit) + ' – Kalibrierung noch offen?'), link,
+        leiste.append(el('span', 'text', 'Messwerte geöffnet ' + uhrzeit(a.zeit) + ' – gespeichert?'), link,
           knopf('✕', '', () => { zustand.ankunft = null; speichere(); render(); }, 'Erinnerung ausblenden'));
         return;
       }
@@ -1504,7 +1530,7 @@
     }
 
     // -----------------------------------------------------------------------
-    // Losfahren / Angekommen (optional)
+    // Akku jetzt und Messwerte (optional)
     // -----------------------------------------------------------------------
 
     function starteFahrt(ev) {
@@ -1520,7 +1546,7 @@
         route: route.id, route_name: route.name, richtung: zustand.richtung,
         start: { km: pr.km, hm_hin: pr.hm_hin, hm_rueck: pr.hm_rueck, q: pr.q },
       };
-      zustand.ankunft = null;
+      messpunktBei(pos, route, pr, soc, null);
       speichere();
       $('los-soc').value = '';
       $('los-soc').blur();
@@ -1528,48 +1554,54 @@
       if (pr.q > QUER_MAX_KM) toast('Hinweis: Start liegt abseits der Route – die Prognose ist ungenau');
     }
 
-    function angekommen() {
-      const f = zustand.fahrt;
-      const pos = planung.pos || aktuellePosition();
-      if (!f) return;
-      if (!pos) { toast('Standort unbekannt – erst „Standort" drücken'); holeStandort(); return; }
-      const route = daten.routen.find(r => r.id === f.route) || aktuelleRoute();
-      const pr = projiziere(route.linie, pos.lat, pos.lon, lat0Von(route));
-      const b = bedarf(f.richtung, f.start, pr, 0);
-      if (b.strecke.km < 5) { toast('Noch keine 5 km in Fahrtrichtung gefahren – die Fahrt läuft weiter'); return; }
-      // erwartet mit 100-%-Deckel; was bergab nicht in den vollen Akku passte, gilt auch beim Kilometerzähler als verloren
-      const erwartetSoc = akkuProfil(route, f.richtung, f.start, f.start_soc).bei(pr);
-      const verloren = Math.max(0, (f.start_soc - b.prozent) - erwartetSoc);
+    /**
+     * Jeder Akkuwert (Eingabe „Akku jetzt" oder Adapter) ist ein Messpunkt (Christof, 17.10.2026: statt „Fahrt beenden").
+     * Zwischen zwei Punkten auf derselben Route und Richtung, ab 50 km und ohne Laden dazwischen, entsteht ein Messstück
+     * für die Kalibrierung. Kürzer: der alte Punkt bleibt Anfang. Geladen, andere Route oder weit neben der Route: neu ab hier.
+     */
+    function merkeMesspunkt(m) {
+      const l = zustand.messung;
+      zustand.messung = m;
+      if (!l || m.soc > l.soc + 2) return;                                         // erster Wert oder geladen
+      if (l.route !== m.route || l.richtung !== m.richtung || l.q > 2 || m.q > 2) return;
+      const route = daten.routen.find(r => r.id === m.route);
+      if (!route) return;
+      const w = streckenwerte(m.richtung, l, m);
+      const zaehler = l.km_stand && m.km_stand ? m.km_stand - l.km_stand : null;   // Kilometerzähler, wenn beide vom Adapter
+      const km = zaehler !== null && zaehler >= 0 && zaehler <= 2000 ? zaehler : w.km;
+      if (km < MESSSTUECK_MIN_KM) { zustand.messung = l; return; }
+      if (l.soc - m.soc < 3) return;
+      const stunden = (m.zeit - l.zeit) / 3.6e6, geplant = tempo(route).wert;
+      const gefahren = stunden > 0 ? km / stunden : 0;
+      const mitPause = !(gefahren >= 0.6 * geplant);   // lange Pause im Stück: Ø-Tempo taugt nicht, Tempo der Route nehmen
+      const runde1 = x => Math.round(x * 10) / 10, runde5 = x => Math.round(x * 1e5) / 1e5;
+      zustand.stuecke.push({
+        quelle: 'gemessen', route: route.id, richtung: m.richtung, titel: routenTeile(route).start + ' – ' + routenTeile(route).ziel,
+        start_zeit: new Date(l.zeit).toISOString(), ende_zeit: new Date(m.zeit).toISOString(),
+        start_lat: runde5(l.lat), start_lon: runde5(l.lon), ende_lat: runde5(m.lat), ende_lon: runde5(m.lon),
+        km: runde1(km), hm_auf: Math.round(w.auf), hm_ab: Math.round(w.ab), start_soc: l.soc, ende_soc: m.soc,
+        kmh: Math.round(mitPause ? geplant : gefahren), geschwindigkeit: geplant,
+        erwartet: runde1(akkuProfil(route, m.richtung, l, l.soc).bei(m)),
+        zusatzgewicht: Number(zustand.einst.zusatzgewicht) || 0,
+        notiz: [zaehler !== null ? 'km vom Kilometerzähler (Route ' + runde1(w.km) + ' km)' : '', mitPause ? 'mit Pause – Tempo der Route' : ''].filter(Boolean).join(' · '),
+      });
+      if (zustand.stuecke.length > MESSSTUECKE_MAX) zustand.stuecke.shift();
+      toast('Messwert für die Kalibrierung: ' + Math.round(km) + ' km, ' + (l.soc - m.soc) + ' % Akku');
+    }
 
-      const fahrt = {
-        route: f.route, route_name: f.route_name, richtung: f.richtung,
-        start_zeit: f.start_zeit, ende_zeit: new Date().toISOString(),
-        start_lat: Number(f.start_lat.toFixed(5)), start_lon: Number(f.start_lon.toFixed(5)),
-        ende_lat: Number(pos.lat.toFixed(5)), ende_lon: Number(pos.lon.toFixed(5)),
-        start_soc: f.start_soc, km: Math.round(b.strecke.km * 10) / 10,
-        hm_auf: Math.round(b.strecke.auf), hm_ab: Math.round(b.strecke.ab),
-        erwartet: Math.round(erwartetSoc * 10) / 10,
-        geschwindigkeit: tempo(route).wert, zusatzgewicht: Number(zustand.einst.zusatzgewicht) || 0,
-        quer_warnung: f.start.q > 2 || pr.q > 2,
-      };
-      const ad = zustand.adapter;
-      if (ad && Date.now() - ad.zeit < ADAPTER_FRISCH_MS) {
-        fahrt.ende_soc = ad.soc;   // Kalibrierformular vorbefüllen
-        // Gefahrene km vom Kilometerzähler statt aus der Route (genauer bei Umwegen); Höhenmeter bleiben aus der Route
-        const gefahren = ad.km_stand !== null && ad.km_stand !== undefined && f.start_km_stand ? ad.km_stand - f.start_km_stand : null;
-        if (gefahren !== null && gefahren >= 5 && gefahren <= 2000) {
-          const a = energieAnteile(modell, gefahren, b.strecke.auf, b.strecke.ab, tempo(route).wert, temperatur().wert, zustand.einst.zusatzgewicht);
-          fahrt.km = gefahren;
-          fahrt.km_quelle = 'Kilometerzähler';
-          fahrt.km_route = Math.round(b.strecke.km * 10) / 10;
-          fahrt.erwartet = Math.round((f.start_soc - energieKwh(modell, a) / modell.fahrzeug.kapazitaet_kwh * 100 - verloren) * 10) / 10;
-          fahrt.quer_warnung = false;
-        }
-      }
-      const url = FORMULAR_URL + '?seite=kalibrieren&fahrt=' + encodeURIComponent(JSON.stringify(fahrt));
+    /** Messpunkt aus Position und Akkuwert; nicht bei Simulation oder Planung ab einem anderen Startort. */
+    function messpunktBei(pos, route, pr, soc, kmStand) {
+      if (!pos || pos.sim || pos.planung) return;
+      merkeMesspunkt({ soc, zeit: Date.now(), lat: pos.lat, lon: pos.lon, km_stand: kmStand || null, route: route.id, richtung: zustand.richtung,
+        km: pr.km, hm_hin: pr.hm_hin, hm_rueck: pr.hm_rueck, q: pr.q });
+    }
+
+    /** Wartende Messstücke auf der Seite „Messwerte" öffnen (dort einmal speichern = kalibrieren). */
+    function sendeMesswerte() {
+      const url = FORMULAR_URL + '?seite=messwerte&stuecke=' + encodeURIComponent(JSON.stringify(zustand.stuecke));
       window.open(url, '_blank', 'noopener');
-      zustand.fahrt = null;
-      zustand.ankunft = { url, zeit: Date.now() };
+      zustand.ankunft = { url, zeit: Date.now(), anzahl: zustand.stuecke.length };
+      zustand.stuecke = [];
       speichere();
       render();
     }
@@ -1635,7 +1667,6 @@
 
     const OBD_DIENSTE = [0xfff0, 0xffe0, 0x18f0, 'e7810a71-73ae-499d-8c15-faa9aef0c3f2', '6e400001-b5a3-f393-e0a9-e50e24dcca9e'];
     const OBD_INIT = ['ATZ', 'ATE0', 'ATL0', 'ATS1', 'ATH1', 'ATSP7', 'ATCP17', 'ATSHFC007B', 'ATCRA17FE007B', 'ATAT1', 'ATST96'];
-    const ADAPTER_FRISCH_MS = 10 * 60e3;   // so alt darf der Adapterwert bei „Fahrt beenden" sein
     let obdGeraet = null;     // bleibt bis zum Neuladen der Seite erhalten → zweites Lesen ohne Geräteauswahl
     let obdLaeuft = false;
     let obdAuswahl = false;   // getDevices-Gerät war nicht erreichbar → nächstes Mal Geräteauswahl
@@ -1779,8 +1810,9 @@
       const route = aktuelleRoute();
       const pr = projiziere(route.linie, pos.lat, pos.lon, lat0Von(route));
       const stand = { soc: w.soc, bms: w.bms, km_stand: w.km_stand, zeit: Date.now(), lat: pos.lat, lon: pos.lon, km: pr.km, hm_hin: pr.hm_hin, hm_rueck: pr.hm_rueck, q: pr.q };
+      messpunktBei(pos, route, pr, w.soc, w.km_stand);
       const f = zustand.fahrt;
-      // Mehr Akku als beim letzten Wert → unterwegs geladen: alte Messung endet (ohne Kalibrierung), neue beginnt
+      // Mehr Akku als beim letzten Wert → unterwegs geladen: alte Messung endet, neue beginnt
       const vorher = f ? (f.stand ? f.stand.soc : f.start_soc) : null;
       const geladen = vorher !== null && w.soc > vorher + 2;
       if (geladen) toast('Geladen erkannt (' + vorher + ' → ' + w.soc + ' %) – neue Fahrt');
@@ -1792,7 +1824,6 @@
           route: route.id, route_name: route.name, richtung: zustand.richtung,
           start: { km: pr.km, hm_hin: pr.hm_hin, hm_rueck: pr.hm_rueck, q: pr.q },
         };
-        zustand.ankunft = null;
       }
       speichere();
       render();
@@ -2608,7 +2639,7 @@
     window.ladeplanung = {
       berechneListe, projiziere, haversine, punktBeiKm, mapsUrl, abrpUrl, energieAnteile, energieKwh, streckenwerte, bedarf,
       routenTeile, routenZwischen, zieleVon, simPunkte, preisKurz, preisEintrag, landVon, prognose, tempo, leseAdapter,
-      kumuliere, duenneAus, fuegeAdhocEin, bekannteAbschnitte, akkuProfil, bedarf, akkuJetzt, adhocRichtung, uebernehmenUrl, zeigeKarte, durchMontBlanc, berechneAdhoc,
+      kumuliere, duenneAus, fuegeAdhocEin, merkeMesspunkt, verbrauchsTempo, sendeMesswerte, bekannteAbschnitte, akkuProfil, bedarf, akkuJetzt, adhocRichtung, uebernehmenUrl, zeigeKarte, durchMontBlanc, berechneAdhoc,
       get adhocRoute() { return adhocRoute; }, set adhocRoute(r) { adhocRoute = r; },
       get fremde() { return fremde; },
       get preise() { return preise; },

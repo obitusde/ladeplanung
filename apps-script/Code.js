@@ -1,6 +1,9 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.22.0 — Seite „Messwerte" (?seite=messwerte&stuecke=…): mehrere Messstücke speichern, einmal kalibrieren
+ *                  (speichereMesswerte). Quelle „GPX" aus „Fahrt auswerten": Verbrauchstempo / Ø-Tempo → modell.tempo.verbrauch,
+ *                  Zeilen „gemessen" damit hochgerechnet. Temperatur älterer Fahrten aus dem Open-Meteo-Archiv.
  * Version 0.21.1 — Ladepreise: Preisseiten einzeln abrufen (ein Verbindungsfehler brach sonst die ganze Suche ab).
  * Version 0.21.0 — Ladepreise: Suche über die eingebaute Google-Suche des Modells (OpenRouter engine native, Rückfall
  *                  Standardsuche), dazu der Text der offiziellen Preisseite, soweit abrufbar; bei „unsicher" ein Grund.
@@ -56,7 +59,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.21.1';
+const VERSION = '0.22.0';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -192,6 +195,17 @@ function doGet(e) {
     seite.modellJson = JSON.stringify(modell).replace(/</g, '\\u003c');
     return seite.evaluate()
       .setTitle('Ladeplanung – Vergleichswert eintragen')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  }
+  if (p.seite === 'messwerte') {
+    let stuecke = null;
+    try { stuecke = JSON.parse(p.stuecke || ''); } catch (e) { stuecke = null; }
+    if (!Array.isArray(stuecke) || !stuecke.length) return einfacheSeite_('Keine Messwerte übergeben – bitte in der App „Messwerte senden" oder „Fahrt auswerten" nutzen.');
+    modell.stuecke = stuecke.slice(0, MESSWERTE_MAX);
+    const seite = HtmlService.createTemplateFromFile('Messwerte');
+    seite.modellJson = JSON.stringify(modell).replace(/</g, '\\u003c');
+    return seite.evaluate()
+      .setTitle('Ladeplanung – Messwerte speichern')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
   }
   if (p.seite === 'kalibrieren') {
@@ -526,6 +540,31 @@ function energieKwh_(modell, a) {
 // schneller als der Router rechnet, steigt er über 1. ABRP-Werte zählen hier nicht, die haben ihr eigenes Tempo.
 const TEMPO_FAKTOR_MIN = 0.6, TEMPO_FAKTOR_MAX = 1.4;
 
+// Verbrauchstempo (Christof, 17.10.2026, GPX Ovronnaz → Neuenrade): Wer abwechselnd zügig fährt und im Stau steht,
+// braucht mehr als bei gleichmäßigem Ø-Tempo (Luftwiderstand ~ v²). Zeilen der Quelle „GPX" (App „Fahrt auswerten")
+// tragen in „km/h verwendet" das energiegleiche Tempo aus dem Verlauf (√ Mittel von v² je 5 km) und in
+// „Ø km/h Bordcomputer" das Ø-Tempo beim Fahren. Ihr Verhältnis ist der Verbrauchsfaktor: Zeilen „gemessen"
+// (nur Ø-Tempo bekannt) rechnet die Kalibrierung damit hoch, die App ebenso ihr Reisetempo für den Verbrauch.
+const QUELLE_GPX = 'GPX';
+const VERBRAUCH_FAKTOR_MIN = 1, VERBRAUCH_FAKTOR_MAX = 1.4;
+const MESSWERTE_MAX = 20;   // Stücke je Aufruf der Seite „Messwerte" (alles steckt in der Adresse)
+
+/** Verbrauchsfaktor aus GPX-Zeilen { quelle, km, kmh, bordcomputer, verwenden }, km-gewichtet; ohne: 1. */
+function verbrauchFaktor_(zeilen) {
+  let summe = 0, gewicht = 0, n = 0;
+  (zeilen || []).forEach(function (z) {
+    if (String(z.quelle || '').trim() !== QUELLE_GPX) return;
+    if (String(z.verwenden || '').trim().toLowerCase() === 'nein') return;
+    const v = Number(z.kmh), b = Number(z.bordcomputer), km = Number(z.km);
+    if (!(v > 20) || !(b > 20) || !(km >= 10)) return;
+    summe += v / b * km;
+    gewicht += km;
+    n++;
+  });
+  if (!gewicht) return { faktor: 1, fahrten: 0 };
+  return { faktor: runde_(Math.max(VERBRAUCH_FAKTOR_MIN, Math.min(VERBRAUCH_FAKTOR_MAX, summe / gewicht)), 3), fahrten: n };
+}
+
 const AUSREISSER_ABWEICHUNG = 0.35;  // Verhältnis Wert/Physik mehr als 35 % neben dem Median → nicht verwenden
 const MIN_TEMPERATURSPANNE_C = 10;    // darunter lässt sich der Heizungsanteil nicht von den übrigen Anteilen trennen
 
@@ -652,11 +691,14 @@ function tempoFaktor_(zeilen, routenTempo) {
 
 function kalibriereZeilen_(zeilen, routenTempo) {
   const kap = MODELL_STANDARD.fahrzeug.kapazitaet_kwh;
+  const verbrauch = verbrauchFaktor_(zeilen);
   const fahrten = [];
   const erg = zeilen.map(function (z) {
     const quelle = String(z.quelle || '').trim() || 'gemessen';
     const temp = typeof z.temp === 'number' && isFinite(z.temp) ? z.temp : TEMPERATUR_ERSATZ_C;
-    const a = energieAnteile_(MODELL_STANDARD, Number(z.km), Number(z.hmAuf), Number(z.hmAb), Number(z.kmh) || 120, temp, Number(z.zusatzKg) || 0);
+    // echte Fahrten mit nur Ø-Tempo: auf das Verbrauchstempo hochrechnen (GPX hat es schon, ABRP/My CUPRA ihr eigenes)
+    const kmh = (Number(z.kmh) || 120) * (quelle === 'gemessen' ? verbrauch.faktor : 1);
+    const a = energieAnteile_(MODELL_STANDARD, Number(z.km), Number(z.hmAuf), Number(z.hmAb), kmh, temp, Number(z.zusatzKg) || 0);
     const real = (Number(z.start) - Number(z.ende)) / 100 * kap;
     const gueltig = isFinite(a.fahrt) && isFinite(real) && real > 0.5 && Number(z.km) >= 10;
     const gewicht = gewichtFuer_(quelle, z.bordcomputer !== '' && z.bordcomputer !== undefined && z.bordcomputer !== null, !!z.dauer);
@@ -690,6 +732,8 @@ function kalibriereZeilen_(zeilen, routenTempo) {
 
   modell.tempo = tempoFaktor_(zeilen, routenTempo); // { faktor, fahrten } – die App rechnet damit das Reisetempo
   modell.tempo.stand = modell.erzeugt;
+  modell.tempo.verbrauch = verbrauch.faktor;          // × Reisetempo = Tempo für den Verbrauch
+  modell.tempo.verbrauch_fahrten = verbrauch.fahrten;
 
   const verwendet = erg.filter(function (e) { return e.verwenden; });
   modell.kalibrierung = {
@@ -706,6 +750,9 @@ function kalibriereZeilen_(zeilen, routenTempo) {
   text += '\nTempo: ' + (modell.tempo.fahrten
     ? 'Faktor ' + String(modell.tempo.faktor).replace('.', ',') + ' auf den Schnitt der Route (aus ' + modell.tempo.fahrten + ' echten Fahrt(en))'
     : 'Schnitt der Route (noch keine echte Fahrt mit Bordcomputer-Tempo)');
+  text += '\nVerbrauchstempo: ' + (verbrauch.fahrten
+    ? 'Faktor ' + String(verbrauch.faktor).replace('.', ',') + ' auf das Ø-Tempo (aus ' + verbrauch.fahrten + ' GPX-Abschnitt(en))'
+    : 'wie Ø-Tempo (noch keine GPX-Auswertung)');
   const ausreisser = erg.filter(function (e) { return e.ausreisser; });
   if (ausreisser.length) text += '\nNicht verwendet (Ausreißer): ' + ausreisser.map(function (e) { return e.notiz || '–'; }).join('; ');
   const q = modell.kalibrierung.quellen;
@@ -724,30 +771,9 @@ function speichereFahrt(daten) {
     const fehler = pruefeFahrt_(daten);
     if (fehler) return { ok: false, fehler: fehler };
     const f = normalisiereFahrt_(daten);
-
-    const tStart = temperaturBei_(f.start_lat, f.start_lon, f.start_zeit);
-    const tEnde = temperaturBei_(f.ende_lat, f.ende_lon, f.ende_zeit);
-    const vorhanden = [tStart, tEnde].filter(function (t) { return t !== null; });
-    const tMittel = vorhanden.length ? vorhanden.reduce(function (a, b) { return a + b; }, 0) / vorhanden.length : null;
-    const dauer = (new Date(f.ende_zeit).getTime() - new Date(f.start_zeit).getTime()) / 3.6e6;
-    const kmh = f.bordcomputer_kmh || (dauer > 0 ? f.km / dauer : f.geschwindigkeit);
-
-    const blatt = fahrtenBlatt_();
-    const zeile = SPALTEN_FAHRTEN.map(function () { return ''; });
-    const setze = function (spalte, wert) { zeile[SPALTEN_FAHRTEN.indexOf(spalte)] = wert; };
-    setze('erfasst', new Date());
-    setze('Route', f.route); setze('Richtung', f.richtung);
-    setze('Start', new Date(f.start_zeit)); setze('Ende', new Date(f.ende_zeit));
-    setze('Start Lat', f.start_lat); setze('Start Lon', f.start_lon); setze('Ende Lat', f.ende_lat); setze('Ende Lon', f.ende_lon);
-    setze('km', runde_(f.km, 1)); setze('hm auf', Math.round(f.hm_auf)); setze('hm ab', Math.round(f.hm_ab));
-    setze('Dauer h', runde_(dauer, 2)); setze('Ø km/h Bordcomputer', f.bordcomputer_kmh || ''); setze('km/h verwendet', Math.round(kmh));
-    setze('Zusatzgewicht kg', f.zusatzgewicht);
-    setze('Temp Start', tStart === null ? '' : runde_(tStart, 1)); setze('Temp Ende', tEnde === null ? '' : runde_(tEnde, 1));
-    setze('Temp Ø', tMittel === null ? '' : runde_(tMittel, 1));
-    setze('Akku Start %', f.start_soc); setze('Akku Ende %', f.ende_soc);
-    setze('Akku erwartet %', f.erwartet === null ? '' : Math.round(f.erwartet));
-    setze('verwenden', 'ja'); setze('Notiz', f.notiz); setze('Quelle', 'gemessen');
-    blatt.appendRow(zeile);
+    const z = fahrtZeile_(f, 'gemessen');
+    const kmh = z.kmh, tMittel = z.tMittel;
+    fahrtenBlatt_().appendRow(z.zeile);
     SpreadsheetApp.flush();
 
     const kal = kalibriereUndVeroeffentliche_();
@@ -757,6 +783,71 @@ function speichereFahrt(daten) {
       ok: true,
       meldung: 'Fahrt gespeichert: ' + runde_(f.km, 0) + ' km, ' + (tMittel === null ? 'Temperatur unbekannt (15 °C angenommen)' : 'Ø ' + runde_(tMittel, 0) + ' °C') +
         ', ' + Math.round(kmh) + ' km/h' + (f.bordcomputer_kmh ? ' (Bordcomputer)' : ' (aus der Fahrzeit geschätzt)') + '.\n' + vorher + '\n' + kal.text,
+      warnung: kal.fehler || '',
+    };
+  } finally {
+    sperre.releaseLock();
+  }
+}
+
+/**
+ * Zeile fürs Blatt „Fahrten" aus einer normalisierten Fahrt (holt die Temperaturen bei Open-Meteo).
+ * kmh: f.kmh (z. B. Verbrauchstempo aus GPX), sonst Bordcomputer, sonst aus der Fahrzeit.
+ */
+function fahrtZeile_(f, quelle) {
+  const tStart = temperaturBei_(f.start_lat, f.start_lon, f.start_zeit);
+  const tEnde = temperaturBei_(f.ende_lat, f.ende_lon, f.ende_zeit);
+  const vorhanden = [tStart, tEnde].filter(function (t) { return t !== null; });
+  const tMittel = vorhanden.length ? vorhanden.reduce(function (a, b) { return a + b; }, 0) / vorhanden.length : null;
+  const dauer = (new Date(f.ende_zeit).getTime() - new Date(f.start_zeit).getTime()) / 3.6e6;
+  const kmh = f.kmh || f.bordcomputer_kmh || (dauer > 0 ? f.km / dauer : f.geschwindigkeit);
+
+  const zeile = SPALTEN_FAHRTEN.map(function () { return ''; });
+  const setze = function (spalte, wert) { zeile[SPALTEN_FAHRTEN.indexOf(spalte)] = wert; };
+  setze('erfasst', new Date());
+  setze('Route', f.route); setze('Richtung', f.richtung);
+  setze('Start', new Date(f.start_zeit)); setze('Ende', new Date(f.ende_zeit));
+  setze('Start Lat', f.start_lat); setze('Start Lon', f.start_lon); setze('Ende Lat', f.ende_lat); setze('Ende Lon', f.ende_lon);
+  setze('km', runde_(f.km, 1)); setze('hm auf', Math.round(f.hm_auf)); setze('hm ab', Math.round(f.hm_ab));
+  setze('Dauer h', runde_(dauer, 2)); setze('Ø km/h Bordcomputer', f.bordcomputer_kmh || ''); setze('km/h verwendet', Math.round(kmh));
+  setze('Zusatzgewicht kg', f.zusatzgewicht);
+  setze('Temp Start', tStart === null ? '' : runde_(tStart, 1)); setze('Temp Ende', tEnde === null ? '' : runde_(tEnde, 1));
+  setze('Temp Ø', tMittel === null ? '' : runde_(tMittel, 1));
+  setze('Akku Start %', f.start_soc); setze('Akku Ende %', f.ende_soc);
+  setze('Akku erwartet %', f.erwartet === null ? '' : Math.round(f.erwartet));
+  setze('verwenden', 'ja'); setze('Notiz', f.notiz); setze('Quelle', quelle);
+  return { zeile: zeile, kmh: kmh, tMittel: tMittel };
+}
+
+/**
+ * Seite „Messwerte": mehrere Messstücke auf einmal speichern und einmal kalibrieren (Christof, 17.10.2026).
+ * Stücke kommen aus der App (zwischen zwei Akkuwerten, ab 50 km, Quelle „gemessen") oder aus „Fahrt auswerten"
+ * (GPX, zwischen Ladestopps, Quelle „GPX" mit Verbrauchstempo in kmh und Ø-Tempo beim Fahren in bordcomputer_kmh).
+ */
+function speichereMesswerte(liste) {
+  const sperre = LockService.getScriptLock();
+  sperre.waitLock(30000);
+  try {
+    if (!Array.isArray(liste) || liste.length === 0) return { ok: false, fehler: 'Keine Messwerte übergeben.' };
+    if (liste.length > MESSWERTE_MAX) return { ok: false, fehler: 'Höchstens ' + MESSWERTE_MAX + ' Messwerte auf einmal.' };
+    const fehler = [];
+    liste.forEach(function (d, i) { const t = pruefeFahrt_(d); if (t) fehler.push('Stück ' + (i + 1) + ': ' + t); });
+    if (fehler.length) return { ok: false, fehler: fehler.join('\n') };
+
+    const zeilen = liste.map(function (d) {
+      const f = normalisiereFahrt_(d);
+      f.kmh = Number(d.kmh) >= 20 && Number(d.kmh) <= 200 ? Number(d.kmh) : null;
+      return fahrtZeile_(f, d.quelle === QUELLE_GPX ? QUELLE_GPX : 'gemessen').zeile;
+    });
+    const blatt = fahrtenBlatt_();
+    blatt.getRange(blatt.getLastRow() + 1, 1, zeilen.length, SPALTEN_FAHRTEN.length).setValues(zeilen);
+    SpreadsheetApp.flush();
+
+    const kal = kalibriereUndVeroeffentliche_();
+    const km = liste.reduce(function (s, d) { return s + Number(d.km); }, 0);
+    return {
+      ok: true,
+      meldung: liste.length + ' Messwert(e) gespeichert (' + Math.round(km) + ' km).\n\n' + kal.text,
       warnung: kal.fehler || '',
     };
   } finally {
@@ -997,8 +1088,12 @@ function speichereVergleich(daten) {
 /** Stündliche Temperatur von Open-Meteo (kostenlos, ohne Schlüssel) zur nächstgelegenen Stunde; null, wenn nicht verfügbar. */
 function temperaturBei_(lat, lon, iso) {
   try {
-    const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon +
-      '&hourly=temperature_2m&past_days=5&forecast_days=1&timezone=UTC';
+    // Vorhersage-Dienst reicht 5 Tage zurück; ältere Fahrten (GPX-Auswertung) aus dem Archiv
+    const tag = new Date(iso).toISOString().slice(0, 10);
+    const alt = Date.now() - new Date(iso).getTime() > 4 * 864e5;
+    const url = alt
+      ? 'https://archive-api.open-meteo.com/v1/archive?latitude=' + lat + '&longitude=' + lon + '&start_date=' + tag + '&end_date=' + tag + '&hourly=temperature_2m&timezone=UTC'
+      : 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon + '&hourly=temperature_2m&past_days=5&forecast_days=1&timezone=UTC';
     const antwort = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
     if (antwort.getResponseCode() !== 200) return null;
     const j = JSON.parse(antwort.getContentText());

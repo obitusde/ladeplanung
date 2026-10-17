@@ -6,7 +6,7 @@ const path = require('path');
 
 const wurzel = path.join(__dirname, '..');
 const quelle = fs.readFileSync(path.join(wurzel, 'apps-script', 'Code.js'), 'utf8');
-const gs = new Function(quelle + '; return { energieAnteile_, energieKwh_, kalibriere_, kalibriereZeilen_, loese3_, pruefeFahrt_, normalisiereFahrt_, tempoFaktor_, MODELL_STANDARD };')();
+const gs = new Function(quelle + '; return { energieAnteile_, energieKwh_, kalibriere_, kalibriereZeilen_, loese3_, pruefeFahrt_, normalisiereFahrt_, tempoFaktor_, verbrauchFaktor_, MODELL_STANDARD };')();
 const M = gs.MODELL_STANDARD;
 
 let fehler = 0;
@@ -120,6 +120,30 @@ const tf = gs.tempoFaktor_(tempoZeilen, routenTempo);
 pruefe(tf.fahrten === 2 && Math.abs(tf.faktor - ((120 / 109 * 300 + 1 * 100) / 400)) < 0.002, 'Tempo-Faktor: ' + JSON.stringify(tf));
 pruefe(JSON.stringify(gs.tempoFaktor_([], routenTempo)) === '{"faktor":1,"fahrten":0}', 'ohne echte Fahrt Faktor 1');
 pruefe(gs.tempoFaktor_([{ route: 'neuenrade', km: 300, bordcomputer: 300, quelle: 'gemessen' }], routenTempo).faktor === 1.4, 'Faktor begrenzt');
+
+// Fahrt auswerten (auswertung.html) rechnet mit einer Kopie des Energie-Blocks
+const ohneEinzug = t => t.split('\n').map(z => z.trim()).join('\n').trim();
+const ausw = fs.readFileSync(path.join(wurzel, 'auswertung.html'), 'utf8').match(/\/\/ ENERGIE-START[^\n]*\n([\s\S]*?)\/\/ ENERGIE-ENDE/);
+pruefe(!!ausw && !!block && ohneEinzug(ausw[1]) === ohneEinzug(block[1]), 'ENERGIE-Block in auswertung.html = index.html');
+
+// Verbrauchstempo aus GPX-Zeilen (Christof, 17.10.2026): Verbrauchstempo / Ø-Tempo, km-gewichtet
+const vf = gs.verbrauchFaktor_([
+  { quelle: 'GPX', km: 300, kmh: 101, bordcomputer: 87 },
+  { quelle: 'GPX', km: 100, kmh: 100, bordcomputer: 84 },
+  { quelle: 'gemessen', km: 500, kmh: 90, bordcomputer: 80 },   // zählt nicht
+  { quelle: 'GPX', km: 200, kmh: 99, bordcomputer: 80, verwenden: 'nein' },
+]);
+pruefe(vf.fahrten === 2 && Math.abs(vf.faktor - (101 / 87 * 300 + 100 / 84 * 100) / 400) < 0.002, 'Verbrauchsfaktor: ' + JSON.stringify(vf));
+pruefe(JSON.stringify(gs.verbrauchFaktor_([])) === '{"faktor":1,"fahrten":0}', 'ohne GPX Faktor 1');
+// kalibriereZeilen_: „gemessen" wird mit dem Faktor hochgerechnet, GPX nicht, ABRP nicht
+const zeileBasis = { km: 200, hmAuf: 100, hmAb: 100, temp: 15, zusatzKg: 0, start: 90, ende: 40, dauer: true, verwenden: 'ja' };
+const kz = gs.kalibriereZeilen_([
+  { ...zeileBasis, quelle: 'GPX', kmh: 110, bordcomputer: 100 },
+  { ...zeileBasis, quelle: 'gemessen', kmh: 100, bordcomputer: 100 },
+  { ...zeileBasis, quelle: 'ABRP', kmh: 100 },
+], {});
+pruefe(kz.modell.tempo.verbrauch === 1.1 && kz.modell.tempo.verbrauch_fahrten === 1, 'modell.tempo.verbrauch: ' + JSON.stringify(kz.modell.tempo));
+pruefe(Math.abs(kz.zeilen[1].a.fahrt - kz.zeilen[0].a.fahrt) < 1e-9 && kz.zeilen[2].a.fahrt < kz.zeilen[1].a.fahrt, '„gemessen" mit Verbrauchstempo, ABRP ohne');
 
 console.log(fehler === 0 ? 'Alle Prüfungen bestanden.' : fehler + ' Prüfungen fehlgeschlagen.');
 process.exit(fehler === 0 ? 0 : 1);

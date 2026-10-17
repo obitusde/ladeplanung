@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<!--
+  Ladeplanung — Messwerte speichern. Wird von doGet() mit ?seite=messwerte&stuecke=<JSON-Liste> ausgeliefert:
+  Messstücke aus der App (zwischen zwei Akkuwerten, ab 50 km) oder aus „Fahrt auswerten" (GPX, zwischen Ladestopps).
+  Alle angehakten Stücke werden ins Blatt „Fahrten" geschrieben, danach wird einmal kalibriert.
+  Version 0.1.0 (17.10.2026)
+-->
+<html lang="de">
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script>window.__status = {"modell":{"gespeichert":3,"kalibrierung":{"fahrten":3,"abweichung_prozent":2.4,"methode":"Gesamtfaktor aus 3 Fahrt(en)"}},"punkte":41,"ohneKoordinaten":1,"nichtAufloesbar":0,"ohneRoute":["p019 EnBW Ladestation Lörrach"],"letzterExport":"2026-09-15T09:35:21.521Z","routen":[{"id":"neuenrade","name":"Morges – Neuenrade","laenge":"716.4","stand":"15.09.2026 09:34","aktuell":false},{"id":"savona_simplon","name":"Morges – Savona (Simplon)","laenge":"478.2","stand":"Fehler: ORS HTTP 403: Quota exceeded","aktuell":false},{"id":"ingolstadt","name":"Morges – Ingolstadt","laenge":"620.7","stand":"15.09.2026 09:34","aktuell":true}]}; window.__preise = { "version": 1, "stand": "2026-10-16", "anbieter": [ { "app": { "name": "EnBW mobility+", "url": "https://play.google.com/store/apps/details?id=com.enbw.ev" }, "tarife": [ { "name": "S", "kwh": 0.56, "grund_monat": 0 }, { "grund_monat": 5.99, "kwh": 0.46, "name": "M" }, { "kwh": 0.39, "grund_monat": 11.99, "name": "L" } ], "suche": "https://www.enbw.com/elektromobilitaet/produkte/ladetarife", "betreiber": "EnBW", "hinweis": "an EnBW-Säulen, AC und DC gleich; bis 30.09.2026 Sommeraktion −5 ct/kWh", "waehrung": "EUR", "land": "DE" }, { "betreiber": "EWE Go", "waehrung": "EUR", "land": "DE", "app": { "name": "EWE Go", "url": "https://play.google.com/store/apps/details?id=de.ewe.go.app" }, "hinweis": "An EWE-Go-Ladestationen, AC und DC gleich, keine Blockiergebühr, kostenlose Ladekarte/App", "suche": "https://www.ewe-go.de/", "tarife": [ { "grund_monat": 0, "kwh": 0.52, "name": "EWE Go Ladetarif" } ] }, { "hinweis": "Mit AMAG-App oder -Ladekarte (bzw. autoSense chargeON) an Ladestationen der AMAG-Gruppe, AC und DC einheitlich", "tarife": [ { "grund_monat": 0, "name": "App / Ladekarte", "kwh": 0.28 } ], "betreiber": "AMAG", "suche": "https://www.amag-group.ch/de/neuer-ladetarif-der-amag-gruppe.html", "auch": [ "Porsche" ], "app": { "url": "https://play.google.com/store/apps/details?id=ch.amag.amagapp", "name": "AMAG" }, "land": "CH", "waehrung": "CHF" }, { "suche": "https://www.tesla.com/de_ch/support/charging/supercharger/fees", "waehrung": "CHF", "app": { "url": "https://play.google.com/store/apps/details?id=com.teslamotors.tesla", "name": "Tesla" }, "betreiber": "Tesla", "hinweis": "je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App", "land": "CH", "tarife": [ { "kwh": 0.4, "grund_monat": 0, "name": "Fremdfahrzeug", "kwh_bis": 0.73 } ] }, { "hinweis": "je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App", "waehrung": "EUR", "land": "DE", "tarife": [ { "name": "Fremdfahrzeug", "grund_monat": 0, "kwh_bis": 0.72, "kwh": 0.52 } ], "betreiber": "Tesla", "app": { "url": "https://play.google.com/store/apps/details?id=com.teslamotors.tesla", "name": "Tesla" }, "suche": "https://www.tesla.com/de_de/support/charging/supercharger/fees" }, { "suche": "https://www.tesla.com/it_it/support/charging/supercharger/fees", "land": "IT", "betreiber": "Tesla", "tarife": [ { "name": "Fremdfahrzeug", "grund_monat": 0, "kwh": 0.6 } ], "hinweis": "je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App", "app": { "name": "Tesla", "url": "https://play.google.com/store/apps/details?id=com.teslamotors.tesla" }, "waehrung": "EUR" }, { "betreiber": "Migrol", "land": "CH", "suche": "https://www.migrol.ch/de/blog/migrol-charge-preise/", "waehrung": "CHF", "tarife": [ { "grund_monat": 0, "kw_bis": 22, "name": "M-Charge < 22 kW", "kwh": 0.38 }, { "kw_bis": 64, "kwh": 0.48, "name": "M-Charge < 64 kW", "grund_monat": 0 }, { "kwh": 0.55, "grund_monat": 0, "name": "M-Charge < 200 kW", "kw_bis": 200 }, { "name": "M-Charge < 400 kW", "kwh": 0.59, "grund_monat": 0, "kw_bis": 400 } ], "hinweis": "Preise gelten an M-Charge Ladestationen; keine Blockiergebühr", "app": { "url": "https://play.google.com/store/apps/details?id=ch.migrol.mcharge", "name": "M-Charge" } } ] };</script>
+  <script>
+  window.__aufrufe = [];
+  const antwort = (r, wert) => setTimeout(() => r.ok(wert), 200);
+  window.google = { script: { get run() {
+    const r = { ok: null, fehler: null,
+      withSuccessHandler(f) { this.ok = f; return this; },
+      withFailureHandler(f) { this.fehler = f; return this; },
+      speicherePunkt(d) { __aufrufe.push(['speicherePunkt', d]); antwort(this, { ok: true, meldung: 'Gespeichert: Richtung, Notiz.', warnung: '',
+        punkt: { id: 'p023', name: 'EnBW Ladestation Lorsch', zuordnung: [{ route: 'Morges – Neuenrade', km: 468, quer_km: 4.2, strasse: 'A 5', raststaette: false }] } }); },
+      loeschePunkt(id) { __aufrufe.push(['loeschePunkt', id]); antwort(this, { ok: true, meldung: 'Gelöscht: p023 EnBW Ladestation Lorsch.\nDie Zeile liegt im Blatt „Gelöscht" und kann von dort zurückkopiert werden.', warnung: '' }); },
+      legePunktAn(d) { __aufrufe.push(['legePunktAn', d]);
+        if (d.trotzdem) return antwort(this, { ok: true, meldung: 'Angelegt als p048: EnBW Ladestation Appenweier.', warnung: '', punkt: { id: 'p048', name: 'EnBW Ladestation Appenweier', zuordnung: [{ route: 'Morges – Neuenrade', km: 330, quer_km: 0.1, strasse: 'A 5', raststaette: true }] } });
+        if (/doppelt/.test(d.link)) return antwort(this, { ok: false, dublette: { id: 'p010', name: 'EnBW Ladestation Haiger', abstand_m: 12 } });
+        antwort(this, { ok: false, naehe: { id: 'p011', name: 'EnBW Ladestation Appenweier', abstand_m: 240 } }); },
+      speichereFahrt(d) { __aufrufe.push(['speichereFahrt', d]); antwort(this, { ok: true, warnung: '',
+        meldung: 'Fahrt gespeichert: 212 km, Ø 12 °C, 118 km/h (Bordcomputer).\nErwartet waren 31 %, tatsächlich 27 % (-4).\n\nVerbrauchsmodell: Gesamtfaktor aus 1 Fahrt(en).\nKorrektur: gesamt 1.09, Fahrt 1, Höhe 1, Heizung 1\nØ Abweichung: 0 % Akku je Fahrt.' }); },
+      speichereVergleich(d) { __aufrufe.push(['speichereVergleich', d]); antwort(this, { ok: true, warnung: '',
+        meldung: d.quelle + ': 35 % Akku für 205 km.', kalibrierung: 'Verbrauchsmodell: Gesamtfaktor aus 1 Fahrt(en).\nABRP: 1 × Ø 0 % Abweichung (Modell im Schnitt +0 %)',
+        zeile: { von: d.von, nach: d.nach, km: 205, referenz: d.start_soc - d.ende_soc, modell: 38, quelle: d.quelle } }); },
+      preiseVorschlagen() { __aufrufe.push(['preiseVorschlagen']);
+        const alt = window.__preise.anbieter;
+        antwort(this, { ok: true, modell: 'google/gemini-3.8-flash', vorschlaege: alt.map((a, i) => i === 0
+          ? { alt: a, neu: { tarife: [{ name: 'S', kwh: 0.59, grund_monat: 0 }, { name: 'M', kwh: 0.49, grund_monat: 5.99 }, { name: 'L', kwh: 0.42, grund_monat: 11.99 }], hinweis: 'ab 1.10.2026', quelle: 'https://www.enbw.com', sicher: true } }
+          : i === 1 ? { alt: a, fehler: 'OpenRouter HTTP 429: Rate limit' }
+          : i === 3 ? { alt: a, neu: { tarife: [{ name: 'Fremdfahrzeug', kwh: 0.45, kwh_bis: 0.79, grund_monat: 0 }], hinweis: '', quelle: 'https://www.tesla.com', sicher: false, grund: 'Preis je Standort und Uhrzeit verschieden' } }
+          : { alt: a, neu: { tarife: a.tarife, hinweis: a.hinweis, quelle: 'https://example.org/preise', sicher: true } }), suche: 'Google-Suche des Modells' }); },
+      speichereMesswerte(liste) { __aufrufe.push(['speichereMesswerte', liste]);
+        antwort(this, { ok: true, warnung: '', meldung: liste.length + ' Messwert(e) gespeichert (446 km).\n\nVerbrauchsmodell: Gesamtfaktor aus 8 Wert(en).\nVerbrauchstempo: Faktor 1,18 auf das Ø-Tempo (aus 2 GPX-Abschnitt(en))' }); },
+      preiseSpeichern(anbieter) { __aufrufe.push(['preiseSpeichern', anbieter]); antwort(this, { ok: true, text: 'Gespeichert – in der App nach 1–2 Minuten sichtbar.', preise: { stand: '2026-10-16', anbieter } }); },
+      wartungAusfuehren(aktion) { __aufrufe.push(['wartungAusfuehren', aktion]);
+        const texte = { bereinigen_vorschau: 'Punkte bereinigen v0.12.0 — Vorschau, nichts geändert\nZusammenführen: p032 → p010 (EnBW Ladestation Haiger)', routen: 'Routen berechnen v0.12.0\nneuenrade: unverändert, übersprungen\n\nExport v0.12.0\nneuenrade: 26 Punkte, 716.36 km' };
+        antwort(this, { ok: true, text: texte[aktion] || 'Export v0.12.0\n41 Punkte exportiert', status: Object.assign({}, window.__status, { routen: window.__status.routen.map(x => Object.assign({}, x, { aktuell: true, stand: '15.09.2026 11:40' })) }) }); },
+    };
+    return r;
+  } } };
+</script>
+  <meta charset="utf-8">
+  <style>
+    :root {
+      --grund: #ffffff; --flaeche: #f2f2f2; --text: #000000; --leise: #3d3d3d; --linie: #c8c8c8;
+      --akzent: #9a4a00; --akzent-text: #ffffff; --fehler: #7a0000; --fehler-grund: #ffe3e3; --ok-grund: #e4f4e4;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --grund: #000000; --flaeche: #161616; --text: #ffffff; --leise: #c4c4c4; --linie: #3a3a3a;
+        --akzent: #ffac4a; --akzent-text: #000000; --fehler: #ffc9c9; --fehler-grund: #3d0b0b; --ok-grund: #0f2a12;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--grund); color: var(--text); font: 17px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 560px; margin: 0 auto; padding: 16px; }
+    h1 { font-size: 24px; margin: 4px 0 6px; }
+    .leise { color: var(--leise); margin: 0 0 12px; overflow-wrap: anywhere; }
+    .karte { border: 1px solid var(--linie); border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; }
+    .karte b { display: block; }
+    .karte .zeile { color: var(--leise); font-size: 15px; font-variant-numeric: tabular-nums; }
+    label.wahl { display: flex; gap: 10px; align-items: center; margin-top: 6px; font-weight: 700; }
+    label.wahl input { width: 24px; height: 24px; }
+    label.feld { display: grid; gap: 4px; margin: 14px 0; font-weight: 600; }
+    label.feld small { font-weight: 400; color: var(--leise); }
+    input[type=number] {
+      font: inherit; color: inherit; background: var(--flaeche);
+      border: 2px solid var(--linie); border-radius: 10px; padding: 10px; width: 100%; min-height: 50px;
+    }
+    .knopf {
+      display: flex; align-items: center; justify-content: center; width: 100%; min-height: 54px; margin-top: 10px;
+      border-radius: 10px; border: 2px solid var(--linie); background: var(--flaeche); color: var(--text);
+      font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; text-align: center; padding: 0 12px;
+    }
+    .knopf.haupt { background: var(--akzent); border-color: var(--akzent); color: var(--akzent-text); }
+    .knopf:disabled { opacity: .6; }
+    .hinweis { padding: 12px; border-radius: 10px; margin: 12px 0; white-space: pre-line; overflow-wrap: anywhere; }
+    .hinweis.fehler { background: var(--fehler-grund); color: var(--fehler); font-weight: 600; }
+    .hinweis.ok { background: var(--ok-grund); }
+  </style>
+  <script>
+    // Auf dem Handy erscheint die Seite teils in Desktop-Breite und damit winzig (03.10.2026) → auf Gerätebreite hochskalieren
+    (function () {
+      var breite = window.innerWidth, geraet = screen.width;
+      if (geraet && geraet < 600 && breite > geraet * 1.15) document.documentElement.style.zoom = String(Math.min(3, breite / geraet));
+    })();
+  </script>
+</head>
+<body>
+  <main>
+    <h1>Messwerte speichern</h1>
+    <p class="leise" id="einleitung"></p>
+    <div id="liste"></div>
+    <label class="feld">Zusatzgewicht (kg) <small>Beifahrer, Gepäck, Dachbox – gilt für alle Stücke</small>
+      <input id="zusatzgewicht" type="number" inputmode="numeric" min="0" max="1000" value="0">
+    </label>
+    <div id="hinweis" class="hinweis" hidden></div>
+    <button id="speichern" class="knopf haupt">Speichern und kalibrieren</button>
+    <a id="zur-app" class="knopf" href="#">Zur App</a>
+    <p id="version" class="leise"></p>
+  </main>
+
+  <script>
+    'use strict';
+    const MODELL = {"stuecke":[{"quelle":"GPX","route":"gpx","richtung":"hin","titel":"Tesla Herbolzheim → EnBW Hüttenberg","start_zeit":"2026-10-16T14:21:33Z","ende_zeit":"2026-10-16T17:52:46Z","start_lat":48.22746,"start_lon":7.75638,"ende_lat":50.5222,"ende_lon":8.5927,"km":307.3,"hm_auf":300,"hm_ab":269,"start_soc":91,"ende_soc":6,"kmh":101,"bordcomputer_kmh":87,"geschwindigkeit":87,"erwartet":6.9,"notiz":"GPX fahrt.gpx: Tesla Herbolzheim → EnBW Hüttenberg"},{"quelle":"GPX","route":"gpx","richtung":"hin","titel":"EnBW Hüttenberg → Ziel","start_zeit":"2026-10-16T18:17:00Z","ende_zeit":"2026-10-16T19:56:00Z","start_lat":50.5222,"start_lon":8.5927,"ende_lat":51.28,"ende_lon":7.78,"km":139.2,"hm_auf":895,"hm_ab":759,"start_soc":60,"ende_soc":16,"kmh":100,"bordcomputer_kmh":84,"geschwindigkeit":84,"erwartet":15.2,"notiz":""}],"appUrl":"https://obitusde.github.io/ladeplanung/","formularUrl":"https://script.google.com/macros/s/TEST/exec","version":"0.12.0"};
+    const $ = id => document.getElementById(id);
+    const stuecke = MODELL.stuecke || [];
+    $('zur-app').href = MODELL.appUrl;
+    $('version').textContent = 'Apps Script v' + MODELL.version;
+    const el = (tag, klasse, text) => { const e = document.createElement(tag); if (klasse) e.className = klasse; if (text !== undefined) e.textContent = text; return e; };
+    const zeit = iso => new Date(iso).toLocaleString('de-CH', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const uhr = iso => new Date(iso).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' });
+    const zahl = (x, n) => Number(x).toLocaleString('de-DE', { maximumFractionDigits: n || 0 });
+
+    const gpx = stuecke.some(s => s.quelle === 'GPX');
+    $('einleitung').textContent = stuecke.length + ' Stück(e) ' + (gpx ? 'aus der Fahrt-Auswertung (GPX)' : 'aus der App (zwischen zwei Akkuwerten)') +
+      '. Angehakte werden im Blatt „Fahrten" gespeichert, danach lernt das Verbrauchsmodell neu. Die Temperatur holt das Script selbst.';
+    if (stuecke.length && stuecke[0].zusatzgewicht) $('zusatzgewicht').value = stuecke[0].zusatzgewicht;
+
+    stuecke.forEach((s, i) => {
+      const k = el('div', 'karte');
+      k.append(el('b', '', (s.titel || ('Stück ' + (i + 1))) + ' · ' + zahl(s.km) + ' km'));
+      k.append(el('div', 'zeile', zeit(s.start_zeit) + ' – ' + uhr(s.ende_zeit)));
+      k.append(el('div', 'zeile', 'Akku ' + s.start_soc + ' → ' + s.ende_soc + ' % (' + (s.start_soc - s.ende_soc) + ' % gebraucht' +
+        (s.erwartet !== undefined && s.erwartet !== null ? ', Modell bisher ≈ ' + Math.round(s.start_soc - s.erwartet) + ' %' : '') + ')'));
+      k.append(el('div', 'zeile', 'Höhe +' + Math.round(s.hm_auf || 0) + ' / −' + Math.round(s.hm_ab || 0) + ' m · ' +
+        (s.quelle === 'GPX' ? 'Ø ' + Math.round(s.bordcomputer_kmh) + ' km/h beim Fahren, Verbrauchstempo ' + Math.round(s.kmh) + ' km/h' : 'Tempo ' + Math.round(s.kmh) + ' km/h')));
+      if (s.notiz) k.append(el('div', 'zeile', s.notiz));
+      const l = el('label', 'wahl'), c = el('input'); c.type = 'checkbox'; c.checked = true; c.dataset.i = i;
+      l.append(c, 'verwenden'); k.append(l);
+      $('liste').append(k);
+    });
+
+    function zeige(text, art) { const h = $('hinweis'); h.textContent = text; h.className = 'hinweis ' + art; h.hidden = false; h.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+
+    $('speichern').addEventListener('click', () => {
+      const gewicht = $('zusatzgewicht').value.trim();
+      const gewaehlt = [...document.querySelectorAll('#liste input:checked')].map(c => Object.assign({}, stuecke[Number(c.dataset.i)], { zusatzgewicht: gewicht }));
+      if (!gewaehlt.length) { zeige('Nichts angehakt.', 'fehler'); return; }
+      $('speichern').disabled = true;
+      $('speichern').textContent = 'Wird gespeichert …';
+      google.script.run
+        .withSuccessHandler(erg => {
+          $('speichern').textContent = 'Speichern und kalibrieren';
+          if (!erg.ok) { $('speichern').disabled = false; zeige(erg.fehler, 'fehler'); return; }
+          zeige('✓ ' + erg.meldung + (erg.warnung ? '\n\n⚠ ' + erg.warnung : ''), 'ok');
+          $('speichern').hidden = true;
+        })
+        .withFailureHandler(f => { $('speichern').disabled = false; $('speichern').textContent = 'Speichern und kalibrieren'; zeige('Fehler: ' + ((f && f.message) || f), 'fehler'); })
+        .speichereMesswerte(gewaehlt);
+    });
+  </script>
+</body>
+</html>

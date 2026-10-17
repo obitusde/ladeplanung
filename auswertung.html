@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<!--
+  Ladeplanung — Fahrt auswerten (GPX). Version 0.1.0 (17.10.2026, Christof: Garmin-Aufzeichnung Ovronnaz → Neuenrade)
+  Liest eine GPX-Datei NUR im Browser (nichts wird hochgeladen): Fahrzeit, Stopps, Ladestopps, Tempo, Strecke.
+  Mit den Akkuständen an Start, Ladestopps und Ziel entstehen Messwerte (Quelle „GPX") für die Kalibrierung:
+  km und Höhenmeter aus der Aufzeichnung (geglättet wie in der App), Ø-Tempo beim Fahren und das Verbrauchstempo
+  (energiegleiches Tempo: Wurzel aus dem km-gewichteten Mittel von v² je 5 km). Gesendet werden nur diese Abschnittswerte
+  an die Seite „Messwerte" (Google-Login), nie die Spur. Ins Netz geht sonst nur: routes.json/fremde.json/modell.json laden
+  und die Temperatur je Abschnitt bei Open-Meteo (Ort auf 0,1° gerundet).
+  Rechenblöcke LINIE und ENERGIE sind Kopien aus index.html (tests/test-linie.js, tests/test-modell.js prüfen das).
+-->
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#000000">
+<title>Fahrt auswerten</title>
+<link rel="icon" href="icon-192.png">
+<style>
+  :root {
+    color-scheme: light;
+    --surface-0: #f4f3f0; --surface-1: #fcfcfb; --linie: #dedcd6; --raster: #ebe9e4;
+    --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #6f6e69;
+    --fahren: #2a78d6; --laden: #eb6834; --halt: #1baf7a; --akzent: #9a4a00; --akzent-text: #ffffff; --fehler: #9b1c1c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface-0: #000000; --surface-1: #161616; --linie: #34332f; --raster: #262624;
+      --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #9a998f;
+      --fahren: #3987e5; --laden: #d95926; --halt: #199e70; --akzent: #ffac4a; --akzent-text: #000000; --fehler: #ff9c9c;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-0: #000000; --surface-1: #161616; --linie: #34332f; --raster: #262624;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #9a998f;
+    --fahren: #3987e5; --laden: #d95926; --halt: #199e70; --akzent: #ffac4a; --akzent-text: #000000; --fehler: #ff9c9c;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--surface-0); color: var(--text-primary); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 14px 16px 48px; }
+  .kopf { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+  .kopf a { color: var(--akzent); font-weight: 700; text-decoration: none; white-space: nowrap; }
+  h1 { font-size: 24px; margin: 0; }
+  h2 { font-size: 17px; margin: 0 0 4px; }
+  .unter, .erkl { color: var(--text-secondary); font-size: 14px; margin: 0 0 10px; }
+  .knopf {
+    display: flex; align-items: center; justify-content: center; width: 100%; min-height: 52px; margin-top: 10px;
+    border-radius: 10px; border: 2px solid var(--linie); background: var(--surface-1); color: var(--text-primary);
+    font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; text-align: center; padding: 0 12px;
+  }
+  .knopf.haupt { background: var(--akzent); border-color: var(--akzent); color: var(--akzent-text); }
+  .knopf:disabled { opacity: .55; cursor: default; }
+  input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  input[type=number] {
+    font: inherit; color: inherit; background: var(--surface-0); border: 2px solid var(--linie); border-radius: 8px;
+    padding: 6px 8px; width: 5.2em; min-height: 42px; text-align: right;
+  }
+  #status { font-weight: 600; margin: 10px 0; }
+  #status.fehler { color: var(--fehler); }
+  .kachel-reihe { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 10px; margin: 12px 0 14px; }
+  .kachel { background: var(--surface-1); border: 1px solid var(--linie); border-radius: 10px; padding: 10px 12px; }
+  .kachel .wert { font-size: 23px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .kachel .name { color: var(--text-secondary); font-size: 13px; }
+  .kachel .zusatz { color: var(--text-muted); font-size: 12px; }
+  section { background: var(--surface-1); border: 1px solid var(--linie); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+  .legende { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--text-secondary); margin: 6px 0 0; }
+  .legende span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; background: var(--f); vertical-align: -1px; }
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  svg text { fill: var(--text-muted); font-size: 11px; }
+  .tipp { position: fixed; pointer-events: none; background: var(--surface-1); border: 1px solid var(--linie); border-radius: 8px; padding: 6px 9px; font-size: 13px; box-shadow: 0 4px 14px rgba(0,0,0,.2); display: none; z-index: 9; max-width: 260px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 6px 6px; border-bottom: 1px solid var(--raster); vertical-align: middle; }
+  th { color: var(--text-secondary); font-weight: 600; }
+  td.z, th.z { text-align: right; }
+  .tabelle { overflow-x: auto; }
+  .marke { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
+  .zwei { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 720px) { .zwei { grid-template-columns: 1fr; } }
+  .akku { display: grid; grid-template-columns: 1fr auto auto; gap: 8px 10px; align-items: center; }
+  .akku .ort { font-weight: 600; }
+  .akku .ort small { display: block; font-weight: 400; color: var(--text-secondary); }
+  .akku label { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 14px; }
+  .leer { color: var(--text-muted); }
+  label.geladen { display: inline-flex; gap: 6px; align-items: center; }
+  label.geladen input { width: 20px; height: 20px; }
+  .abschnitt { border: 1px solid var(--linie); border-radius: 10px; padding: 8px 12px; margin-bottom: 8px; }
+  .abschnitt b { display: block; }
+  .abschnitt .zeile { color: var(--text-secondary); font-size: 14px; font-variant-numeric: tabular-nums; }
+  .abschnitt .ergebnis { font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<main>
+  <div class="kopf"><a href="./">‹ App</a><h1>Fahrt auswerten</h1></div>
+  <p class="unter">GPX-Datei einer Fahrt wählen, z. B. von der Garmin-Uhr (connect.garmin.com → Aktivität → Zahnrad → „In GPX exportieren"). Die Auswertung läuft nur hier im Browser – die Datei wird nicht hochgeladen.</p>
+  <label class="knopf haupt">GPX-Datei wählen<input type="file" id="datei" accept=".gpx,application/gpx+xml,application/xml,text/xml"></label>
+  <p id="status"></p>
+
+  <div id="ergebnis" hidden>
+    <div class="kachel-reihe" id="kacheln"></div>
+
+    <section>
+      <h2>Tagesablauf</h2>
+      <p class="erkl">Fahren, Laden und Halte; antippen für Details.</p>
+      <svg id="zeitachse" viewBox="0 0 900 70" role="img" aria-label="Zeitachse"></svg>
+      <div class="legende"><span style="--f:var(--fahren)">Fahren</span><span style="--f:var(--laden)">Laden</span><span style="--f:var(--halt)">Halt / Pause</span></div>
+    </section>
+
+    <section>
+      <h2>Akkustände</h2>
+      <p class="erkl">Am Start, vor und nach jedem Ladestopp und am Ziel. Daraus entstehen die Messwerte; leere Felder überspringen den Abschnitt. Ladestopps unten in „Stopps" an- oder abhaken.</p>
+      <div class="akku" id="akku"></div>
+    </section>
+
+    <section>
+      <h2>Abschnitte zwischen den Ladestopps</h2>
+      <p class="erkl">Verbrauchstempo = Tempo, bei dem gleichmäßiges Fahren gleich viel brauchen würde wie der echte Verlauf (Stau und zügige Stücke brauchen mehr als das Ø-Tempo). „Modell" = was die App mit diesem Tempo erwartet hätte.</p>
+      <div id="abschnitte"></div>
+      <button class="knopf haupt" id="senden" disabled>Als Messwerte speichern</button>
+      <p class="erkl" id="senden-hinweis">Öffnet die Seite „Messwerte" (Google-Login). Übertragen werden nur die Abschnittswerte – km, Höhenmeter, Akku, Tempo, Zeiten, Anfangs- und Endpunkt –, nicht die Spur.</p>
+    </section>
+
+    <section>
+      <h2>Tempo beim Fahren, je 5 km</h2>
+      <p class="erkl">Durchschnitt ohne Stopps; gestrichelt das Ø-Tempo der ganzen Fahrt.</p>
+      <svg id="tempo" viewBox="0 0 900 260" role="img" aria-label="Tempo über die Strecke"></svg>
+    </section>
+
+    <div class="zwei">
+      <section>
+        <h2>Wie lange in welchem Tempo</h2>
+        <p class="erkl">Minuten beim Fahren, in 1-Minuten-Stücken gemessen.</p>
+        <svg id="verteilung" viewBox="0 0 440 250" role="img" aria-label="Fahrzeit je Tempobereich"></svg>
+      </section>
+      <section>
+        <h2>Strecke</h2>
+        <p class="erkl">Ohne Kartenhintergrund (nichts wird geladen). Punkte = Stopps.</p>
+        <svg id="spur" viewBox="0 0 440 250" role="img" aria-label="Streckenverlauf"></svg>
+      </section>
+    </div>
+
+    <section>
+      <h2>Stopps</h2>
+      <p class="erkl">Stopp = mindestens 3 min innerhalb von 250 m. „geladen" ist vorgewählt, wenn er mindestens 10 min dauerte und eine bekannte Ladestation (eigene oder aus den Registern) höchstens 400 m entfernt ist.</p>
+      <div class="tabelle"><table id="t-stopps"></table></div>
+    </section>
+
+    <section>
+      <h2>Fahrabschnitte</h2>
+      <p class="erkl">Zwischen zwei Stopps. Höhenmeter roh aus der Aufzeichnung (die Messwerte nutzen die geglättete Höhe wie die App).</p>
+      <div class="tabelle"><table id="t-fahrten"></table></div>
+    </section>
+  </div>
+</main>
+<div class="tipp" id="tipp"></div>
+
+<script>
+'use strict';
+const FORMULAR_URL = 'https://script.google.com/macros/s/AKfycbzTwwwZcQBuUdfmyoniHH5-gALKnrMlvl50VWtuM_JjZ7tBn7nk-AUwPO37bpPNBjsmuw/exec';
+const ERDRADIUS_KM = 6371.0088;
+const STOPP_RADIUS_KM = 0.25, STOPP_MIN_S = 180, LADEN_MIN_S = 600, STATION_MAX_KM = 0.4;
+const TEMPO_STUECK_KM = 5, ABSCHNITT_MIN_KM = 10, MESSWERTE_MAX = 20;
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad, dLon = (lon2 - lon1) * rad;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) ** 2;
+  return 2 * ERDRADIUS_KM * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+// LINIE-START — gleiche Rechnung wie kumuliere_ / glaetteHoehen_ / duenneAus_ in apps-script/Code.js (geprüft in tests/test-linie.js)
+// Höhen: gleitender Median über 2 km im 100-m-Raster, dann erst ab 10 m Änderung zählen (rohe Höhen rauschen 2–3-fach).
+const HOEHEN_SCHWELLE_M = 10;
+const GLAETTUNG_FENSTER_KM = 2;
+const GLAETTUNG_RASTER_KM = 0.1;
+const AUSDUENNUNG_KM = 0.25;
+const AUSDUENNUNG_HM = 10;
+const runde = (x, stellen) => { const f = Math.pow(10, stellen); return Math.round(x * f) / f; };
+
+/** [lon, lat, höhe] in voller Auflösung → [lat, lon, km, anstieg_hin, anstieg_rueck, höhe_geglättet]. */
+function kumuliere(koordinaten) {
+  const n = koordinaten.length;
+  const kms = new Array(n);
+  let km = 0;
+  for (let i = 0; i < n; i++) {
+    if (i > 0) km += haversine(koordinaten[i - 1][1], koordinaten[i - 1][0], koordinaten[i][1], koordinaten[i][0]);
+    kms[i] = km;
+  }
+  const glatt = glaetteHoehen(kms, koordinaten.map(p => p[2]));
+  const erg = [];
+  let auf = 0, ab = 0;
+  let bezug = n > 0 ? glatt[0] : 0;
+  for (let i = 0; i < n; i++) {
+    const d = glatt[i] - bezug;
+    if (d >= HOEHEN_SCHWELLE_M) { auf += d; bezug = glatt[i]; }
+    else if (-d >= HOEHEN_SCHWELLE_M) { ab -= d; bezug = glatt[i]; }
+    erg.push([koordinaten[i][1], koordinaten[i][0], kms[i], auf, ab, glatt[i]]);
+  }
+  return erg;
+}
+
+function glaetteHoehen(kms, hoehen) {
+  const n = hoehen.length;
+  const laenge = n > 0 ? kms[n - 1] : 0;
+  if (n < 3 || laenge <= 0) return hoehen.slice();
+  const schritte = Math.max(1, Math.round(laenge / GLAETTUNG_RASTER_KM));
+  const raster = new Array(schritte + 1);
+  let j = 0;
+  for (let s = 0; s <= schritte; s++) {
+    const k = laenge * s / schritte;
+    while (j + 1 < n - 1 && kms[j + 1] < k) j++;
+    const spann = kms[j + 1] - kms[j];
+    const t = spann > 0 ? Math.max(0, Math.min(1, (k - kms[j]) / spann)) : 0;
+    raster[s] = hoehen[j] + t * (hoehen[j + 1] - hoehen[j]);
+  }
+  const radius = Math.max(1, Math.round(GLAETTUNG_FENSTER_KM / 2 / (laenge / schritte)));
+  const median = raster.map((_, s) => {
+    const fenster = raster.slice(Math.max(0, s - radius), s + radius + 1).sort((a, b) => a - b);
+    return fenster[Math.floor(fenster.length / 2)];
+  });
+  return kms.map(k => {
+    const pos = k / laenge * schritte;
+    const s0 = Math.min(schritte, Math.floor(pos));
+    const s1 = Math.min(schritte, s0 + 1);
+    return median[s0] + (pos - s0) * (median[s1] - median[s0]);
+  });
+}
+
+/** Stützpunkt behalten, wenn > 250 m oder > 10 m Höhe seit dem letzten; erster und letzter immer. */
+function duenneAus(voll) {
+  if (voll.length === 0) return [];
+  const behalten = [voll[0]];
+  let letzter = voll[0];
+  for (let i = 1; i < voll.length - 1; i++) {
+    const p = voll[i];
+    if (p[2] - letzter[2] > AUSDUENNUNG_KM || Math.abs(p[5] - letzter[5]) > AUSDUENNUNG_HM) {
+      behalten.push(p);
+      letzter = p;
+    }
+  }
+  if (voll.length > 1) behalten.push(voll[voll.length - 1]);
+  return behalten.map(p => [runde(p[0], 5), runde(p[1], 5), runde(p[2], 2), Math.round(p[3]), Math.round(p[4])]);
+}
+// LINIE-ENDE
+
+// ENERGIE-START — identisch zu energieAnteile_ / energieKwh_ in apps-script/Code.js (geprüft in tests/test-modell.js)
+/** Energieanteile in kWh (unkorrigiert): Fahrwiderstand, Höhe (bergauf minus Rückgewinnung), Heizung/Nebenverbraucher. */
+function energieAnteile(modell, km, hmAuf, hmAb, kmh, temperatur, zusatzKg) {
+  const ph = modell.physik;
+  const masse = modell.fahrzeug.masse_kg + modell.fahrzeug.fahrer_kg + (Number(zusatzKg) || 0);
+  const geschw = Math.max(20, Number(kmh) || 0);
+  const v = geschw / 3.6;
+  const stunden = km / geschw;
+  const luftdichte = 1.293 * 273.15 / (273.15 + temperatur);
+  const leistungRad = 0.5 * luftdichte * ph.cda * v * v * v + ph.crr * masse * 9.81 * v;
+  return {
+    fahrt: leistungRad / ph.eta / 1000 * stunden,
+    hoehe: masse * 9.81 * (hmAuf / ph.eta - hmAb * ph.eta * ph.rekuperation) / 3.6e6,
+    heiz: (ph.hilfsleistung_kw + Math.max(0, ph.heiz_schwelle_c - temperatur) * ph.heiz_kw_pro_grad) * stunden,
+  };
+}
+
+/** Korrigierter Energiebedarf in kWh (nie negativ). */
+function energieKwh(modell, a) {
+  const k = modell.korrektur;
+  return Math.max(0, k.gesamt * (k.fahrt * a.fahrt + k.hoehe * a.hoehe + k.heizung * a.heiz));
+}
+// ENERGIE-ENDE
+
+const $ = id => document.getElementById(id);
+const NS = 'http://www.w3.org/2000/svg';
+const sv = (tag, attr, eltern) => { const e = document.createElementNS(NS, tag); for (const k in attr) e.setAttribute(k, attr[k]); if (eltern) eltern.append(e); return e; };
+const el = (tag, klasse, text) => { const e = document.createElement(tag); if (klasse) e.className = klasse; if (text !== undefined) e.textContent = text; return e; };
+const hm = min => Math.floor(min / 60) + ' h ' + String(Math.round(min % 60)).padStart(2, '0') + ' min';
+const uhr = t => new Date(t * 1000).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' });
+const zahl = (x, n) => Number(x).toLocaleString('de-DE', { minimumFractionDigits: n || 0, maximumFractionDigits: n || 0 });
+const tipp = $('tipp');
+const zeigeTipp = (ev, html) => { tipp.innerHTML = html; tipp.style.display = 'block'; tipp.style.left = Math.min(ev.clientX + 14, innerWidth - tipp.offsetWidth - 8) + 'px'; tipp.style.top = (ev.clientY + 14) + 'px'; };
+const wegTipp = () => { tipp.style.display = 'none'; };
+const status = (text, fehler) => { $('status').textContent = text; $('status').className = fehler ? 'fehler' : ''; };
+
+let modell = null, stationen = [];
+let F = null;   // ausgewertete Fahrt
+
+// Daten der App (Stationen und Modell) – ohne sie geht die Auswertung trotzdem
+(async () => {
+  const lade = async datei => { try { const r = await fetch(datei + '?t=' + Date.now(), { cache: 'no-store' }); return r.ok ? r.json() : null; } catch (e) { return null; } };
+  const [routes, fremde, m] = await Promise.all([lade('routes.json'), lade('fremde.json'), lade('modell.json')]);
+  modell = m;
+  stationen = ((routes && routes.punkte) || []).map(p => ({ name: p.name, lat: p.lat, lon: p.lon, eigen: true }))
+    .concat(((fremde && fremde.punkte) || []).map(p => ({ name: p.name, lat: p.lat, lon: p.lon, eigen: false })));
+})();
+
+$('datei').addEventListener('change', async ev => {
+  const datei = ev.target.files && ev.target.files[0];
+  if (!datei) return;
+  status('Wird gelesen …');
+  try {
+    const text = await datei.text();
+    const punkte = leseGpx(text);
+    if (punkte.length < 20) throw new Error('keine Spur mit Zeitstempeln gefunden');
+    F = werteAus(punkte);
+    F.name = datei.name;
+    zeigeAlles();
+    status(datei.name + ': ' + zahl(punkte.length) + ' Punkte ausgewertet.');
+  } catch (e) {
+    $('ergebnis').hidden = true;
+    status('Fehler: ' + e.message, true);
+  }
+});
+
+/** GPX → [{ lat, lon, ele, t (s) }] – Reihenfolge der Attribute egal, Höhe optional. */
+function leseGpx(xml) {
+  const p = [];
+  const re = /<trkpt\b([^>]*)>([\s\S]*?)<\/trkpt>/g;
+  let m;
+  while ((m = re.exec(xml))) {
+    const lat = Number((m[1].match(/lat="([-\d.eE]+)"/) || [])[1]), lon = Number((m[1].match(/lon="([-\d.eE]+)"/) || [])[1]);
+    const zeit = (m[2].match(/<time>([^<]+)<\/time>/) || [])[1];
+    const ele = (m[2].match(/<ele>([^<]+)<\/ele>/) || [])[1];
+    const t = Date.parse(zeit) / 1000;
+    if (isFinite(lat) && isFinite(lon) && isFinite(t)) p.push({ lat, lon, ele: ele === undefined ? null : Number(ele), t });
+  }
+  p.sort((a, b) => a.t - b.t);
+  return p;
+}
+
+const kurz = name => String(name).replace(/ \(nicht in deiner Liste\)$/, '').replace(/^Tesla Supercharger /, 'Tesla ');
+const naechsteStation = pt => { let b = null, d = Infinity; for (const s of stationen) { const x = haversine(pt.lat, pt.lon, s.lat, s.lon); if (x < d) { d = x; b = s; } } return { s: b, d }; };
+
+/** Stopps, Fahrabschnitte, Tempo – rein rechnerisch. */
+function werteAus(p) {
+  p[0].km = 0;
+  for (let i = 1; i < p.length; i++) p[i].km = p[i - 1].km + haversine(p[i - 1].lat, p[i - 1].lon, p[i].lat, p[i].lon);
+  const n = p.length, ende = p[n - 1];
+  // Stopps: bleibt ≥ 3 min innerhalb von 250 m um einen Ankerpunkt; kurz hintereinander zusammenfassen
+  const roh = [];
+  for (let i = 0; i < n;) {
+    let j = i;
+    while (j + 1 < n && haversine(p[i].lat, p[i].lon, p[j + 1].lat, p[j + 1].lon) <= STOPP_RADIUS_KM) j++;
+    if (p[j].t - p[i].t >= STOPP_MIN_S) { roh.push({ von: i, bis: j }); i = j + 1; } else i++;
+  }
+  const st = [];
+  for (const s of roh) {
+    const l = st[st.length - 1];
+    if (l && p[s.von].t - p[l.bis].t < STOPP_MIN_S && haversine(p[l.von].lat, p[l.von].lon, p[s.von].lat, p[s.von].lon) < 1) l.bis = s.bis; else st.push({ ...s });
+  }
+  const inStopp = new Uint8Array(n);
+  for (const s of st) for (let x = s.von; x <= s.bis; x++) inStopp[x] = 1;
+  const stopps = st.map(s => {
+    const a = p[s.von], b = p[s.bis];
+    const mitte = { lat: (a.lat + b.lat) / 2, lon: (a.lon + b.lon) / 2 };
+    const ns = naechsteStation(mitte);
+    const station = ns.s && ns.d <= STATION_MAX_KM ? ns.s : null;
+    const art = s.von === 0 ? 'start' : s.bis === n - 1 ? 'ankunft' : 'halt';
+    return { von: s.von, bis: s.bis, t0: a.t, t1: b.t, min: (b.t - a.t) / 60, km: a.km, lat: mitte.lat, lon: mitte.lon, art,
+      station: station ? station.name + (station.eigen ? '' : ' (nicht in deiner Liste)') : '', abstand: ns.d,
+      geladen: art === 'halt' && !!station && b.t - a.t >= LADEN_MIN_S };
+  });
+  // Fahrabschnitte zwischen Stopps
+  const fahrten = [];
+  const grenzen = [{ bis: 0 }].concat(st).concat([{ von: n - 1 }]);
+  for (let k = 0; k + 1 < grenzen.length; k++) {
+    const i = grenzen[k].bis, j = grenzen[k + 1].von;
+    if (j <= i) continue;
+    let auf = 0, ab = 0;
+    for (let x = i + 1; x <= j; x++) if (p[x].ele !== null && p[x - 1].ele !== null) { const d = p[x].ele - p[x - 1].ele; if (d > 0) auf += d; else ab -= d; }
+    const km = p[j].km - p[i].km, h = (p[j].t - p[i].t) / 3600;
+    fahrten.push({ t0: p[i].t, t1: p[j].t, km, min: h * 60, kmh: h > 0 ? km / h : 0, ele0: p[i].ele, ele1: p[j].ele, auf, ab });
+  }
+  // Tempoverteilung in 1-min-Stücken, ohne Stopps
+  const klassen = [[0, 30], [30, 60], [60, 90], [90, 110], [110, 125], [125, 140], [140, 999]];
+  const verteilung = klassen.map(c => ({ bereich: c[1] === 999 ? '> ' + c[0] : c[0] + '–' + c[1], min: 0, km: 0 }));
+  for (let i = 0; i < n;) {
+    let j = i; while (j + 1 < n && p[j + 1].t - p[i].t < 60) j++;
+    if (j > i && !inStopp[i]) {
+      const km = p[j].km - p[i].km, h = (p[j].t - p[i].t) / 3600, v = km / h;
+      const c = klassen.findIndex(x => v >= x[0] && v < x[1]);
+      if (c >= 0) { verteilung[c].min += h * 60; verteilung[c].km += km; }
+    }
+    i = j + 1;
+  }
+  // Tempo je 5 km (Fahrzeit ohne Stopps)
+  const tempo5 = [];
+  for (let i = 0, j = 0; i < n - 1; i = j) {
+    j = i; while (j + 1 < n && p[j].km - p[i].km < TEMPO_STUECK_KM) j++;
+    let fz = 0; for (let x = i + 1; x <= j; x++) if (!inStopp[x]) fz += p[x].t - p[x - 1].t;
+    tempo5.push({ i, j, km: p[i].km, laenge: p[j].km - p[i].km, kmh: fz > 0 ? (p[j].km - p[i].km) / (fz / 3600) : 0, fz, ele: p[i].ele });
+  }
+  // Spur ausgedünnt
+  const spur = []; let letzt = null;
+  for (const q of p) if (!letzt || haversine(letzt.lat, letzt.lon, q.lat, q.lon) > 0.3) { spur.push([q.lat, q.lon]); letzt = q; }
+  const fahrMin = fahrten.reduce((s, f) => s + f.min, 0);
+  return { p, n, inStopp, stopps, fahrten, verteilung, tempo5, spur, km: ende.km, dauerMin: (ende.t - p[0].t) / 60, fahrMin, t0: p[0].t, t1: ende.t, mitHoehe: p.some(q => q.ele !== null) };
+}
+
+/** Abschnitte zwischen den angehakten Ladestopps (Start → Laden 1 → … → Ziel). */
+function abschnitte() {
+  const laden = F.stopps.filter(s => s.geladen);
+  const erster = F.stopps.find(s => s.art === 'start'), letzter = F.stopps.find(s => s.art === 'ankunft');
+  const marken = [{ ab: erster ? erster.bis : 0, name: 'Start', id: 'start' }]
+    .concat(laden.map((s, k) => ({ an: s.von, ab: s.bis, name: s.station || ('Ladestopp ' + uhr(s.t0)), id: 'l' + k, stopp: s })))
+    .concat([{ an: letzter ? letzter.von : F.n - 1, name: 'Ziel', id: 'ziel' }]);
+  const liste = [];
+  for (let k = 0; k + 1 < marken.length; k++) liste.push({ von: marken[k], bis: marken[k + 1], i: marken[k].ab, j: marken[k + 1].an });
+  return { marken, liste };
+}
+
+/** Kennzahlen eines Abschnitts: km, geglättete Höhenmeter, Ø-Tempo beim Fahren, Verbrauchstempo. */
+function kennzahlen(i, j) {
+  const p = F.p;
+  const km = p[j].km - p[i].km;
+  let auf = 0, ab = 0, linie = null;
+  if (F.mitHoehe) {
+    const teil = []; for (let x = i; x <= j; x++) if (p[x].ele !== null) teil.push([p[x].lon, p[x].lat, p[x].ele]);
+    if (teil.length > 1) { linie = kumuliere(teil); const l = linie[linie.length - 1]; auf = l[3]; ab = l[4]; }
+  }
+  let fz = 0; for (let x = i + 1; x <= j; x++) if (!F.inStopp[x]) fz += p[x].t - p[x - 1].t;
+  const schnitt = fz > 0 ? km / (fz / 3600) : 0;
+  // Verbrauchstempo: √(Σ v²·km / Σ km) über 5-km-Stücke (v mindestens 20 wie im Modell)
+  let s2 = 0, sk = 0;
+  for (const t of F.tempo5) {
+    if (t.i < i || t.j > j || !(t.kmh > 0)) continue;
+    const v = Math.max(20, t.kmh);
+    s2 += v * v * t.laenge; sk += t.laenge;
+  }
+  const verbrauch = sk > 0 ? Math.sqrt(s2 / sk) : schnitt;
+  return { km, auf, ab, linie, schnitt, verbrauch, fahrMin: fz / 60 };
+}
+
+const temperaturen = new Map();
+/** Temperatur zur Mitte des Abschnitts bei Open-Meteo (Ort auf 0,1° gerundet); ohne Antwort 15 °C. */
+async function temperaturBei(lat, lon, t) {
+  const tag = new Date(t * 1000).toISOString().slice(0, 10);
+  const schluessel = lat.toFixed(1) + ',' + lon.toFixed(1) + ',' + tag + ',' + Math.round(t / 3600);
+  if (temperaturen.has(schluessel)) return temperaturen.get(schluessel);
+  let wert = null;
+  try {
+    const alt = Date.now() / 1000 - t > 4 * 86400;
+    const url = (alt ? 'https://archive-api.open-meteo.com/v1/archive?start_date=' + tag + '&end_date=' + tag : 'https://api.open-meteo.com/v1/forecast?past_days=5&forecast_days=1') +
+      '&latitude=' + lat.toFixed(1) + '&longitude=' + lon.toFixed(1) + '&hourly=temperature_2m&timezone=UTC';
+    const j = await (await fetch(url)).json();
+    let best = Infinity;
+    j.hourly.time.forEach((zeit, k) => { const d = Math.abs(Date.parse(zeit + ':00Z') / 1000 - t); if (d < best && j.hourly.temperature_2m[k] !== null) { best = d; wert = j.hourly.temperature_2m[k]; } });
+    if (best > 2 * 3600) wert = null;
+  } catch (e) { wert = null; }
+  temperaturen.set(schluessel, wert);
+  return wert;
+}
+
+/** Akkuverlauf wie in der App (gedeckelt bei 100 %), mit festem Tempo über die Abschnittslinie. */
+function modellVerbrauch(k, startSoc, kmh, temp) {
+  if (!modell) return null;
+  const kor = modell.korrektur, proKwh = 100 / modell.fahrzeug.kapazitaet_kwh;
+  const prozent = (km, auf, ab) => { const a = energieAnteile(modell, km, auf, ab, kmh, temp, 0); return kor.gesamt * (kor.fahrt * a.fahrt + kor.hoehe * a.hoehe + kor.heizung * a.heiz) * proKwh; };
+  if (!k.linie) return Math.max(0, prozent(k.km, 0, 0));
+  let soc = Math.min(100, startSoc), letzt = k.linie[0];
+  for (let x = 1; x < k.linie.length; x++) {
+    const q = k.linie[x];
+    if (q[2] - letzt[2] < 0.25 && x < k.linie.length - 1) continue;
+    soc = Math.min(100, soc - prozent(q[2] - letzt[2], q[3] - letzt[3], q[4] - letzt[4]));
+    letzt = q;
+  }
+  return startSoc - soc;
+}
+
+// ---------------------------------------------------------------------------
+// Anzeige
+// ---------------------------------------------------------------------------
+
+const akkuWerte = {};   // id → { an, ab }
+
+function zeigeAlles() {
+  $('ergebnis').hidden = false;
+  zeigeKacheln();
+  zeigeZeitachse();
+  zeigeTempo();
+  zeigeVerteilung();
+  zeigeSpur();
+  zeigeStopps();
+  zeigeFahrten();
+  zeigeAkku();
+}
+
+function zeigeKacheln() {
+  const laden = F.stopps.filter(s => s.geladen), halte = F.stopps.filter(s => s.art === 'halt' && !s.geladen);
+  const box = $('kacheln'); box.replaceChildren();
+  for (const [name, wert, zusatz] of [
+    ['Unterwegs', hm(F.dauerMin), uhr(F.t0) + ' – ' + uhr(F.t1)],
+    ['Strecke', zahl(F.km) + ' km', 'laut Aufzeichnung'],
+    ['Fahren', hm(F.fahrMin), 'Ø ' + Math.round(F.km / (F.fahrMin / 60)) + ' km/h inkl. Stau'],
+    ['Laden', hm(laden.reduce((s, x) => s + x.min, 0)), laden.length + ' Stopp(s)'],
+    ['Halte', hm(halte.reduce((s, x) => s + x.min, 0)), halte.length + ' Stopp(s)'],
+  ]) {
+    const k = el('div', 'kachel');
+    k.append(el('div', 'name', name), el('div', 'wert', wert), el('div', 'zusatz', zusatz));
+    box.append(k);
+  }
+}
+
+function zeigeZeitachse() {
+  const svg = $('zeitachse'); svg.replaceChildren();
+  const x = t => 10 + (t - F.t0) / (F.t1 - F.t0) * 880;
+  const bloecke = F.fahrten.map(f => ({ art: 'fahren', t0: f.t0, t1: f.t1, text: 'Fahren ' + uhr(f.t0) + '–' + uhr(f.t1) + '<br>' + zahl(f.km) + ' km · ' + hm(f.min) + ' · Ø ' + Math.round(f.kmh) + ' km/h' }))
+    .concat(F.stopps.map(s => ({ art: s.geladen ? 'laden' : 'halt', t0: s.t0, t1: s.t1,
+      text: (s.geladen ? 'Laden' : s.art === 'ankunft' ? 'Ankunft' : s.art === 'start' ? 'Start' : 'Halt') + ' ' + uhr(s.t0) + '–' + uhr(s.t1) + '<br>' + Math.round(s.min) + ' min · km ' + Math.round(s.km) + (s.station ? '<br>' + s.station : '') })));
+  for (const b of bloecke) {
+    const x1 = x(b.t0), x2 = Math.max(x(b.t1), x1 + 3);
+    sv('rect', { x: x1 + 1, y: 8, width: Math.max(2, x2 - x1 - 2), height: 30, rx: 3, fill: 'var(--' + b.art + ')' }, svg);
+    const ziel = sv('rect', { x: x1, y: 0, width: Math.max(10, x2 - x1), height: 46, fill: 'transparent' }, svg);
+    ziel.addEventListener('mousemove', ev => zeigeTipp(ev, b.text)); ziel.addEventListener('mouseleave', wegTipp);
+    ziel.addEventListener('click', ev => zeigeTipp(ev, b.text));
+  }
+  const schritt = (F.t1 - F.t0) > 8 * 3600 ? 3600 : 1800;
+  for (let t = Math.ceil(F.t0 / schritt) * schritt; t <= F.t1; t += schritt) {
+    sv('line', { x1: x(t), x2: x(t), y1: 40, y2: 46, stroke: 'var(--linie)' }, svg);
+    sv('text', { x: x(t), y: 60, 'text-anchor': 'middle' }, svg).textContent = uhr(t);
+  }
+}
+
+function zeigeTempo() {
+  const svg = $('tempo'); svg.replaceChildren();
+  const L = 44, R = 890, O = 12, U = 228, maxKm = Math.max(1, F.km);
+  const x = km => L + km / maxKm * (R - L), y = v => U - Math.min(v, 150) / 150 * (U - O);
+  for (const v of [0, 50, 100, 150]) { sv('line', { x1: L, x2: R, y1: y(v), y2: y(v), stroke: 'var(--raster)' }, svg); sv('text', { x: L - 6, y: y(v) + 4, 'text-anchor': 'end' }, svg).textContent = v; }
+  sv('text', { x: L - 6, y: O - 2, 'text-anchor': 'end' }, svg).textContent = 'km/h';
+  const schritt = maxKm > 400 ? 100 : maxKm > 100 ? 50 : 10;
+  for (let k = 0; k <= maxKm; k += schritt) sv('text', { x: x(k), y: U + 18, 'text-anchor': 'middle' }, svg).textContent = k + ' km';
+  for (const s of F.stopps.filter(s => s.geladen)) {
+    sv('rect', { x: x(s.km) - 2, y: O, width: 4, height: U - O, fill: 'var(--laden)', opacity: .35 }, svg);
+    sv('text', { x: x(s.km) + 5, y: O + 10 }, svg).textContent = 'Laden ' + Math.round(s.min) + ' min';
+  }
+  const schnitt = F.km / (F.fahrMin / 60);
+  sv('line', { x1: L, x2: R, y1: y(schnitt), y2: y(schnitt), stroke: 'var(--text-muted)', 'stroke-dasharray': '4 4' }, svg);
+  sv('text', { x: R, y: y(schnitt) - 4, 'text-anchor': 'end' }, svg).textContent = 'Ø ' + Math.round(schnitt);
+  const pts = F.tempo5.filter(t => t.kmh > 0);
+  if (!pts.length) return;
+  sv('path', { d: pts.map((t, i) => (i ? 'L' : 'M') + x(t.km + t.laenge / 2).toFixed(1) + ' ' + y(t.kmh).toFixed(1)).join(''), fill: 'none', stroke: 'var(--fahren)', 'stroke-width': 2, 'stroke-linejoin': 'round' }, svg);
+  const kreuz = sv('line', { y1: O, y2: U, stroke: 'var(--text-muted)', visibility: 'hidden' }, svg);
+  const punkt = sv('circle', { r: 4.5, fill: 'var(--fahren)', stroke: 'var(--surface-1)', 'stroke-width': 2, visibility: 'hidden' }, svg);
+  const flaeche = sv('rect', { x: L, y: O, width: R - L, height: U - O, fill: 'transparent' }, svg);
+  const bewege = ev => {
+    const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY; const q = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const km = (q.x - L) / (R - L) * maxKm; let b = pts[0];
+    for (const t of pts) if (Math.abs(t.km + t.laenge / 2 - km) < Math.abs(b.km + b.laenge / 2 - km)) b = t;
+    const xx = x(b.km + b.laenge / 2);
+    kreuz.setAttribute('x1', xx); kreuz.setAttribute('x2', xx); kreuz.setAttribute('visibility', 'visible');
+    punkt.setAttribute('cx', xx); punkt.setAttribute('cy', y(b.kmh)); punkt.setAttribute('visibility', 'visible');
+    zeigeTipp(ev, '<b>km ' + Math.round(b.km) + '–' + Math.round(b.km + b.laenge) + '</b><br>Ø ' + Math.round(b.kmh) + ' km/h' + (b.ele !== null ? ' · ' + Math.round(b.ele) + ' m ü. M.' : ''));
+  };
+  flaeche.addEventListener('mousemove', bewege); flaeche.addEventListener('click', bewege);
+  flaeche.addEventListener('mouseleave', () => { wegTipp(); kreuz.setAttribute('visibility', 'hidden'); punkt.setAttribute('visibility', 'hidden'); });
+}
+
+function zeigeVerteilung() {
+  const svg = $('verteilung'); svg.replaceChildren();
+  const v = F.verteilung, L = 70, R = 420, O = 6, zeile = 32, max = Math.max(1, ...v.map(b => b.min));
+  v.forEach((b, i) => {
+    const yy = O + i * zeile, w = b.min / max * (R - L - 50);
+    sv('text', { x: L - 8, y: yy + 17, 'text-anchor': 'end' }, svg).textContent = b.bereich;
+    sv('rect', { x: L, y: yy + 4, width: Math.max(2, w), height: 20, rx: 4, fill: 'var(--fahren)' }, svg);
+    const t = sv('text', { x: L + w + 6, y: yy + 18 }, svg); t.textContent = Math.round(b.min) + ' min'; t.style.fill = 'var(--text-secondary)';
+    const ziel = sv('rect', { x: 0, y: yy, width: R, height: zeile, fill: 'transparent' }, svg);
+    const text = '<b>' + b.bereich + ' km/h</b><br>' + Math.round(b.min) + ' min · ' + Math.round(b.km) + ' km';
+    ziel.addEventListener('mousemove', ev => zeigeTipp(ev, text)); ziel.addEventListener('mouseleave', wegTipp);
+  });
+  sv('text', { x: L - 8, y: O + v.length * zeile + 12, 'text-anchor': 'end' }, svg).textContent = 'km/h';
+}
+
+function zeigeSpur() {
+  const svg = $('spur'); svg.replaceChildren();
+  const s = F.spur;
+  let n = -90, su = 90, w = 180, o = -180; for (const [la, lo] of s) { n = Math.max(n, la); su = Math.min(su, la); w = Math.min(w, lo); o = Math.max(o, lo); }
+  const f = Math.cos((n + su) / 2 * Math.PI / 180);
+  const sk = Math.min(236 / Math.max(1e-6, n - su), 420 / Math.max(1e-6, (o - w) * f));
+  const x0 = (440 - (o - w) * f * sk) / 2, y0 = (250 - (n - su) * sk) / 2;
+  const x = lo => x0 + (lo - w) * f * sk, y = la => y0 + (n - la) * sk;
+  sv('path', { d: s.map((q, i) => (i ? 'L' : 'M') + x(q[1]).toFixed(1) + ' ' + y(q[0]).toFixed(1)).join(''), fill: 'none', stroke: 'var(--fahren)', 'stroke-width': 2, 'stroke-linejoin': 'round' }, svg);
+  for (const st of F.stopps) {
+    const c = sv('circle', { cx: x(st.lon), cy: y(st.lat), r: st.geladen ? 6 : 4.5, fill: st.geladen ? 'var(--laden)' : 'var(--halt)', stroke: 'var(--surface-1)', 'stroke-width': 2 }, svg);
+    const text = (st.geladen ? 'Laden' : 'Halt') + ' ' + uhr(st.t0) + ' · ' + Math.round(st.min) + ' min' + (st.station ? '<br>' + st.station : '');
+    c.addEventListener('mousemove', ev => zeigeTipp(ev, text)); c.addEventListener('mouseleave', wegTipp);
+  }
+}
+
+function tabelle(id, kopf, zeilen) {
+  const t = $(id); t.replaceChildren();
+  const th = el('thead'), tr = el('tr');
+  kopf.forEach(k => { const c = el('th', k[1] ? 'z' : '', k[0]); tr.append(c); });
+  th.append(tr); t.append(th);
+  const tb = el('tbody');
+  for (const z of zeilen) {
+    const r = el('tr');
+    z.forEach((w, i) => { const c = el('td', kopf[i][1] ? 'z' : ''); if (w instanceof Node) c.append(w); else c.textContent = w; r.append(c); });
+    tb.append(r);
+  }
+  t.append(tb);
+}
+
+function zeigeStopps() {
+  tabelle('t-stopps', [['Zeit'], ['Dauer', 1], ['bei km', 1], ['Art'], ['Ort / Station']], F.stopps.map(s => {
+    let art;
+    if (s.art === 'halt') {
+      const l = el('label', 'geladen'), c = el('input'); c.type = 'checkbox'; c.checked = s.geladen;
+      c.addEventListener('change', () => { s.geladen = c.checked; zeigeKacheln(); zeigeZeitachse(); zeigeTempo(); zeigeSpur(); zeigeAkku(); });
+      l.append(c, 'geladen'); art = l;
+    } else art = s.art === 'start' ? 'Start' : 'Ankunft';
+    return [uhr(s.t0) + '–' + uhr(s.t1), Math.round(s.min) + ' min', Math.round(s.km), art,
+      s.station || ('keine bekannte Station in der Nähe (' + zahl(s.abstand, 1) + ' km)')];
+  }));
+}
+
+function zeigeFahrten() {
+  tabelle('t-fahrten', [['Zeit'], ['km', 1], ['Dauer', 1], ['Ø km/h', 1], ['Höhe'], ['auf / ab', 1]], F.fahrten.map(f => [
+    uhr(f.t0) + '–' + uhr(f.t1), zahl(f.km), hm(f.min), Math.round(f.kmh),
+    f.ele0 !== null ? Math.round(f.ele0) + ' → ' + Math.round(f.ele1) + ' m' : '–', F.mitHoehe ? '+' + Math.round(f.auf) + ' / −' + Math.round(f.ab) : '–']));
+}
+
+function feld(id, art) {
+  const i = el('input'); i.type = 'number'; i.inputMode = 'numeric'; i.min = 0; i.max = 100; i.placeholder = '%';
+  const w = akkuWerte[id] || (akkuWerte[id] = {});
+  if (w[art] !== undefined) i.value = w[art];
+  i.addEventListener('input', () => { w[art] = i.value === '' ? undefined : Number(i.value); rechneAbschnitte(); });
+  return i;
+}
+
+function zeigeAkku() {
+  const box = $('akku'); box.replaceChildren();
+  const { marken } = abschnitte();
+  for (const m of marken) {
+    const ort = el('div', 'ort', kurz(m.name));
+    const zeitText = m.id === 'start' ? uhr(F.p[m.ab].t) : m.id === 'ziel' ? uhr(F.p[m.an].t) : uhr(m.stopp.t0) + '–' + uhr(m.stopp.t1) + ' · ' + Math.round(m.stopp.min) + ' min';
+    ort.append(el('small', '', zeitText));
+    const an = el('label'), ab = el('label');
+    if (m.id !== 'start') an.append('an', feld(m.id, 'an')); else an.append('');
+    if (m.id !== 'ziel') ab.append(m.id === 'start' ? 'Start' : 'ab', feld(m.id, 'ab')); else ab.append('');
+    box.append(ort, an, ab);
+  }
+  rechneAbschnitte();
+}
+
+let rechenLauf = 0;
+async function rechneAbschnitte() {
+  const lauf = ++rechenLauf;
+  const { liste } = abschnitte();
+  const zeilen = [], stuecke = [];
+  for (const a of liste) {
+    const k = kennzahlen(a.i, a.j);
+    const soc0 = (akkuWerte[a.von.id] || {}).ab, soc1 = (akkuWerte[a.bis.id] || {}).an;
+    const p0 = F.p[a.i], p1 = F.p[a.j];
+    const titel = kurz(a.von.name) + ' → ' + kurz(a.bis.name);
+    let gebraucht = '', mod = '', abw = '';
+    if (soc0 !== undefined && soc1 !== undefined && soc0 > soc1 && k.km >= ABSCHNITT_MIN_KM) {
+      const mitte = F.p[Math.round((a.i + a.j) / 2)];
+      const temp = await temperaturBei(mitte.lat, mitte.lon, mitte.t);
+      if (lauf !== rechenLauf) return;
+      const m = modellVerbrauch(k, soc0, k.verbrauch, temp === null ? 15 : temp);
+      gebraucht = (soc0 - soc1) + ' %';
+      if (m !== null) { mod = Math.round(m) + ' %'; abw = ((m - (soc0 - soc1)) >= 0 ? '+' : '') + Math.round(m - (soc0 - soc1)); }
+      const r5 = x => Math.round(x * 1e5) / 1e5, r1 = x => Math.round(x * 10) / 10;
+      stuecke.push({
+        quelle: 'GPX', route: 'gpx', richtung: 'hin', titel,
+        start_zeit: new Date(p0.t * 1000).toISOString(), ende_zeit: new Date(p1.t * 1000).toISOString(),
+        start_lat: r5(p0.lat), start_lon: r5(p0.lon), ende_lat: r5(p1.lat), ende_lon: r5(p1.lon),
+        km: r1(k.km), hm_auf: Math.round(k.auf), hm_ab: Math.round(k.ab), start_soc: soc0, ende_soc: soc1,
+        kmh: Math.round(k.verbrauch), bordcomputer_kmh: Math.round(k.schnitt), geschwindigkeit: Math.round(k.schnitt),
+        erwartet: m === null ? null : r1(soc0 - m),
+        notiz: 'GPX ' + (F.name || '') + ': ' + titel + (F.mitHoehe ? '' : ' (ohne Höhen)'),
+      });
+    }
+    const karte = el('div', 'abschnitt');
+    karte.append(el('b', '', titel),
+      el('div', 'zeile', zahl(k.km) + ' km · ' + (F.mitHoehe ? '+' + Math.round(k.auf) + ' / −' + Math.round(k.ab) + ' m · ' : '') + hm(k.fahrMin) + ' Fahrzeit'),
+      el('div', 'zeile', 'Ø ' + Math.round(k.schnitt) + ' km/h beim Fahren · Verbrauchstempo ' + Math.round(k.verbrauch) + ' km/h'),
+      el('div', gebraucht ? 'ergebnis' : 'zeile', gebraucht ? 'gebraucht ' + gebraucht + (mod ? ' · Modell ' + mod + ' (' + abw + ')' : '') : 'Akkustände fehlen'));
+    zeilen.push(karte);
+  }
+  if (lauf !== rechenLauf) return;
+  $('abschnitte').replaceChildren(...zeilen);
+  const knopf = $('senden');
+  knopf.disabled = !stuecke.length;
+  knopf.textContent = stuecke.length ? stuecke.length + ' Messwert(e) speichern' : 'Als Messwerte speichern (erst Akkustände eintragen)';
+  knopf.onclick = () => {
+    const url = FORMULAR_URL + '?seite=messwerte&stuecke=' + encodeURIComponent(JSON.stringify(stuecke.slice(0, MESSWERTE_MAX)));
+    window.open(url, '_blank', 'noopener');
+  };
+}
+
+// Für Tests
+window.auswertung = { leseGpx, werteAus, kennzahlen, abschnitte, modellVerbrauch, get fahrt() { return F; }, set fahrt(f) { F = f; }, akkuWerte, zeigeAlles, rechneAbschnitte };
+</script>
+</body>
+</html>

@@ -34,6 +34,8 @@ const attrappe = `<script>
           : i === 1 ? { alt: a, fehler: 'OpenRouter HTTP 429: Rate limit' }
           : i === 3 ? { alt: a, neu: { tarife: [{ name: 'Fremdfahrzeug', kwh: 0.45, kwh_bis: 0.79, grund_monat: 0 }], hinweis: '', quelle: 'https://www.tesla.com', sicher: false, grund: 'Preis je Standort und Uhrzeit verschieden' } }
           : { alt: a, neu: { tarife: a.tarife, hinweis: a.hinweis, quelle: 'https://example.org/preise', sicher: true } }), suche: 'Google-Suche des Modells' }); },
+      speichereMesswerte(liste) { __aufrufe.push(['speichereMesswerte', liste]);
+        antwort(this, { ok: true, warnung: '', meldung: liste.length + ' Messwert(e) gespeichert (446 km).\\n\\nVerbrauchsmodell: Gesamtfaktor aus 8 Wert(en).\\nVerbrauchstempo: Faktor 1,18 auf das Ø-Tempo (aus 2 GPX-Abschnitt(en))' }); },
       preiseSpeichern(anbieter) { __aufrufe.push(['preiseSpeichern', anbieter]); antwort(this, { ok: true, text: 'Gespeichert – in der App nach 1–2 Minuten sichtbar.', preise: { stand: '2026-10-16', anbieter } }); },
       wartungAusfuehren(aktion) { __aufrufe.push(['wartungAusfuehren', aktion]);
         const texte = { bereinigen_vorschau: 'Punkte bereinigen v0.12.0 — Vorschau, nichts geändert\\nZusammenführen: p032 → p010 (EnBW Ladestation Haiger)', routen: 'Routen berechnen v0.12.0\\nneuenrade: unverändert, übersprungen\\n\\nExport v0.12.0\\nneuenrade: 26 Punkte, 716.36 km' };
@@ -71,6 +73,14 @@ const seiten = {
     route: 'neuenrade', route_name: 'Morges – Neuenrade', richtung: 'hin', start_zeit: '2026-09-15T08:05:00Z', ende_zeit: '2026-09-15T10:20:00Z',
     start_lat: 46.50432, start_lon: 6.49127, ende_lat: 47.59857, ende_lon: 7.60339, start_soc: 82, km: 205.3, hm_auf: 640, hm_ab: 590,
     erwartet: 31.4, geschwindigkeit: 120, zusatzgewicht: 0, quer_warnung: false } }, basis)],
+  'messwerte.html': ['Messwerte.html', Object.assign({ stuecke: [
+    { quelle: 'GPX', route: 'gpx', richtung: 'hin', titel: 'Tesla Herbolzheim → EnBW Hüttenberg', start_zeit: '2026-10-16T14:21:33Z', ende_zeit: '2026-10-16T17:52:46Z',
+      start_lat: 48.22746, start_lon: 7.75638, ende_lat: 50.5222, ende_lon: 8.5927, km: 307.3, hm_auf: 300, hm_ab: 269, start_soc: 91, ende_soc: 6,
+      kmh: 101, bordcomputer_kmh: 87, geschwindigkeit: 87, erwartet: 6.9, notiz: 'GPX fahrt.gpx: Tesla Herbolzheim → EnBW Hüttenberg' },
+    { quelle: 'GPX', route: 'gpx', richtung: 'hin', titel: 'EnBW Hüttenberg → Ziel', start_zeit: '2026-10-16T18:17:00Z', ende_zeit: '2026-10-16T19:56:00Z',
+      start_lat: 50.5222, start_lon: 8.5927, ende_lat: 51.28, ende_lon: 7.78, km: 139.2, hm_auf: 895, hm_ab: 759, start_soc: 60, ende_soc: 16,
+      kmh: 100, bordcomputer_kmh: 84, geschwindigkeit: 84, erwartet: 15.2, notiz: '' },
+  ] }, basis)],
 };
 
 for (const [ziel, [quelle, modell]] of Object.entries(seiten)) {

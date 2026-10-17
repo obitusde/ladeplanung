@@ -34,6 +34,10 @@ pruefe(a.length === g.length, 'gleich viele Stützpunkte (App ' + a.length + ', 
 pruefe(JSON.stringify(a) === JSON.stringify(g), 'Linie identisch');
 const ende = a[a.length - 1];
 pruefe(ende[3] > 800 && ende[3] < 1100, 'Anstieg geglättet plausibel (~900 m), war ' + ende[3]);
+// Fahrt auswerten (auswertung.html) rechnet mit einer Kopie desselben Blocks
+const ohneEinzug = t => t.split('\n').map(z => z.trim()).join('\n').trim();
+const ausw = fs.readFileSync(path.join(wurzel, 'auswertung.html'), 'utf8').match(/\/\/ LINIE-START[^\n]*\n([\s\S]*?)\/\/ LINIE-ENDE/);
+pruefe(!!ausw && ohneEinzug(ausw[1]) === ohneEinzug(block[1]), 'LINIE-Block in auswertung.html = index.html');
 console.log('Linie: ' + a.length + ' Stützpunkte, ' + ende[2] + ' km, +' + ende[3] + ' / −' + ende[4] + ' m');
 
 console.log(fehler === 0 ? 'Alle Prüfungen bestanden.' : fehler + ' Prüfungen fehlgeschlagen.');
