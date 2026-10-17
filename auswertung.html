@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
-  Ladeplanung — Fahrt auswerten (GPX). Version 0.2.0 (17.10.2026): Strecke auf OpenStreetMap-Karte (Leaflet wie in der App,
+  Ladeplanung — Fahrt auswerten (GPX). Version 0.3.0 (17.10.2026): Diagramme in echter Breite (Zeitmarken lesbar), weniger Rand,
+  Kacheln zu zweit.
+  Version 0.2.0 (17.10.2026): Strecke auf OpenStreetMap-Karte (Leaflet wie in der App,
   ohne Netz Skizze), Anleitung Garmin-Export (nur Webseite), Akku-Felder schmaler.
   Version 0.1.0 (17.10.2026, Christof: Garmin-Aufzeichnung Ovronnaz → Neuenrade)
   Liest eine GPX-Datei NUR im Browser (nichts wird hochgeladen): Fahrzeit, Stopps, Ladestopps, Tempo, Strecke.
@@ -42,7 +44,7 @@
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--surface-0); color: var(--text-primary); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  main { max-width: 980px; margin: 0 auto; padding: 14px 16px 48px; }
+  main { max-width: 980px; margin: 0 auto; padding: 12px 8px 48px; }
   .kopf { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
   .kopf a { color: var(--akzent); font-weight: 700; text-decoration: none; white-space: nowrap; }
   h1 { font-size: 24px; margin: 0; }
@@ -62,16 +64,16 @@
   }
   #status { font-weight: 600; margin: 10px 0; }
   #status.fehler { color: var(--fehler); }
-  .kachel-reihe { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 10px; margin: 12px 0 14px; }
+  .kachel-reihe { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 12px 0 12px; }
   .kachel { background: var(--surface-1); border: 1px solid var(--linie); border-radius: 10px; padding: 10px 12px; }
-  .kachel .wert { font-size: 23px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .kachel .wert { font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .kachel .name { color: var(--text-secondary); font-size: 13px; }
   .kachel .zusatz { color: var(--text-muted); font-size: 12px; }
-  section { background: var(--surface-1); border: 1px solid var(--linie); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+  section { background: var(--surface-1); border: 1px solid var(--linie); border-radius: 10px; padding: 12px 10px; margin-bottom: 10px; }
   .legende { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--text-secondary); margin: 6px 0 0; }
   .legende span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; background: var(--f); vertical-align: -1px; }
   section > svg { display: block; width: 100%; height: auto; overflow: visible; }   /* nicht die SVG-Ebene der Karte */
-  section > svg text { fill: var(--text-muted); font-size: 11px; }
+  section > svg text { fill: var(--text-muted); font-size: 12px; }
   [hidden] { display: none !important; }
   .tipp { position: fixed; pointer-events: none; background: var(--surface-1); border: 1px solid var(--linie); border-radius: 8px; padding: 6px 9px; font-size: 13px; box-shadow: 0 4px 14px rgba(0,0,0,.2); display: none; z-index: 9; max-width: 260px; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
@@ -514,37 +516,52 @@ function zeigeKacheln() {
   }
 }
 
+// Diagramme in echter Pixelbreite zeichnen (Christof 17.10.2026: Zeitmarken auf dem Handy zu klein, weil die
+// Zeichnung von 900 auf ~330 px verkleinert wurde) – Schrift bleibt so 12 px groß.
+function breite(svg, hoehe) {
+  const w = Math.max(280, Math.round(svg.getBoundingClientRect().width || svg.parentElement.clientWidth || 600));
+  svg.setAttribute('viewBox', '0 0 ' + w + ' ' + hoehe);
+  return w;
+}
+
 function zeigeZeitachse() {
   const svg = $('zeitachse'); svg.replaceChildren();
-  const x = t => 10 + (t - F.t0) / (F.t1 - F.t0) * 880;
+  const W = breite(svg, 70);
+  const x = t => 6 + (t - F.t0) / (F.t1 - F.t0) * (W - 12);
   const bloecke = F.fahrten.map(f => ({ art: 'fahren', t0: f.t0, t1: f.t1, text: 'Fahren ' + uhr(f.t0) + '–' + uhr(f.t1) + '<br>' + zahl(f.km) + ' km · ' + hm(f.min) + ' · Ø ' + Math.round(f.kmh) + ' km/h' }))
     .concat(F.stopps.map(s => ({ art: s.geladen ? 'laden' : 'halt', t0: s.t0, t1: s.t1,
       text: (s.geladen ? 'Laden' : s.art === 'ankunft' ? 'Ankunft' : s.art === 'start' ? 'Start' : 'Halt') + ' ' + uhr(s.t0) + '–' + uhr(s.t1) + '<br>' + Math.round(s.min) + ' min · km ' + Math.round(s.km) + (s.station ? '<br>' + s.station : '') })));
   for (const b of bloecke) {
     const x1 = x(b.t0), x2 = Math.max(x(b.t1), x1 + 3);
-    sv('rect', { x: x1 + 1, y: 8, width: Math.max(2, x2 - x1 - 2), height: 30, rx: 3, fill: 'var(--' + b.art + ')' }, svg);
+    sv('rect', { x: x1 + 1, y: 6, width: Math.max(2, x2 - x1 - 2), height: 32, rx: 3, fill: 'var(--' + b.art + ')' }, svg);
     const ziel = sv('rect', { x: x1, y: 0, width: Math.max(10, x2 - x1), height: 46, fill: 'transparent' }, svg);
     ziel.addEventListener('mousemove', ev => zeigeTipp(ev, b.text)); ziel.addEventListener('mouseleave', wegTipp);
     ziel.addEventListener('click', ev => zeigeTipp(ev, b.text));
   }
-  const schritt = (F.t1 - F.t0) > 8 * 3600 ? 3600 : 1800;
+  // so viele Uhrzeiten, wie nebeneinander passen (≈ 50 px je Marke)
+  const stunden = (F.t1 - F.t0) / 3600, platz = Math.max(1, Math.floor((W - 12) / 50));
+  const schritt = [0.5, 1, 2, 3, 4, 6].find(s => stunden / s <= platz) * 3600 || 6 * 3600;
   for (let t = Math.ceil(F.t0 / schritt) * schritt; t <= F.t1; t += schritt) {
     sv('line', { x1: x(t), x2: x(t), y1: 40, y2: 46, stroke: 'var(--linie)' }, svg);
-    sv('text', { x: x(t), y: 60, 'text-anchor': 'middle' }, svg).textContent = uhr(t);
+    const xx = Math.min(W - 18, Math.max(18, x(t)));
+    sv('text', { x: xx, y: 62, 'text-anchor': 'middle' }, svg).textContent = uhr(t);
   }
 }
 
 function zeigeTempo() {
   const svg = $('tempo'); svg.replaceChildren();
-  const L = 44, R = 890, O = 12, U = 228, maxKm = Math.max(1, F.km);
+  const W = breite(svg, 250);
+  const L = 34, R = W - 6, O = 26, U = 222, maxKm = Math.max(1, F.km);
   const x = km => L + km / maxKm * (R - L), y = v => U - Math.min(v, 150) / 150 * (U - O);
-  for (const v of [0, 50, 100, 150]) { sv('line', { x1: L, x2: R, y1: y(v), y2: y(v), stroke: 'var(--raster)' }, svg); sv('text', { x: L - 6, y: y(v) + 4, 'text-anchor': 'end' }, svg).textContent = v; }
-  sv('text', { x: L - 6, y: O - 2, 'text-anchor': 'end' }, svg).textContent = 'km/h';
-  const schritt = maxKm > 400 ? 100 : maxKm > 100 ? 50 : 10;
-  for (let k = 0; k <= maxKm; k += schritt) sv('text', { x: x(k), y: U + 18, 'text-anchor': 'middle' }, svg).textContent = k + ' km';
+  for (const v of [0, 50, 100, 150]) { sv('line', { x1: L, x2: R, y1: y(v), y2: y(v), stroke: 'var(--raster)' }, svg); sv('text', { x: L - 5, y: y(v) + 4, 'text-anchor': 'end' }, svg).textContent = v; }
+  sv('text', { x: 2, y: 11 }, svg).textContent = 'km/h';
+  const platz = Math.max(1, Math.floor((R - L) / 60));
+  const schritt = [10, 20, 50, 100, 200, 250, 500].find(s => maxKm / s <= platz) || 500;
+  for (let k = 0; k <= maxKm; k += schritt) sv('text', { x: Math.min(R - 20, x(k)), y: U + 18, 'text-anchor': k === 0 ? 'start' : 'middle' }, svg).textContent = k + ' km';
   for (const s of F.stopps.filter(s => s.geladen)) {
     sv('rect', { x: x(s.km) - 2, y: O, width: 4, height: U - O, fill: 'var(--laden)', opacity: .35 }, svg);
-    sv('text', { x: x(s.km) + 5, y: O + 10 }, svg).textContent = 'Laden ' + Math.round(s.min) + ' min';
+    const t = sv('text', { x: x(s.km) + (x(s.km) > W - 90 ? -5 : 5), y: O + 10, 'text-anchor': x(s.km) > W - 90 ? 'end' : 'start' }, svg);
+    t.textContent = Math.round(s.min) + ' min';
   }
   const schnitt = F.km / (F.fahrMin / 60);
   sv('line', { x1: L, x2: R, y1: y(schnitt), y2: y(schnitt), stroke: 'var(--text-muted)', 'stroke-dasharray': '4 4' }, svg);
@@ -570,9 +587,11 @@ function zeigeTempo() {
 
 function zeigeVerteilung() {
   const svg = $('verteilung'); svg.replaceChildren();
-  const v = F.verteilung, L = 70, R = 420, O = 6, zeile = 32, max = Math.max(1, ...v.map(b => b.min));
+  const v = F.verteilung, zeile = 30, O = 4;
+  const W = breite(svg, O + v.length * zeile + 20);
+  const L = 62, R = W - 4, max = Math.max(1, ...v.map(b => b.min));
   v.forEach((b, i) => {
-    const yy = O + i * zeile, w = b.min / max * (R - L - 50);
+    const yy = O + i * zeile, w = b.min / max * (R - L - 56);
     sv('text', { x: L - 8, y: yy + 17, 'text-anchor': 'end' }, svg).textContent = b.bereich;
     sv('rect', { x: L, y: yy + 4, width: Math.max(2, w), height: 20, rx: 4, fill: 'var(--fahren)' }, svg);
     const t = sv('text', { x: L + w + 6, y: yy + 18 }, svg); t.textContent = Math.round(b.min) + ' min'; t.style.fill = 'var(--text-secondary)';
@@ -580,8 +599,15 @@ function zeigeVerteilung() {
     const text = '<b>' + b.bereich + ' km/h</b><br>' + Math.round(b.min) + ' min · ' + Math.round(b.km) + ' km';
     ziel.addEventListener('mousemove', ev => zeigeTipp(ev, text)); ziel.addEventListener('mouseleave', wegTipp);
   });
-  sv('text', { x: L - 8, y: O + v.length * zeile + 12, 'text-anchor': 'end' }, svg).textContent = 'km/h';
+  sv('text', { x: L - 8, y: O + v.length * zeile + 14, 'text-anchor': 'end' }, svg).textContent = 'km/h';
 }
+
+// Breite geändert (Handy gedreht): Diagramme neu zeichnen
+let groesseTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(groesseTimer);
+  groesseTimer = setTimeout(() => { if (F && !$('ergebnis').hidden) { zeigeZeitachse(); zeigeTempo(); zeigeVerteilung(); } }, 200);
+});
 
 // Karte: Leaflet 1.9.4 wie in der App (cdnjs mit SRI), Kacheln von OpenStreetMap; ohne Netz die Skizze ohne Hintergrund
 const LEAFLET_URL = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/';
