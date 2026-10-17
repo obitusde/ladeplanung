@@ -1,12 +1,15 @@
 <!DOCTYPE html>
 <!--
-  Ladeplanung — Fahrt auswerten (GPX). Version 0.1.0 (17.10.2026, Christof: Garmin-Aufzeichnung Ovronnaz → Neuenrade)
+  Ladeplanung — Fahrt auswerten (GPX). Version 0.2.0 (17.10.2026): Strecke auf OpenStreetMap-Karte (Leaflet wie in der App,
+  ohne Netz Skizze), Anleitung Garmin-Export (nur Webseite), Akku-Felder schmaler.
+  Version 0.1.0 (17.10.2026, Christof: Garmin-Aufzeichnung Ovronnaz → Neuenrade)
   Liest eine GPX-Datei NUR im Browser (nichts wird hochgeladen): Fahrzeit, Stopps, Ladestopps, Tempo, Strecke.
   Mit den Akkuständen an Start, Ladestopps und Ziel entstehen Messwerte (Quelle „GPX") für die Kalibrierung:
   km und Höhenmeter aus der Aufzeichnung (geglättet wie in der App), Ø-Tempo beim Fahren und das Verbrauchstempo
   (energiegleiches Tempo: Wurzel aus dem km-gewichteten Mittel von v² je 5 km). Gesendet werden nur diese Abschnittswerte
   an die Seite „Messwerte" (Google-Login), nie die Spur. Ins Netz geht sonst nur: routes.json/fremde.json/modell.json laden
-  und die Temperatur je Abschnitt bei Open-Meteo (Ort auf 0,1° gerundet).
+  und die Temperatur je Abschnitt bei Open-Meteo (Ort auf 0,1° gerundet), Leaflet von cdnjs und die Kartenkacheln von
+  tile.openstreetmap.org (der Kartendienst sieht den angezeigten Ausschnitt, nicht die Datei).
   Rechenblöcke LINIE und ENERGIE sind Kopien aus index.html (tests/test-linie.js, tests/test-modell.js prüfen das).
 -->
 <html lang="de">
@@ -67,8 +70,9 @@
   section { background: var(--surface-1); border: 1px solid var(--linie); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
   .legende { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--text-secondary); margin: 6px 0 0; }
   .legende span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; background: var(--f); vertical-align: -1px; }
-  svg { display: block; width: 100%; height: auto; overflow: visible; }
-  svg text { fill: var(--text-muted); font-size: 11px; }
+  section > svg { display: block; width: 100%; height: auto; overflow: visible; }   /* nicht die SVG-Ebene der Karte */
+  section > svg text { fill: var(--text-muted); font-size: 11px; }
+  [hidden] { display: none !important; }
   .tipp { position: fixed; pointer-events: none; background: var(--surface-1); border: 1px solid var(--linie); border-radius: 8px; padding: 6px 9px; font-size: 13px; box-shadow: 0 4px 14px rgba(0,0,0,.2); display: none; z-index: 9; max-width: 260px; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
   th, td { text-align: left; padding: 6px 6px; border-bottom: 1px solid var(--raster); vertical-align: middle; }
@@ -78,8 +82,14 @@
   .marke { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
   .zwei { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
   @media (max-width: 720px) { .zwei { grid-template-columns: 1fr; } }
-  .akku { display: grid; grid-template-columns: 1fr auto auto; gap: 8px 10px; align-items: center; }
-  .akku .ort { font-weight: 600; }
+  .akku { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px 8px; align-items: center; }
+  .akku .ort { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+  .akku input[type=number] { width: 4.2em; }
+  html, body { overflow-x: hidden; }
+  details.hilfe { margin: 0 0 10px; color: var(--text-secondary); font-size: 14px; }
+  details.hilfe summary { cursor: pointer; color: var(--akzent); font-weight: 600; }
+  #karte { height: 360px; border-radius: 8px; overflow: hidden; background: var(--raster); }
+  .leaflet-container { font: inherit; }
   .akku .ort small { display: block; font-weight: 400; color: var(--text-secondary); }
   .akku label { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 14px; }
   .leer { color: var(--text-muted); }
@@ -94,7 +104,11 @@
 <body>
 <main>
   <div class="kopf"><a href="./">‹ App</a><h1>Fahrt auswerten</h1></div>
-  <p class="unter">GPX-Datei einer Fahrt wählen, z. B. von der Garmin-Uhr (connect.garmin.com → Aktivität → Zahnrad → „In GPX exportieren"). Die Auswertung läuft nur hier im Browser – die Datei wird nicht hochgeladen.</p>
+  <p class="unter">GPX-Datei einer Fahrt wählen. Die Auswertung läuft nur hier im Browser – die Datei wird nicht hochgeladen.</p>
+  <details class="hilfe">
+    <summary>GPX von der Garmin-Uhr holen</summary>
+    <p>Geht nur über die <b>Webseite</b>, nicht in der Garmin-Connect-App: am PC (oder im Handy-Browser) <b>connect.garmin.com</b> öffnen und anmelden → links <b>Aktivitäten</b> → <b>Alle Aktivitäten</b> → die Fahrt anklicken → oben rechts das <b>Zahnrad</b> → <b>In GPX exportieren</b>. Die Datei landet unter „Downloads"; hier mit „GPX-Datei wählen" öffnen.</p>
+  </details>
   <label class="knopf haupt">GPX-Datei wählen<input type="file" id="datei" accept=".gpx,application/gpx+xml,application/xml,text/xml"></label>
   <p id="status"></p>
 
@@ -128,18 +142,18 @@
       <svg id="tempo" viewBox="0 0 900 260" role="img" aria-label="Tempo über die Strecke"></svg>
     </section>
 
-    <div class="zwei">
-      <section>
-        <h2>Wie lange in welchem Tempo</h2>
-        <p class="erkl">Minuten beim Fahren, in 1-Minuten-Stücken gemessen.</p>
-        <svg id="verteilung" viewBox="0 0 440 250" role="img" aria-label="Fahrzeit je Tempobereich"></svg>
-      </section>
-      <section>
-        <h2>Strecke</h2>
-        <p class="erkl">Ohne Kartenhintergrund (nichts wird geladen). Punkte = Stopps.</p>
-        <svg id="spur" viewBox="0 0 440 250" role="img" aria-label="Streckenverlauf"></svg>
-      </section>
-    </div>
+    <section>
+      <h2>Strecke</h2>
+      <p class="erkl">Orange = Laden, grün = Halt. Die Kartenbilder kommen von OpenStreetMap – dabei sieht der Kartendienst, welchen Ausschnitt du anschaust, nicht die Datei.</p>
+      <div id="karte"></div>
+      <svg id="spur" viewBox="0 0 440 250" role="img" aria-label="Streckenverlauf" hidden></svg>
+    </section>
+
+    <section>
+      <h2>Wie lange in welchem Tempo</h2>
+      <p class="erkl">Minuten beim Fahren, in 1-Minuten-Stücken gemessen.</p>
+      <svg id="verteilung" viewBox="0 0 440 250" role="img" aria-label="Fahrzeit je Tempobereich"></svg>
+    </section>
 
     <section>
       <h2>Stopps</h2>
@@ -569,7 +583,56 @@ function zeigeVerteilung() {
   sv('text', { x: L - 8, y: O + v.length * zeile + 12, 'text-anchor': 'end' }, svg).textContent = 'km/h';
 }
 
-function zeigeSpur() {
+// Karte: Leaflet 1.9.4 wie in der App (cdnjs mit SRI), Kacheln von OpenStreetMap; ohne Netz die Skizze ohne Hintergrund
+const LEAFLET_URL = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/';
+const LEAFLET_JS_SRI = 'sha512-BwHfrr4c9kmRkLw6iXFdzcdWV/PGkVgiIyIWLLlTSXzWQzxuSg4DiQUCpauz/EWjgk5TYQqX/kvn9pG1NpYfqg==';
+const LEAFLET_CSS_SRI = 'sha512-Zcn6bjR/8RZbLEpLIeOwNtzREBAJnUKESxces60Mpoj+2okopSAcSUIUOseddDm0cxnGQzxIR7vJgsLZbdLE3w==';
+let leafletLaedt = null, karte = null, kartenEbene = null;
+function ladeLeaflet() {
+  if (window.L) return Promise.resolve();
+  if (leafletLaedt) return leafletLaedt;
+  leafletLaedt = new Promise((ja, nein) => {
+    const css = document.createElement('link');
+    css.rel = 'stylesheet'; css.href = LEAFLET_URL + 'leaflet.css'; css.integrity = LEAFLET_CSS_SRI; css.crossOrigin = 'anonymous';
+    document.head.append(css);
+    const s = document.createElement('script');
+    s.src = LEAFLET_URL + 'leaflet.js'; s.integrity = LEAFLET_JS_SRI; s.crossOrigin = 'anonymous';
+    s.onload = () => ja();
+    s.onerror = () => { leafletLaedt = null; s.remove(); nein(new Error('Kartenbibliothek nicht ladbar')); };
+    document.head.append(s);
+  });
+  return leafletLaedt;
+}
+
+async function zeigeSpur() {
+  try {
+    await ladeLeaflet();
+  } catch (e) {
+    $('karte').hidden = true; $('spur').hidden = false; zeigeSkizze(); return;
+  }
+  $('karte').hidden = false; $('spur').hidden = true;
+  if (!karte) {
+    karte = L.map('karte', { zoomControl: true, attributionControl: true });
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap' }).addTo(karte);
+  }
+  if (kartenEbene) kartenEbene.remove();
+  kartenEbene = L.layerGroup().addTo(karte);
+  const linie = F.spur.map(q => [q[0], q[1]]);
+  L.polyline(linie, { color: '#ffffff', weight: 8, opacity: .9 }).addTo(kartenEbene);
+  const route = L.polyline(linie, { color: '#6a2fd6', weight: 5 }).addTo(kartenEbene);
+  for (const st of F.stopps) {
+    const farbe = st.geladen ? getComputedStyle(document.documentElement).getPropertyValue('--laden') : getComputedStyle(document.documentElement).getPropertyValue('--halt');
+    const text = (st.geladen ? 'Laden' : st.art === 'start' ? 'Start' : st.art === 'ankunft' ? 'Ankunft' : 'Halt') + ' ' + uhr(st.t0) + '–' + uhr(st.t1) + ' · ' + Math.round(st.min) + ' min' + (st.station ? '<br>' + st.station : '');
+    L.circleMarker([st.lat, st.lon], { radius: st.geladen ? 9 : 7, color: '#ffffff', weight: 2, fillColor: farbe.trim() || '#1baf7a', fillOpacity: 1 })
+      .bindTooltip(text).addTo(kartenEbene);
+  }
+  L.circleMarker(linie[0], { radius: 6, color: '#ffffff', weight: 2, fillColor: '#000000', fillOpacity: 1 }).bindTooltip('Start ' + uhr(F.t0)).addTo(kartenEbene);
+  L.circleMarker(linie[linie.length - 1], { radius: 6, color: '#ffffff', weight: 2, fillColor: '#000000', fillOpacity: 1 }).bindTooltip('Ziel ' + uhr(F.t1)).addTo(kartenEbene);
+  karte.invalidateSize();
+  karte.fitBounds(route.getBounds(), { padding: [16, 16] });
+}
+
+function zeigeSkizze() {
   const svg = $('spur'); svg.replaceChildren();
   const s = F.spur;
   let n = -90, su = 90, w = 180, o = -180; for (const [la, lo] of s) { n = Math.max(n, la); su = Math.min(su, la); w = Math.min(w, lo); o = Math.max(o, lo); }

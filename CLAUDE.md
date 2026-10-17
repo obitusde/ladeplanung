@@ -1,6 +1,6 @@
 # Ladeplanung Cupra Born — Projektstand für Claude
 
-**Stand 17.10.2026** · App (`index.html`) v0.31.0 · Fahrt auswerten (`auswertung.html`) v0.1.0 · Apps Script (`apps-script/Code.js`) v0.22.0 · Veröffentlichen per GitHub Action (`.github/workflows/apps-script.yml`) v1.0.0 · Bundesdaten-Action (`.github/workflows/bundesdaten.yml`) v1.1.0
+**Stand 17.10.2026** · App (`index.html`) v0.31.0 · Fahrt auswerten (`auswertung.html`) v0.2.0 · Apps Script (`apps-script/Code.js`) v0.22.0 · Veröffentlichen per GitHub Action (`.github/workflows/apps-script.yml`) v1.0.0 · Bundesdaten-Action (`.github/workflows/bundesdaten.yml`) v1.1.0
 Ursprünglicher Auftrag: [`docs/Umsetzungsbrief_v5.0.md`](docs/Umsetzungsbrief_v5.0.md). Diese Datei beschreibt den **tatsächlichen** Stand inklusive aller späteren Entscheidungen und hat Vorrang vor dem Brief.
 
 ---
@@ -104,7 +104,7 @@ Christof pflegt über die App; Rechenschritte stößt er über **Wartung & Statu
 | Datei | Inhalt |
 |---|---|
 | `index.html` | Die PWA (CSS+JS eingebettet, keine Bibliotheken). Rechenkern `projiziere`, `haversine`, `streckenwerte`, Energieblock zwischen `// ENERGIE-START` und `// ENERGIE-ENDE` (muss identisch zu Code.js bleiben – Test prüft das). `window.ladeplanung` für Tests. |
-| `auswertung.html` | „Fahrt auswerten (GPX)" (Menü): GPX nur im Browser lesen, Stopps/Ladestopps (≥ 10 min, Station ≤ 400 m), Tempo, Zeitachse, Strecke ohne Kartenkacheln; Akkustände an Start/Ladestopps/Ziel → Messwerte (Quelle „GPX") an `?seite=messwerte`. Blöcke `LINIE` und `ENERGIE` + `haversine` sind Kopien aus index.html (Tests prüfen Gleichheit, Einrückung egal) |
+| `auswertung.html` | „Fahrt auswerten (GPX)" (Menü): GPX nur im Browser lesen, Stopps/Ladestopps (≥ 10 min, Station ≤ 400 m), Tempo, Zeitachse, Strecke ohne Kartenkacheln; Akkustände an Start/Ladestopps/Ziel → Messwerte (Quelle „GPX") an `?seite=messwerte`. Strecke seit v0.2.0 auf OpenStreetMap-Karte (Leaflet wie die App; CSS für Diagramm-SVGs nur `section > svg`, sonst verzerrt es die SVG-Ebene von Leaflet), ohne Netz Skizze. Garmin-Export nur über die Webseite connect.garmin.com (nicht in der App). Blöcke `LINIE` und `ENERGIE` + `haversine` sind Kopien aus index.html (Tests prüfen Gleichheit, Einrückung egal) |
 | `manifest.json`, `icon-*.png` | Installierbarkeit (Blitz-Icon) |
 | `routes.json` | vom Script exportiert, Format 1.2 |
 | `preise.json` | Ladepreise je Betreiber und Land (Direktangebote), `stand` = Datum; Pflege über `?seite=preise` |
