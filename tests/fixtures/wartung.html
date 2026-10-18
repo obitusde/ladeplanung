@@ -39,7 +39,7 @@
           : i === 1 ? { alt: a, fehler: 'OpenRouter HTTP 429: Rate limit' }
           : i === 3 ? { alt: a, neu: { tarife: [{ name: 'Fremdfahrzeug', kwh: 0.45, kwh_bis: 0.79, grund_monat: 0 }], hinweis: '', quelle: 'https://www.tesla.com', sicher: false, grund: 'Preis je Standort und Uhrzeit verschieden' } }
           : { alt: a, neu: { tarife: a.tarife, hinweis: a.hinweis, quelle: 'https://example.org/preise', sicher: true } }), suche: 'Google-Suche des Modells' }); },
-      speichereMesswerte(liste) { __aufrufe.push(['speichereMesswerte', liste]);
+      speichereMesswerte(liste, reise) { __aufrufe.push(['speichereMesswerte', liste, reise]);
         antwort(this, { ok: true, warnung: '', meldung: liste.length + ' Messwert(e) gespeichert (446 km).\n\nVerbrauchsmodell: Gesamtfaktor aus 8 Wert(en).\nVerbrauchstempo: Faktor 1,18 auf das Ø-Tempo (aus 2 GPX-Abschnitt(en))' }); },
       preiseSpeichern(anbieter) { __aufrufe.push(['preiseSpeichern', anbieter]); antwort(this, { ok: true, text: 'Gespeichert – in der App nach 1–2 Minuten sichtbar.', preise: { stand: '2026-10-16', anbieter } }); },
       wartungAusfuehren(aktion) { __aufrufe.push(['wartungAusfuehren', aktion]);

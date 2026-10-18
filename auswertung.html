@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
-  Ladeplanung — Fahrt auswerten (GPX). Version 0.7.0 (18.10.2026): Erklärungen und Stau-Liste aufklappbar; eigene Station hat Vorrang
+  Ladeplanung — Fahrt auswerten (GPX). Version 0.8.0 (18.10.2026): Fahrtenbuch – Zusammenfassung der Fahrt wird mit den Messwerten
+  gespeichert (Blatt „Reisen", ohne Spur); Speichern auch ohne Akkustände (dann nur Fahrtenbuch).
+  Version 0.7.0 (18.10.2026): Erklärungen und Stau-Liste aufklappbar; eigene Station hat Vorrang
   vor dem Register-Eintrag derselben Station (Herbolzheim, Hüttenberg standen als „nicht in deiner Liste").
   Version 0.6.1 (18.10.2026): Begriff „Verbrauchstempo" nicht mehr angezeigt (Christof: verwirrend),
   intern unverändert.
@@ -161,7 +163,7 @@
       <details class="hilfe"><summary>Erklärung</summary><p>Abschnitte zwischen den Ladestopps und die Ladestopps dazwischen; Akku-Anzeige im Auto, 1 % = 0,58 kWh. „Modell" = was die App erwartet hätte.</p></details>
       <div id="abschnitte"></div>
       <button class="knopf haupt" id="senden" disabled>Als Messwerte speichern</button>
-      <details class="hilfe"><summary>Was wird übertragen?</summary><p id="senden-hinweis">Öffnet die Seite „Messwerte" (Google-Login). Übertragen werden nur die Abschnittswerte – km, Höhenmeter, Akku, Tempo, Zeiten, Anfangs- und Endpunkt –, nicht die Spur.</p></details>
+      <details class="hilfe"><summary>Was wird übertragen?</summary><p id="senden-hinweis">Der Knopf öffnet die Seite „Messwerte" (Google-Login); dort einmal speichern. Ins Blatt „Reisen" (Fahrtenbuch) kommt eine Zeile je Fahrt: Datum, Start- und Zielort, km, Zeiten fürs Fahren, Laden, Pausen und Stau, Verbrauch, Ladestopps – dieselbe Fahrt nochmal ersetzt sie. Ins Blatt „Fahrten" kommen die Abschnitte für die Kalibrierung: km, Höhenmeter, Akku, Tempo, Zeiten, Anfangs- und Endpunkt. Die Spur selbst wird nie übertragen. Doppelte Messwerte (z. B. dieselbe Strecke zusätzlich aus „Messwerte senden") verschiebt das Script nach „Fahrten aussortiert".</p></details>
     </section>
 
     <section>
@@ -932,6 +934,7 @@ async function rechneAbschnitte() {
   const { liste } = abschnitte();
   const karten = [], stuecke = [];
   let summeKm = 0, summeKwh = 0, geladenKwh = 0, ladeMin = 0;
+  const temps = [], ladestopps = [];
   for (const a of liste) {
     const k = kennzahlen(a.i, a.j);
     const soc0 = (akkuWerte[a.von.id] || {}).ab, soc1 = (akkuWerte[a.bis.id] || {}).an;
@@ -948,6 +951,7 @@ async function rechneAbschnitte() {
       const mitte = F.p[Math.round((a.i + a.j) / 2)];
       const temp = await temperaturBei(mitte.lat, mitte.lon, mitte.t);
       if (lauf !== rechenLauf) return;
+      if (temp !== null) temps.push(temp);
       const m = modellVerbrauch(k, soc0, k.verbrauch, temp === null ? 15 : temp);
       if (m !== null) {
         const d = Math.round(m - (soc0 - soc1));
@@ -972,8 +976,11 @@ async function rechneAbschnitte() {
       const w = akkuWerte[a.bis.id] || {};
       const laden = el('div', 'abschnitt laden');
       laden.append(el('b', '', '⚡ ' + kurz(s.station || 'Ladestopp') + ' · ' + uhr(s.t0) + '–' + uhr(s.t1) + ' · ' + Math.round(s.min) + ' min'));
+      const stopp = { name: kurz(s.station || 'Ladestopp'), min: Math.round(s.min) };
+      ladestopps.push(stopp);
       if (w.an !== undefined && w.ab !== undefined && w.ab > w.an) {
         const e = (w.ab - w.an) / 100 * kap;
+        Object.assign(stopp, { an: w.an, ab: w.ab, kwh: Math.round(e * 10) / 10 });
         geladenKwh += e; ladeMin += s.min;
         laden.append(el('div', 'ergebnis', w.an + ' → ' + w.ab + ' % · ' + zahl(e, 1) + ' kWh geladen · Ø ' + Math.round(e / (s.min / 60)) + ' kW'));
       } else laden.append(el('div', 'zeile', 'Akku an/ab eintragen'));
@@ -985,13 +992,28 @@ async function rechneAbschnitte() {
   if (summeKm > 0) kopf.textContent = 'Ø ' + zahl(summeKwh / summeKm * 100, 1) + ' kWh/100 km · ' + zahl(summeKwh, 1) + ' kWh auf ' + zahl(summeKm) + ' km' +
     (ladeMin > 0 ? ' · geladen ' + zahl(geladenKwh, 1) + ' kWh in ' + hm(ladeMin) + ' (Ø ' + Math.round(geladenKwh / (ladeMin / 60)) + ' kW)' : '');
   $('abschnitte').replaceChildren(...(summeKm > 0 ? [kopf] : []), ...karten);
+  // Fahrtenbuch (Christof 18.10.2026): Zusammenfassung ohne Spur, wird mit den Messwerten gespeichert (Blatt „Reisen")
+  const r3 = x => Math.round(x * 1e3) / 1e3, a = F.p[0], z = F.p[F.n - 1];
+  const halte = F.stopps.filter(s => s.art === 'halt' && !s.geladen && !s.stau);
+  const reise = {
+    start: new Date(F.t0 * 1000).toISOString(), ende: new Date(F.t1 * 1000).toISOString(),
+    start_lat: r3(a.lat), start_lon: r3(a.lon), ende_lat: r3(z.lat), ende_lon: r3(z.lon),
+    km: Math.round(F.km * 10) / 10, unterwegs_min: Math.round(F.dauerMin), fahren_min: Math.round(F.fahrMin),
+    laden_min: Math.round(F.stopps.filter(s => s.geladen).reduce((x, s) => x + s.min, 0)), ladestopps,
+    pausen_min: Math.round(halte.reduce((x, s) => x + s.min, 0)),
+    stau_min: Math.round(F.stau ? F.stau.verlust : 0), zaeh_min: Math.round(F.stau ? F.stau.zaehVerlust : 0),
+    verbrauch_kwh: summeKwh ? Math.round(summeKwh * 10) / 10 : null, verbrauch_km: summeKm ? Math.round(summeKm) : null,
+    temp: temps.length ? Math.round(temps.reduce((x, y) => x + y, 0) / temps.length * 10) / 10 : null, datei: F.name || '',
+  };
   const knopf = $('senden');
-  knopf.disabled = !stuecke.length;
-  knopf.textContent = stuecke.length ? stuecke.length + ' Messwert(e) für die Kalibrierung speichern' : 'Als Messwerte speichern (erst Akkustände eintragen)';
+  knopf.disabled = false;
+  knopf.textContent = stuecke.length ? 'Fahrtenbuch und ' + stuecke.length + ' Messwert(e) speichern' : 'Ins Fahrtenbuch speichern (ohne Akkustände keine Messwerte)';
   knopf.onclick = () => {
-    const url = FORMULAR_URL + '?seite=messwerte&stuecke=' + encodeURIComponent(JSON.stringify(stuecke.slice(0, MESSWERTE_MAX)));
+    const url = FORMULAR_URL + '?seite=messwerte&stuecke=' + encodeURIComponent(JSON.stringify(stuecke.slice(0, MESSWERTE_MAX))) +
+      '&reise=' + encodeURIComponent(JSON.stringify(reise));
     window.open(url, '_blank', 'noopener');
   };
+  F.reise = reise;
 }
 
 // Für Tests

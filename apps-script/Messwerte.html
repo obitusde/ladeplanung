@@ -3,6 +3,7 @@
   Ladeplanung — Messwerte speichern. Wird von doGet() mit ?seite=messwerte&stuecke=<JSON-Liste> ausgeliefert:
   Messstücke aus der App (zwischen zwei Akkuwerten, ab 50 km) oder aus „Fahrt auswerten" (GPX, zwischen Ladestopps).
   Alle angehakten Stücke werden ins Blatt „Fahrten" geschrieben, danach wird einmal kalibriert.
+  Version 0.2.0 (18.10.2026) — Fahrtenbuch: Zusammenfassung der Fahrt (reise) anzeigen und mitspeichern.
   Version 0.1.1 (18.10.2026) — ohne „Verbrauchstempo" in der Anzeige.
   Version 0.1.0 (17.10.2026)
 -->
@@ -60,6 +61,7 @@
   <main>
     <h1>Messwerte speichern</h1>
     <p class="leise" id="einleitung"></p>
+    <div id="reise"></div>
     <div id="liste"></div>
     <label class="feld">Zusatzgewicht (kg) <small>Beifahrer, Gepäck, Dachbox – gilt für alle Stücke</small>
       <input id="zusatzgewicht" type="number" inputmode="numeric" min="0" max="1000" value="0">
@@ -87,6 +89,20 @@
       '. Angehakte werden im Blatt „Fahrten" gespeichert, danach lernt das Verbrauchsmodell neu. Die Temperatur holt das Script selbst.';
     if (stuecke.length && stuecke[0].zusatzgewicht) $('zusatzgewicht').value = stuecke[0].zusatzgewicht;
 
+    // Fahrtenbuch (Christof 18.10.2026): Zusammenfassung der Fahrt, wird mitgespeichert (Blatt „Reisen")
+    const reise = MODELL.reise;
+    if (reise) {
+      const k = el('div', 'karte');
+      const std = min => Math.floor(min / 60) + ' h ' + String(Math.round(min % 60)).padStart(2, '0');
+      k.append(el('b', '', 'Fahrtenbuch · ' + zeit(reise.start) + ' · ' + zahl(reise.km) + ' km'));
+      k.append(el('div', 'zeile', 'unterwegs ' + std(reise.unterwegs_min) + ' · fahren ' + std(reise.fahren_min) + ' · laden ' + std(reise.laden_min || 0) +
+        ' · Stau ≈ ' + Math.round(reise.stau_min || 0) + ' min'));
+      if (reise.verbrauch_kwh) k.append(el('div', 'zeile', zahl(reise.verbrauch_kwh) + ' kWh · ' + zahl(reise.verbrauch_kwh / reise.verbrauch_km * 100, 1) + ' kWh/100 km'));
+      k.append(el('div', 'zeile', 'Wird ins Blatt „Reisen" geschrieben (ohne Spur); dieselbe Fahrt nochmal ersetzt die Zeile.'));
+      $('reise').append(k);
+      if (!stuecke.length) $('einleitung').textContent = 'Nur das Fahrtenbuch – für Messwerte fehlen die Akkustände.';
+    }
+
     stuecke.forEach((s, i) => {
       const k = el('div', 'karte');
       k.append(el('b', '', (s.titel || ('Stück ' + (i + 1))) + ' · ' + zahl(s.km) + ' km'));
@@ -106,7 +122,7 @@
     $('speichern').addEventListener('click', () => {
       const gewicht = $('zusatzgewicht').value.trim();
       const gewaehlt = [...document.querySelectorAll('#liste input:checked')].map(c => Object.assign({}, stuecke[Number(c.dataset.i)], { zusatzgewicht: gewicht }));
-      if (!gewaehlt.length) { zeige('Nichts angehakt.', 'fehler'); return; }
+      if (!gewaehlt.length && !reise) { zeige('Nichts angehakt.', 'fehler'); return; }
       $('speichern').disabled = true;
       $('speichern').textContent = 'Wird gespeichert …';
       google.script.run
@@ -117,7 +133,7 @@
           $('speichern').hidden = true;
         })
         .withFailureHandler(f => { $('speichern').disabled = false; $('speichern').textContent = 'Speichern und kalibrieren'; zeige('Fehler: ' + ((f && f.message) || f), 'fehler'); })
-        .speichereMesswerte(gewaehlt);
+        .speichereMesswerte(gewaehlt, reise || null);
     });
   </script>
 </body>

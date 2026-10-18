@@ -6,7 +6,7 @@ const path = require('path');
 
 const wurzel = path.join(__dirname, '..');
 const quelle = fs.readFileSync(path.join(wurzel, 'apps-script', 'Code.js'), 'utf8');
-const gs = new Function(quelle + '; return { energieAnteile_, energieKwh_, kalibriere_, kalibriereZeilen_, loese3_, pruefeFahrt_, normalisiereFahrt_, tempoFaktor_, verbrauchFaktor_, MODELL_STANDARD };')();
+const gs = new Function(quelle + '; return { energieAnteile_, energieKwh_, kalibriere_, kalibriereZeilen_, loese3_, pruefeFahrt_, normalisiereFahrt_, tempoFaktor_, verbrauchFaktor_, dublettenFinden_, MODELL_STANDARD };')();
 const M = gs.MODELL_STANDARD;
 
 let fehler = 0;
@@ -144,6 +144,20 @@ const kz = gs.kalibriereZeilen_([
 ], {});
 pruefe(kz.modell.tempo.verbrauch === 1.1 && kz.modell.tempo.verbrauch_fahrten === 1, 'modell.tempo.verbrauch: ' + JSON.stringify(kz.modell.tempo));
 pruefe(Math.abs(kz.zeilen[1].a.fahrt - kz.zeilen[0].a.fahrt) < 1e-9 && kz.zeilen[2].a.fahrt < kz.zeilen[1].a.fahrt, '„gemessen" mit Verbrauchstempo, ABRP ohne');
+
+// Doppelte Messwerte (Christof 18.10.2026): „Fahrt beenden" und GPX derselben Strecke, GPX zweimal gespeichert
+const d = (s) => new Date(s);
+const dub = gs.dublettenFinden_([
+  { start: '', ende: '', quelle: 'ABRP', startSoc: 100, endeSoc: 7, erfasst: d('2026-09-15') },
+  { start: d('2026-10-02T06:01'), ende: d('2026-10-02T08:21'), quelle: 'gemessen', startSoc: 87, endeSoc: 26, erfasst: d('2026-10-02') },
+  { start: d('2026-10-15T22:31'), ende: d('2026-10-16T16:17'), quelle: 'gemessen', startSoc: 100, endeSoc: 22, erfasst: d('2026-10-16T16:17') },
+  { start: d('2026-10-16T10:52'), ende: d('2026-10-16T15:29'), quelle: 'GPX', startSoc: 100, endeSoc: 20, erfasst: d('2026-10-17T16:09') },
+  { start: d('2026-10-16T16:21'), ende: d('2026-10-16T19:52'), quelle: 'GPX', startSoc: 91, endeSoc: 6, erfasst: d('2026-10-17T16:09') },
+  { start: d('2026-10-16T10:52'), ende: d('2026-10-16T15:29'), quelle: 'GPX', startSoc: 100, endeSoc: 20, erfasst: d('2026-10-18T10:00') },
+]);
+pruefe(JSON.stringify(dub.map(x => x.index)) === '[2,3]', 'Doppelte: „gemessen" unter GPX und ältere GPX-Zeile raus: ' + JSON.stringify(dub));
+pruefe(gs.dublettenFinden_([{ start: d('2026-10-16T10:00'), ende: d('2026-10-16T12:00'), quelle: 'gemessen', startSoc: 90, endeSoc: 60 },
+  { start: d('2026-10-16T11:00'), ende: d('2026-10-16T13:00'), quelle: 'GPX', startSoc: 70, endeSoc: 40 }]).length === 0, 'überlappend, aber anderer Akku → nicht doppelt');
 
 console.log(fehler === 0 ? 'Alle Prüfungen bestanden.' : fehler + ' Prüfungen fehlgeschlagen.');
 process.exit(fehler === 0 ? 0 : 1);

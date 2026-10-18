@@ -1,6 +1,9 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.23.0 — Fahrtenbuch: Blatt „Reisen“ (eine Zeile je ausgewertete Fahrt, Orte per Geocoder, Fahrzeit laut ORS als
+ *                  Vergleich, gleiche Fahrt ersetzt). Doppelte Messwerte (Zeit überschneidet sich, Akku ±3 %) wandern vor jeder
+ *                  Kalibrierung nach „Fahrten aussortiert“ (GPX vor gemessen vor Rest, sonst die neuere).
  * Version 0.22.1 — Rückmeldung nach dem Kalibrieren: „Ausgleich für wechselndes Tempo" statt „Verbrauchstempo"; Seite Messwerte ohne den Begriff.
  * Version 0.22.0 — Seite „Messwerte" (?seite=messwerte&stuecke=…): mehrere Messstücke speichern, einmal kalibrieren
  *                  (speichereMesswerte). Quelle „GPX" aus „Fahrt auswerten": Verbrauchstempo / Ø-Tempo → modell.tempo.verbrauch,
@@ -60,7 +63,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.22.1';
+const VERSION = '0.23.0';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -200,9 +203,12 @@ function doGet(e) {
   }
   if (p.seite === 'messwerte') {
     let stuecke = null;
-    try { stuecke = JSON.parse(p.stuecke || ''); } catch (e) { stuecke = null; }
-    if (!Array.isArray(stuecke) || !stuecke.length) return einfacheSeite_('Keine Messwerte übergeben – bitte in der App „Messwerte senden" oder „Fahrt auswerten" nutzen.');
+    try { stuecke = JSON.parse(p.stuecke || '[]'); } catch (e) { stuecke = null; }
+    let reise = null;
+    try { reise = p.reise ? JSON.parse(p.reise) : null; } catch (e) { reise = null; }
+    if (!Array.isArray(stuecke) || (!stuecke.length && !reise)) return einfacheSeite_('Keine Messwerte übergeben – bitte in der App „Messwerte senden" oder „Fahrt auswerten" nutzen.');
     modell.stuecke = stuecke.slice(0, MESSWERTE_MAX);
+    modell.reise = reise && typeof reise === 'object' ? reise : null;
     const seite = HtmlService.createTemplateFromFile('Messwerte');
     seite.modellJson = JSON.stringify(modell).replace(/</g, '\\u003c');
     return seite.evaluate()
@@ -495,6 +501,13 @@ function wartungStatus_() {
 // ---------------------------------------------------------------------------
 
 const BLATT_FAHRTEN = 'Fahrten';
+const BLATT_AUSSORTIERT = 'Fahrten aussortiert';   // doppelte Messwerte landen hier, nicht im Papierkorb
+const BLATT_REISEN = 'Reisen';                     // Fahrtenbuch: eine Zeile je ausgewertete Fahrt (ohne Spur)
+const SPALTEN_REISEN = [
+  'erfasst', 'Start', 'Ende', 'von', 'nach', 'km', 'Unterwegs h', 'Fahren h', 'Ø km/h Fahren', 'Laden min', 'Ladestopps',
+  'geladen kWh', 'Ø kW Laden', 'Laden Details', 'Pausen min', 'Stau min', 'zähfließend min', 'Verbrauch kWh', 'Ø kWh/100 km',
+  'Temp Ø', 'Routendienst h', 'Faktor Fahrzeit', 'Datei', 'Notiz',
+];
 const SPALTEN_FAHRTEN = [
   'erfasst', 'Route', 'Richtung', 'Start', 'Ende', 'Start Lat', 'Start Lon', 'Ende Lat', 'Ende Lon',
   'km', 'hm auf', 'hm ab', 'Dauer h', 'Ø km/h Bordcomputer', 'km/h verwendet', 'Zusatzgewicht kg',
@@ -825,35 +838,147 @@ function fahrtZeile_(f, quelle) {
  * Stücke kommen aus der App (zwischen zwei Akkuwerten, ab 50 km, Quelle „gemessen") oder aus „Fahrt auswerten"
  * (GPX, zwischen Ladestopps, Quelle „GPX" mit Verbrauchstempo in kmh und Ø-Tempo beim Fahren in bordcomputer_kmh).
  */
-function speichereMesswerte(liste) {
+function speichereMesswerte(liste, reise) {
   const sperre = LockService.getScriptLock();
   sperre.waitLock(30000);
   try {
-    if (!Array.isArray(liste) || liste.length === 0) return { ok: false, fehler: 'Keine Messwerte übergeben.' };
+    liste = Array.isArray(liste) ? liste : [];
+    if (liste.length === 0 && !reise) return { ok: false, fehler: 'Keine Messwerte übergeben.' };
     if (liste.length > MESSWERTE_MAX) return { ok: false, fehler: 'Höchstens ' + MESSWERTE_MAX + ' Messwerte auf einmal.' };
     const fehler = [];
     liste.forEach(function (d, i) { const t = pruefeFahrt_(d); if (t) fehler.push('Stück ' + (i + 1) + ': ' + t); });
     if (fehler.length) return { ok: false, fehler: fehler.join('\n') };
 
-    const zeilen = liste.map(function (d) {
-      const f = normalisiereFahrt_(d);
-      f.kmh = Number(d.kmh) >= 20 && Number(d.kmh) <= 200 ? Number(d.kmh) : null;
-      return fahrtZeile_(f, d.quelle === QUELLE_GPX ? QUELLE_GPX : 'gemessen').zeile;
-    });
-    const blatt = fahrtenBlatt_();
-    blatt.getRange(blatt.getLastRow() + 1, 1, zeilen.length, SPALTEN_FAHRTEN.length).setValues(zeilen);
-    SpreadsheetApp.flush();
-
-    const kal = kalibriereUndVeroeffentliche_();
-    const km = liste.reduce(function (s, d) { return s + Number(d.km); }, 0);
-    return {
-      ok: true,
-      meldung: liste.length + ' Messwert(e) gespeichert (' + Math.round(km) + ' km).\n\n' + kal.text,
-      warnung: kal.fehler || '',
-    };
+    const teile = [];
+    if (reise) {
+      try { teile.push(speichereReise_(reise)); } catch (e) { teile.push('Fahrtenbuch nicht gespeichert: ' + e.message); }
+    }
+    if (liste.length) {
+      const zeilen = liste.map(function (d) {
+        const f = normalisiereFahrt_(d);
+        f.kmh = Number(d.kmh) >= 20 && Number(d.kmh) <= 200 ? Number(d.kmh) : null;
+        return fahrtZeile_(f, d.quelle === QUELLE_GPX ? QUELLE_GPX : 'gemessen').zeile;
+      });
+      const blatt = fahrtenBlatt_();
+      blatt.getRange(blatt.getLastRow() + 1, 1, zeilen.length, SPALTEN_FAHRTEN.length).setValues(zeilen);
+      SpreadsheetApp.flush();
+      const km = liste.reduce(function (s, d) { return s + Number(d.km); }, 0);
+      teile.push(liste.length + ' Messwert(e) gespeichert (' + Math.round(km) + ' km).');
+    }
+    const kal = liste.length ? kalibriereUndVeroeffentliche_() : { text: '', fehler: '' };
+    return { ok: true, meldung: teile.join('\n') + (kal.text ? '\n\n' + kal.text : ''), warnung: kal.fehler || '' };
   } finally {
     sperre.releaseLock();
   }
+}
+
+/**
+ * Doppelte Messwerte (Christof 18.10.2026: „Fahrt beenden" in Herbolzheim und die GPX-Auswertung derselben Strecke).
+ * Zwei Zeilen mit Start- und Endzeit gelten als doppelt, wenn sich die Zeiten überschneiden und der Akku am Start oder
+ * am Ende höchstens 3 % auseinanderliegt. Es bleibt die genauere: GPX vor „gemessen" vor den übrigen, bei Gleichstand
+ * die zuletzt erfasste. Rein rechnerisch: zeilen [{ start, ende, quelle, startSoc, endeSoc, erfasst }] → [{ index, grund }].
+ */
+function dublettenFinden_(zeilen) {
+  const rang = function (q) { q = String(q || '').trim() || 'gemessen'; return q === QUELLE_GPX ? 3 : q === 'gemessen' ? 2 : 1; };
+  const zeit = function (x) { const t = x instanceof Date ? x.getTime() : x ? new Date(x).getTime() : NaN; return isFinite(t) ? t : null; };
+  const weg = {};
+  for (let a = 0; a < zeilen.length; a++) {
+    for (let b = a + 1; b < zeilen.length; b++) {
+      const x = zeilen[a], y = zeilen[b];
+      const xs = zeit(x.start), xe = zeit(x.ende), ys = zeit(y.start), ye = zeit(y.ende);
+      if (xs === null || xe === null || ys === null || ye === null) continue;
+      if (Math.max(xs, ys) >= Math.min(xe, ye)) continue;                        // keine Überschneidung
+      const gleich = Math.abs(Number(x.startSoc) - Number(y.startSoc)) <= 3 || Math.abs(Number(x.endeSoc) - Number(y.endeSoc)) <= 3;
+      if (!gleich) continue;
+      const besserA = rang(x.quelle) > rang(y.quelle) ||
+        (rang(x.quelle) === rang(y.quelle) && (zeit(x.erfasst) || 0) >= (zeit(y.erfasst) || 0));
+      const verlierer = besserA ? b : a, gewinner = besserA ? a : b;
+      if (weg[gewinner]) continue;
+      weg[verlierer] = 'doppelt mit Zeile ' + (gewinner + 2) + ' (' + (String(zeilen[gewinner].quelle || '').trim() || 'gemessen') + ', genauer)';
+    }
+  }
+  return Object.keys(weg).map(function (i) { return { index: Number(i), grund: weg[i] }; }).sort(function (p, q) { return p.index - q.index; });
+}
+
+/** Doppelte Zeilen aus „Fahrten" nach „Fahrten aussortiert" verschieben (mit Datum und Grund). Gibt die Anzahl zurück. */
+function sortiereDoppelteAus_(blatt) {
+  if (blatt.getLastRow() < 3) return 0;
+  const sp = spaltenIndex_(blatt);
+  const werte = blatt.getRange(2, 1, blatt.getLastRow() - 1, SPALTEN_FAHRTEN.length).getValues();
+  const feld = function (z, name) { return sp[name] ? z[sp[name] - 1] : ''; };
+  const weg = dublettenFinden_(werte.map(function (z) {
+    return { start: feld(z, 'Start'), ende: feld(z, 'Ende'), quelle: feld(z, 'Quelle'), startSoc: feld(z, 'Akku Start %'),
+      endeSoc: feld(z, 'Akku Ende %'), erfasst: feld(z, 'erfasst') };
+  }));
+  if (!weg.length) return 0;
+  const ss = tabelle_();
+  let archiv = ss.getSheetByName(BLATT_AUSSORTIERT);
+  if (!archiv) {
+    archiv = ss.insertSheet(BLATT_AUSSORTIERT, ss.getSheets().length);
+    const kopf = SPALTEN_FAHRTEN.concat(['aussortiert am', 'Grund']);
+    if (archiv.getMaxColumns() < kopf.length) archiv.insertColumnsAfter(archiv.getMaxColumns(), kopf.length - archiv.getMaxColumns());
+    archiv.getRange(1, 1, 1, kopf.length).setValues([kopf]).setFontWeight('bold');
+    archiv.setFrozenRows(1);
+  }
+  weg.forEach(function (w) { archiv.appendRow(werte[w.index].concat([new Date(), w.grund])); });
+  weg.slice().reverse().forEach(function (w) { blatt.deleteRow(w.index + 2); });   // erst kopiert, dann aus „Fahrten" entfernt
+  return weg.length;
+}
+
+/**
+ * Fahrtenbuch (Christof 18.10.2026): eine Zeile je ausgewertete Fahrt im Blatt „Reisen", ohne Spur. Orte über den
+ * Geocoder, Fahrzeit laut Routendienst (ORS, ohne Verkehr) als Vergleich. Dieselbe Fahrt (Start ± 10 min) wird ersetzt.
+ */
+function speichereReise_(r) {
+  const zahl = function (x) { const n = Number(x); return isFinite(n) ? n : ''; };
+  const start = new Date(r.start), ende = new Date(r.ende);
+  if (isNaN(start) || isNaN(ende) || ende <= start) throw new Error('Fahrtenbuch: Zeiten ungültig');
+  const ort = function (lat, lon) { try { return adresseZuKoordinate_(lat, lon).ort; } catch (e) { return ''; } };
+  let routendienst = '';
+  try {
+    const schluessel = PropertiesService.getScriptProperties().getProperty('ORS_API_KEY');
+    if (schluessel) routendienst = runde_(holeRoute_([[Number(r.start_lon), Number(r.start_lat)], [Number(r.ende_lon), Number(r.ende_lat)]], schluessel).dauer_s / 3600, 2);
+  } catch (e) { routendienst = ''; }
+  const fahrenH = zahl(r.fahren_min) === '' ? '' : runde_(r.fahren_min / 60, 2);
+  const laden = Array.isArray(r.ladestopps) ? r.ladestopps : [];
+  const zeile = SPALTEN_REISEN.map(function () { return ''; });
+  const setze = function (spalte, wert) { zeile[SPALTEN_REISEN.indexOf(spalte)] = wert; };
+  setze('erfasst', new Date()); setze('Start', start); setze('Ende', ende);
+  setze('von', ort(r.start_lat, r.start_lon)); setze('nach', ort(r.ende_lat, r.ende_lon));
+  setze('km', runde_(zahl(r.km), 1)); setze('Unterwegs h', runde_(zahl(r.unterwegs_min) / 60, 2)); setze('Fahren h', fahrenH);
+  setze('Ø km/h Fahren', fahrenH ? Math.round(r.km / fahrenH) : '');
+  setze('Laden min', Math.round(zahl(r.laden_min) || 0)); setze('Ladestopps', laden.length);
+  const kwh = laden.reduce(function (s, l) { return s + (Number(l.kwh) || 0); }, 0);
+  const ladeMin = laden.reduce(function (s, l) { return s + (Number(l.kwh) > 0 ? Number(l.min) || 0 : 0); }, 0);
+  setze('geladen kWh', kwh ? runde_(kwh, 1) : ''); setze('Ø kW Laden', kwh && ladeMin ? Math.round(kwh / (ladeMin / 60)) : '');
+  setze('Laden Details', laden.map(function (l) {
+    return String(l.name || 'Ladestopp').slice(0, 40) + ' ' + Math.round(l.min) + ' min' + (Number(l.kwh) > 0 ? ' ' + l.an + '→' + l.ab + ' % ' + runde_(l.kwh, 1) + ' kWh' : '');
+  }).join('; '));
+  setze('Pausen min', Math.round(zahl(r.pausen_min) || 0)); setze('Stau min', Math.round(zahl(r.stau_min) || 0));
+  setze('zähfließend min', Math.round(zahl(r.zaeh_min) || 0));
+  setze('Verbrauch kWh', zahl(r.verbrauch_kwh) ? runde_(r.verbrauch_kwh, 1) : '');
+  setze('Ø kWh/100 km', zahl(r.verbrauch_kwh) && zahl(r.verbrauch_km) ? runde_(r.verbrauch_kwh / r.verbrauch_km * 100, 1) : '');
+  setze('Temp Ø', zahl(r.temp) === '' ? '' : runde_(r.temp, 1));
+  setze('Routendienst h', routendienst); setze('Faktor Fahrzeit', routendienst && fahrenH ? runde_(fahrenH / routendienst, 2) : '');
+  setze('Datei', String(r.datei || '').slice(0, 80)); setze('Notiz', normalisiereFormular_({ Notiz: r.notiz || '' }).Notiz);
+
+  const ss = tabelle_();
+  let blatt = ss.getSheetByName(BLATT_REISEN);
+  if (!blatt) {
+    blatt = ss.insertSheet(BLATT_REISEN, ss.getSheets().length);
+    if (blatt.getMaxColumns() < SPALTEN_REISEN.length) blatt.insertColumnsAfter(blatt.getMaxColumns(), SPALTEN_REISEN.length - blatt.getMaxColumns());
+    blatt.getRange(1, 1, 1, SPALTEN_REISEN.length).setValues([SPALTEN_REISEN]).setFontWeight('bold');
+    blatt.setFrozenRows(1);
+  }
+  let ziel = blatt.getLastRow() + 1;
+  if (blatt.getLastRow() >= 2) {
+    const starts = blatt.getRange(2, SPALTEN_REISEN.indexOf('Start') + 1, blatt.getLastRow() - 1, 1).getValues();
+    starts.forEach(function (z, i) { if (z[0] instanceof Date && Math.abs(z[0].getTime() - start.getTime()) <= 10 * 60e3) ziel = i + 2; });
+  }
+  const ersetzt = ziel <= blatt.getLastRow();
+  blatt.getRange(ziel, 1, 1, SPALTEN_REISEN.length).setValues([zeile]);
+  return 'Fahrtenbuch' + (ersetzt ? ' (ersetzt)' : '') + ': ' + (zeile[3] || '?') + ' → ' + (zeile[4] || '?') + ', ' + Math.round(r.km) + ' km' +
+    (routendienst && fahrenH ? ', gefahren ' + String(runde_(fahrenH, 1)).replace('.', ',') + ' h statt ' + String(runde_(routendienst, 1)).replace('.', ',') + ' h laut Routendienst' : '');
 }
 
 function pruefeFahrt_(d) {
@@ -1113,6 +1238,7 @@ function temperaturBei_(lat, lon, iso) {
 /** Liest das Blatt „Fahrten", kalibriert (kalibriereZeilen_), trägt Ergebnisse und Status ein und veröffentlicht modell.json. */
 function kalibriereUndVeroeffentliche_() {
   const blatt = fahrtenBlatt_();
+  const aussortiert = sortiereDoppelteAus_(blatt);   // doppelte Messwerte nach „Fahrten aussortiert" (Christof 18.10.2026)
   const sp = spaltenIndex_(blatt);
   const werte = blatt.getLastRow() >= 2 ? blatt.getRange(2, 1, blatt.getLastRow() - 1, SPALTEN_FAHRTEN.length).getValues() : [];
   const feld = function (z, name) { return sp[name] ? z[sp[name] - 1] : ''; };
@@ -1151,7 +1277,8 @@ function kalibriereUndVeroeffentliche_() {
   } catch (e) {
     fehler = 'Modell konnte nicht veröffentlicht werden: ' + e.message;
   }
-  return { modell: erg.modell, text: erg.text, fehler: fehler };
+  const text = (aussortiert ? aussortiert + ' doppelte Zeile(n) nach „' + BLATT_AUSSORTIERT + '" verschoben.\n' : '') + erg.text;
+  return { modell: erg.modell, text: text, fehler: fehler };
 }
 
 function punkteBlattMitIndex_() {
