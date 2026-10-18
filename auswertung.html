@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
-  Ladeplanung — Fahrt auswerten (GPX). Version 0.6.0 (18.10.2026): „Fahrt und Verbrauch" zusammen (Abschnitt → Ladestopp → …),
+  Ladeplanung — Fahrt auswerten (GPX). Version 0.6.1 (18.10.2026): Begriff „Verbrauchstempo" nicht mehr angezeigt (Christof: verwirrend),
+  intern unverändert.
+  Version 0.6.0 (18.10.2026): „Fahrt und Verbrauch" zusammen (Abschnitt → Ladestopp → …),
   ohne Häkchen „geladen" (erkannt oder per Akku an/ab bei Pausen), zähfließend nur zwischen zügigen Strecken (Werdohl),
   Fahrabschnitte-Tabelle weg, Verbrauchstempo erklärt.
   Version 0.5.0 (18.10.2026): zusätzlich „zähfließend" (Schätzung: unter 72 km/h, wo frei ≥ 90,
@@ -152,7 +154,6 @@
     <section>
       <h2>Fahrt und Verbrauch</h2>
       <p class="erkl">Abschnitte zwischen den Ladestopps und die Ladestopps dazwischen; Akku-Anzeige im Auto, 1 % = 0,58 kWh. „Modell" = was die App erwartet hätte.</p>
-      <details class="hilfe"><summary>Was ist das Verbrauchstempo?</summary><p>Wer abwechselnd zügig fährt und im Stau steht, braucht mehr Strom als bei gleichmäßigem Durchschnittstempo – der Luftwiderstand wächst mit dem Tempo überproportional (130 statt 110 km/h ≈ ein Viertel mehr). Das Verbrauchstempo ist das gleichmäßige Tempo, das genauso viel Strom gekostet hätte wie dein echter Tempoverlauf. Es liegt deshalb über dem Ø-Tempo (bei der ersten Fahrt 12–19 %). Damit rechnet das Modell; die Kalibrierung lernt daraus, wie viel mehr die App für den Verbrauch ansetzen soll.</p></details>
       <div id="abschnitte"></div>
       <button class="knopf haupt" id="senden" disabled>Als Messwerte speichern</button>
       <p class="erkl" id="senden-hinweis">Öffnet die Seite „Messwerte" (Google-Login). Übertragen werden nur die Abschnittswerte – km, Höhenmeter, Akku, Tempo, Zeiten, Anfangs- und Endpunkt –, nicht die Spur.</p>
@@ -937,7 +938,7 @@ async function rechneAbschnitte() {
       const m = modellVerbrauch(k, soc0, k.verbrauch, temp === null ? 15 : temp);
       if (m !== null) {
         const d = Math.round(m - (soc0 - soc1));
-        karte.append(el('div', 'zeile', 'Modell ' + Math.round(m) + ' % (' + (d >= 0 ? '+' : '') + d + ') · Verbrauchstempo ' + Math.round(k.verbrauch) + ' km/h' +
+        karte.append(el('div', 'zeile', 'Modell ' + Math.round(m) + ' % (' + (d >= 0 ? '+' : '') + d + ')' +
           (temp === null ? '' : ' · ' + Math.round(temp) + ' °C')));
       }
       const r5 = x => Math.round(x * 1e5) / 1e5, r1 = x => Math.round(x * 10) / 10;

@@ -3,6 +3,7 @@
   Ladeplanung — Messwerte speichern. Wird von doGet() mit ?seite=messwerte&stuecke=<JSON-Liste> ausgeliefert:
   Messstücke aus der App (zwischen zwei Akkuwerten, ab 50 km) oder aus „Fahrt auswerten" (GPX, zwischen Ladestopps).
   Alle angehakten Stücke werden ins Blatt „Fahrten" geschrieben, danach wird einmal kalibriert.
+  Version 0.1.1 (18.10.2026) — ohne „Verbrauchstempo" in der Anzeige.
   Version 0.1.0 (17.10.2026)
 -->
 <html lang="de">
@@ -93,7 +94,7 @@
       k.append(el('div', 'zeile', 'Akku ' + s.start_soc + ' → ' + s.ende_soc + ' % (' + (s.start_soc - s.ende_soc) + ' % gebraucht' +
         (s.erwartet !== undefined && s.erwartet !== null ? ', Modell bisher ≈ ' + Math.round(s.start_soc - s.erwartet) + ' %' : '') + ')'));
       k.append(el('div', 'zeile', 'Höhe +' + Math.round(s.hm_auf || 0) + ' / −' + Math.round(s.hm_ab || 0) + ' m · ' +
-        (s.quelle === 'GPX' ? 'Ø ' + Math.round(s.bordcomputer_kmh) + ' km/h beim Fahren, Verbrauchstempo ' + Math.round(s.kmh) + ' km/h' : 'Tempo ' + Math.round(s.kmh) + ' km/h')));
+        (s.quelle === 'GPX' ? 'Ø ' + Math.round(s.bordcomputer_kmh) + ' km/h beim Fahren' : 'Tempo ' + Math.round(s.kmh) + ' km/h')));
       if (s.notiz) k.append(el('div', 'zeile', s.notiz));
       const l = el('label', 'wahl'), c = el('input'); c.type = 'checkbox'; c.checked = true; c.dataset.i = i;
       l.append(c, 'verwenden'); k.append(l);

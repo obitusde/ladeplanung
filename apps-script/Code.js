@@ -1,6 +1,7 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.22.1 — Rückmeldung nach dem Kalibrieren: „Ausgleich für wechselndes Tempo" statt „Verbrauchstempo"; Seite Messwerte ohne den Begriff.
  * Version 0.22.0 — Seite „Messwerte" (?seite=messwerte&stuecke=…): mehrere Messstücke speichern, einmal kalibrieren
  *                  (speichereMesswerte). Quelle „GPX" aus „Fahrt auswerten": Verbrauchstempo / Ø-Tempo → modell.tempo.verbrauch,
  *                  Zeilen „gemessen" damit hochgerechnet. Temperatur älterer Fahrten aus dem Open-Meteo-Archiv.
@@ -59,7 +60,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.22.0';
+const VERSION = '0.22.1';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -750,9 +751,9 @@ function kalibriereZeilen_(zeilen, routenTempo) {
   text += '\nTempo: ' + (modell.tempo.fahrten
     ? 'Faktor ' + String(modell.tempo.faktor).replace('.', ',') + ' auf den Schnitt der Route (aus ' + modell.tempo.fahrten + ' echten Fahrt(en))'
     : 'Schnitt der Route (noch keine echte Fahrt mit Bordcomputer-Tempo)');
-  text += '\nVerbrauchstempo: ' + (verbrauch.fahrten
-    ? 'Faktor ' + String(verbrauch.faktor).replace('.', ',') + ' auf das Ø-Tempo (aus ' + verbrauch.fahrten + ' GPX-Abschnitt(en))'
-    : 'wie Ø-Tempo (noch keine GPX-Auswertung)');
+  text += '\nAusgleich für wechselndes Tempo: ' + (verbrauch.fahrten
+    ? '× ' + String(verbrauch.faktor).replace('.', ',') + ' (aus ' + verbrauch.fahrten + ' GPX-Abschnitt(en))'
+    : 'noch keiner (keine GPX-Auswertung)');
   const ausreisser = erg.filter(function (e) { return e.ausreisser; });
   if (ausreisser.length) text += '\nNicht verwendet (Ausreißer): ' + ausreisser.map(function (e) { return e.notiz || '–'; }).join('; ');
   const q = modell.kalibrierung.quellen;
