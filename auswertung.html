@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
-  Ladeplanung — Fahrt auswerten (GPX). Version 0.6.1 (18.10.2026): Begriff „Verbrauchstempo" nicht mehr angezeigt (Christof: verwirrend),
+  Ladeplanung — Fahrt auswerten (GPX). Version 0.7.0 (18.10.2026): Erklärungen und Stau-Liste aufklappbar; eigene Station hat Vorrang
+  vor dem Register-Eintrag derselben Station (Herbolzheim, Hüttenberg standen als „nicht in deiner Liste").
+  Version 0.6.1 (18.10.2026): Begriff „Verbrauchstempo" nicht mehr angezeigt (Christof: verwirrend),
   intern unverändert.
   Version 0.6.0 (18.10.2026): „Fahrt und Verbrauch" zusammen (Abschnitt → Ladestopp → …),
   ohne Häkchen „geladen" (erkannt oder per Akku an/ab bei Pausen), zähfließend nur zwischen zügigen Strecken (Werdohl),
@@ -99,6 +101,9 @@
   html, body { overflow-x: hidden; }
   details.hilfe { margin: 0 0 10px; color: var(--text-secondary); font-size: 14px; }
   details.hilfe summary { cursor: pointer; color: var(--akzent); font-weight: 600; }
+  details.hilfe p { margin: 6px 0 0; }
+  details.staus { margin-top: 6px; }
+  details.staus summary { cursor: pointer; color: var(--akzent); font-weight: 600; font-size: 14px; margin-bottom: 4px; }
   #karte { height: 360px; border-radius: 8px; overflow: hidden; background: var(--raster); }
   #vollbild-zu { display: none; }
   #karte-rahmen.vollbild { position: fixed; inset: 0; z-index: 50; background: var(--surface-0); }
@@ -140,53 +145,53 @@
 
     <section>
       <h2>Tagesablauf</h2>
-      <p class="erkl">Fahren, Laden und Halte; antippen für Details.</p>
+      <details class="hilfe"><summary>Erklärung</summary><p>Fahren, Laden und Halte; antippen für Details.</p></details>
       <svg id="zeitachse" viewBox="0 0 900 70" role="img" aria-label="Zeitachse"></svg>
       <div class="legende"><span style="--f:var(--fahren)">Fahren</span><span style="--f:var(--laden)">Laden</span><span style="--f:var(--halt)">Halt / Pause</span></div>
     </section>
 
     <section>
       <h2>Akkustände</h2>
-      <p class="erkl">Am Start, vor und nach jedem Ladestopp und am Ziel. Ladestopps erkennt die Seite selbst (mindestens 10 min neben einer bekannten Station). Bei anderen Pausen ab 10 min: hast du dort geladen, Akku an/ab eintragen – dann zählt sie als Ladestopp.</p>
+      <details class="hilfe"><summary>Erklärung</summary><p>Am Start, vor und nach jedem Ladestopp und am Ziel. Ladestopps erkennt die Seite selbst (mindestens 10 min neben einer bekannten Station). Bei anderen Pausen ab 10 min: hast du dort geladen, Akku an/ab eintragen – dann zählt sie als Ladestopp.</p></details>
       <div class="akku" id="akku"></div>
     </section>
 
     <section>
       <h2>Fahrt und Verbrauch</h2>
-      <p class="erkl">Abschnitte zwischen den Ladestopps und die Ladestopps dazwischen; Akku-Anzeige im Auto, 1 % = 0,58 kWh. „Modell" = was die App erwartet hätte.</p>
+      <details class="hilfe"><summary>Erklärung</summary><p>Abschnitte zwischen den Ladestopps und die Ladestopps dazwischen; Akku-Anzeige im Auto, 1 % = 0,58 kWh. „Modell" = was die App erwartet hätte.</p></details>
       <div id="abschnitte"></div>
       <button class="knopf haupt" id="senden" disabled>Als Messwerte speichern</button>
-      <p class="erkl" id="senden-hinweis">Öffnet die Seite „Messwerte" (Google-Login). Übertragen werden nur die Abschnittswerte – km, Höhenmeter, Akku, Tempo, Zeiten, Anfangs- und Endpunkt –, nicht die Spur.</p>
+      <details class="hilfe"><summary>Was wird übertragen?</summary><p id="senden-hinweis">Öffnet die Seite „Messwerte" (Google-Login). Übertragen werden nur die Abschnittswerte – km, Höhenmeter, Akku, Tempo, Zeiten, Anfangs- und Endpunkt –, nicht die Spur.</p></details>
     </section>
 
     <section>
       <h2>Stau</h2>
-      <p class="erkl" id="stau-erkl"></p>
+      <details class="hilfe"><summary>Wie wird gerechnet?</summary><p id="stau-erkl"></p></details>
       <div id="stau"></div>
     </section>
 
     <section>
       <h2>Tempo beim Fahren, je 5 km</h2>
-      <p class="erkl">Durchschnitt ohne Stopps. Rot hinterlegt: Stau, hellrot: zähfließend, orange: Laden.</p>
+      <details class="hilfe"><summary>Erklärung</summary><p>Durchschnitt ohne Stopps. Rot hinterlegt: Stau, hellrot: zähfließend, orange: Laden.</p></details>
       <svg id="tempo" viewBox="0 0 900 260" role="img" aria-label="Tempo über die Strecke"></svg>
     </section>
 
     <section>
       <div class="zeile-kopf"><h2>Strecke</h2><button type="button" class="klein-knopf" id="vollbild">⛶ Vollbild</button></div>
-      <p class="erkl">Orange = Laden, grün = Halt, rot = Stau, rot gestrichelt = zähfließend. Die Kartenbilder kommen von OpenStreetMap – dabei sieht der Kartendienst, welchen Ausschnitt du anschaust, nicht die Datei.</p>
+      <details class="hilfe"><summary>Erklärung</summary><p>Orange = Laden, grün = Halt, rot = Stau, rot gestrichelt = zähfließend. Die Kartenbilder kommen von OpenStreetMap – dabei sieht der Kartendienst, welchen Ausschnitt du anschaust, nicht die Datei.</p></details>
       <div id="karte-rahmen"><div id="karte"></div><button type="button" class="klein-knopf" id="vollbild-zu">✕ Schließen</button></div>
       <svg id="spur" viewBox="0 0 440 250" role="img" aria-label="Streckenverlauf" hidden></svg>
     </section>
 
     <section>
       <h2>Wie lange in welchem Tempo</h2>
-      <p class="erkl">Minuten beim Fahren, in 1-Minuten-Stücken gemessen.</p>
+      <details class="hilfe"><summary>Erklärung</summary><p>Minuten beim Fahren, in 1-Minuten-Stücken gemessen.</p></details>
       <svg id="verteilung" viewBox="0 0 440 250" role="img" aria-label="Fahrzeit je Tempobereich"></svg>
     </section>
 
     <section>
       <h2>Stopps</h2>
-      <p class="erkl">Stopp = mindestens 3 min innerhalb von 250 m. Laden = mindestens 10 min höchstens 400 m neben einer bekannten Ladestation (eigene oder aus den Registern) oder Akku an/ab eingetragen; Pause = andere Stopps ab 10 min.</p>
+      <details class="hilfe"><summary>Erklärung</summary><p>Stopp = mindestens 3 min innerhalb von 250 m. Laden = mindestens 10 min höchstens 400 m neben einer bekannten Ladestation (eigene oder aus den Registern) oder Akku an/ab eingetragen; Pause = andere Stopps ab 10 min.</p></details>
       <div class="tabelle"><table id="t-stopps"></table></div>
     </section>
 
@@ -374,7 +379,13 @@ function leseGpx(xml) {
 }
 
 const kurz = name => String(name).replace(/ \(nicht in deiner Liste\)$/, '').replace(/^Tesla Supercharger /, 'Tesla ');
-const naechsteStation = pt => { let b = null, d = Infinity; for (const s of stationen) { const x = haversine(pt.lat, pt.lon, s.lat, s.lon); if (x < d) { d = x; b = s; } } return { s: b, d }; };
+// Eigene Station hat Vorrang (Christof 18.10.2026: Herbolzheim p062 und Hüttenberg p015 standen als „nicht in deiner Liste",
+// weil der Register-Eintrag derselben Station ein paar Meter näher lag)
+const naechsteStation = pt => {
+  const beste = eigen => { let b = null, d = Infinity; for (const s of stationen) if (s.eigen === eigen) { const x = haversine(pt.lat, pt.lon, s.lat, s.lon); if (x < d) { d = x; b = s; } } return { s: b, d }; };
+  const e = beste(true);
+  return e.s && e.d <= STATION_MAX_KM ? e : beste(false).d < e.d ? beste(false) : e;
+};
 
 /**
  * Nur die Fahrt: vorne und hinten abschneiden, was vor dem ersten bzw. nach dem letzten Fahren liegt (Christof 18.10.2026:
@@ -825,7 +836,9 @@ function zeigeStau() {
   kopf.textContent = 'Stau ≈ ' + hm(s.verlust) + ' · zähfließend ≈ ' + hm(s.zaehVerlust) + ' (' + zahl(s.zaehKm) + ' km) · ohne beides Ankunft ≈ ' +
     uhr(F.t1 - gesamt * 60) + ' statt ' + uhr(F.t1);
   box.append(kopf);
-  if (s.liste.length) box.append(el('p', 'erkl', 'Staus:'));
+  const klappe = el('details', 'staus');
+  klappe.append(el('summary', '', s.liste.length === 1 ? 'Den Stau anzeigen' : 'Alle ' + s.liste.length + ' Staus anzeigen'));
+  if (s.liste.length) box.append(klappe);
   for (const e of s.liste) {
     const z = el('div', 'liste-zeile');
     const links = el('div', '', uhr(e.t0) + '–' + uhr(e.t1));
@@ -833,7 +846,7 @@ function zeigeStau() {
     const rechts = el('div', 'rechts', '+' + Math.round(e.verlust) + ' min');
     rechts.append(el('small', '', 'Ø ' + Math.round(e.v) + ' statt ' + Math.round(e.vFrei) + ' km/h'));
     z.append(links, rechts);
-    box.append(z);
+    klappe.append(z);
   }
 }
 
