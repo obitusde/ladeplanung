@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
-  Ladeplanung — Fahrt auswerten (GPX). Version 0.3.0 (17.10.2026): Diagramme in echter Breite (Zeitmarken lesbar), weniger Rand,
+  Ladeplanung — Fahrt auswerten (GPX). Version 0.4.0 (18.10.2026): Stau-Analyse (Verlust gegen freies Tempo der Umgebung), Abschnitt
+  Verbrauch (kWh/100 km, geladene kWh, Ø kW), Karte im Vollbild, Fußweg vor/nach der Fahrt abgeschnitten, ohne Ø-Linie und Höhen.
+  Version 0.3.0 (17.10.2026): Diagramme in echter Breite (Zeitmarken lesbar), weniger Rand,
   Kacheln zu zweit.
   Version 0.2.0 (17.10.2026): Strecke auf OpenStreetMap-Karte (Leaflet wie in der App,
   ohne Netz Skizze), Anleitung Garmin-Export (nur Webseite), Akku-Felder schmaler.
@@ -26,21 +28,21 @@
     color-scheme: light;
     --surface-0: #f4f3f0; --surface-1: #fcfcfb; --linie: #dedcd6; --raster: #ebe9e4;
     --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #6f6e69;
-    --fahren: #2a78d6; --laden: #eb6834; --halt: #1baf7a; --akzent: #9a4a00; --akzent-text: #ffffff; --fehler: #9b1c1c;
+    --fahren: #2a78d6; --laden: #eb6834; --halt: #1baf7a; --stau: #e34948; --akzent: #9a4a00; --akzent-text: #ffffff; --fehler: #9b1c1c;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       color-scheme: dark;
       --surface-0: #000000; --surface-1: #161616; --linie: #34332f; --raster: #262624;
       --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #9a998f;
-      --fahren: #3987e5; --laden: #d95926; --halt: #199e70; --akzent: #ffac4a; --akzent-text: #000000; --fehler: #ff9c9c;
+      --fahren: #3987e5; --laden: #d95926; --halt: #199e70; --stau: #e66767; --akzent: #ffac4a; --akzent-text: #000000; --fehler: #ff9c9c;
     }
   }
   :root[data-theme="dark"] {
     color-scheme: dark;
     --surface-0: #000000; --surface-1: #161616; --linie: #34332f; --raster: #262624;
     --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #9a998f;
-    --fahren: #3987e5; --laden: #d95926; --halt: #199e70; --akzent: #ffac4a; --akzent-text: #000000; --fehler: #ff9c9c;
+    --fahren: #3987e5; --laden: #d95926; --halt: #199e70; --stau: #e66767; --akzent: #ffac4a; --akzent-text: #000000; --fehler: #ff9c9c;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--surface-0); color: var(--text-primary); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
@@ -91,10 +93,21 @@
   details.hilfe { margin: 0 0 10px; color: var(--text-secondary); font-size: 14px; }
   details.hilfe summary { cursor: pointer; color: var(--akzent); font-weight: 600; }
   #karte { height: 360px; border-radius: 8px; overflow: hidden; background: var(--raster); }
+  #vollbild-zu { display: none; }
+  #karte-rahmen.vollbild { position: fixed; inset: 0; z-index: 50; background: var(--surface-0); }
+  #karte-rahmen.vollbild #karte { height: 100%; border-radius: 0; }
+  #karte-rahmen.vollbild #vollbild-zu { display: block; position: absolute; top: 10px; right: 10px; z-index: 1000; }
+  .zeile-kopf { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .klein-knopf { font: inherit; font-size: 14px; font-weight: 700; color: var(--text-primary); background: var(--surface-1); border: 2px solid var(--linie); border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+  .liste-zeile { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--raster); font-size: 14px; font-variant-numeric: tabular-nums; }
+  .liste-zeile:last-child { border-bottom: 0; }
+  .liste-zeile .rechts { text-align: right; white-space: nowrap; }
+  .liste-zeile small { display: block; color: var(--text-secondary); }
   .leaflet-container { font: inherit; }
   .akku .ort small { display: block; font-weight: 400; color: var(--text-secondary); }
   .akku label { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 14px; }
   .leer { color: var(--text-muted); }
+  .summe { font-weight: 700; margin: 0 0 6px; }
   label.geladen { display: inline-flex; gap: 6px; align-items: center; }
   label.geladen input { width: 20px; height: 20px; }
   .abschnitt { border: 1px solid var(--linie); border-radius: 10px; padding: 8px 12px; margin-bottom: 8px; }
@@ -139,15 +152,27 @@
     </section>
 
     <section>
+      <h2>Verbrauch</h2>
+      <p class="erkl">Aus den Akkuständen (Anzeige im Auto, 58 kWh nutzbar): was das Auto je Abschnitt gebraucht hat und wie schnell es geladen hat.</p>
+      <div id="verbrauch"><p class="leer">Erst Akkustände eintragen.</p></div>
+    </section>
+
+    <section>
+      <h2>Stau</h2>
+      <p class="erkl" id="stau-erkl"></p>
+      <div id="stau"></div>
+    </section>
+
+    <section>
       <h2>Tempo beim Fahren, je 5 km</h2>
-      <p class="erkl">Durchschnitt ohne Stopps; gestrichelt das Ø-Tempo der ganzen Fahrt.</p>
+      <p class="erkl">Durchschnitt ohne Stopps. Rot hinterlegt: Stau, orange: Laden.</p>
       <svg id="tempo" viewBox="0 0 900 260" role="img" aria-label="Tempo über die Strecke"></svg>
     </section>
 
     <section>
-      <h2>Strecke</h2>
-      <p class="erkl">Orange = Laden, grün = Halt. Die Kartenbilder kommen von OpenStreetMap – dabei sieht der Kartendienst, welchen Ausschnitt du anschaust, nicht die Datei.</p>
-      <div id="karte"></div>
+      <div class="zeile-kopf"><h2>Strecke</h2><button type="button" class="klein-knopf" id="vollbild">⛶ Vollbild</button></div>
+      <p class="erkl">Orange = Laden, grün = Halt, rot = Stau. Die Kartenbilder kommen von OpenStreetMap – dabei sieht der Kartendienst, welchen Ausschnitt du anschaust, nicht die Datei.</p>
+      <div id="karte-rahmen"><div id="karte"></div><button type="button" class="klein-knopf" id="vollbild-zu">✕ Schließen</button></div>
       <svg id="spur" viewBox="0 0 440 250" role="img" aria-label="Streckenverlauf" hidden></svg>
     </section>
 
@@ -165,7 +190,7 @@
 
     <section>
       <h2>Fahrabschnitte</h2>
-      <p class="erkl">Zwischen zwei Stopps. Höhenmeter roh aus der Aufzeichnung (die Messwerte nutzen die geglättete Höhe wie die App).</p>
+      <p class="erkl">Zwischen zwei Stopps.</p>
       <div class="tabelle"><table id="t-fahrten"></table></div>
     </section>
   </div>
@@ -178,6 +203,11 @@ const FORMULAR_URL = 'https://script.google.com/macros/s/AKfycbzTwwwZcQBuUdfmyon
 const ERDRADIUS_KM = 6371.0088;
 const STOPP_RADIUS_KM = 0.25, STOPP_MIN_S = 180, LADEN_MIN_S = 600, STATION_MAX_KM = 0.4;
 const TEMPO_STUECK_KM = 5, ABSCHNITT_MIN_KM = 10, MESSWERTE_MAX = 20;
+const FAHRT_KMH = 20;                       // schneller = im Auto (Anfang/Ende der Fahrt)
+// Stau: je km das Tempo mit dem „freien" Tempo der Umgebung vergleichen (85. Perzentil im Umkreis von ±15 km);
+// langsamer als 60 % davon, wo frei mindestens 70 km/h gefahren wird = Stau (Ortsdurchfahrten zählen so nicht).
+const STAU_UMKREIS_KM = 15, STAU_ANTEIL = 0.6, STAU_FREI_MIN = 70, STAU_LUECKE_KM = 2, STAU_MIN_VERLUST_MIN = 2;
+const STAU_RAND_KM = 3, STAU_RAND_ANTEIL = 0.75;   // davor und danach so weit zügig, sonst kein Stau
 
 function haversine(lat1, lon1, lat2, lon2) {
   const rad = Math.PI / 180;
@@ -315,12 +345,14 @@ $('datei').addEventListener('change', async ev => {
   status('Wird gelesen …');
   try {
     const text = await datei.text();
-    const punkte = leseGpx(text);
-    if (punkte.length < 20) throw new Error('keine Spur mit Zeitstempeln gefunden');
-    F = werteAus(punkte);
+    const alle = leseGpx(text);
+    if (alle.length < 20) throw new Error('keine Spur mit Zeitstempeln gefunden');
+    const k = kuerzeAufFahrt(alle);
+    F = werteAus(k.p);
     F.name = datei.name;
     zeigeAlles();
-    status(datei.name + ': ' + zahl(punkte.length) + ' Punkte ausgewertet.');
+    const weg = [k.vorne >= 1 ? Math.round(k.vorne) + ' min vor dem Losfahren' : '', k.hinten >= 1 ? Math.round(k.hinten) + ' min nach dem Ankommen' : ''].filter(Boolean);
+    status(datei.name + ': ' + zahl(k.p.length) + ' Punkte ausgewertet' + (weg.length ? ' (abgeschnitten: ' + weg.join(', ') + ')' : '') + '.');
   } catch (e) {
     $('ergebnis').hidden = true;
     status('Fehler: ' + e.message, true);
@@ -345,6 +377,21 @@ function leseGpx(xml) {
 
 const kurz = name => String(name).replace(/ \(nicht in deiner Liste\)$/, '').replace(/^Tesla Supercharger /, 'Tesla ');
 const naechsteStation = pt => { let b = null, d = Infinity; for (const s of stationen) { const x = haversine(pt.lat, pt.lon, s.lat, s.lon); if (x < d) { d = x; b = s; } } return { s: b, d }; };
+
+/**
+ * Nur die Fahrt: vorne und hinten abschneiden, was vor dem ersten bzw. nach dem letzten Fahren liegt (Christof 18.10.2026:
+ * Uhr erst im Haus ausgeschaltet). Fahren = 1-Minuten-Fenster schneller als 20 km/h.
+ */
+function kuerzeAufFahrt(p) {
+  const n = p.length;
+  const faehrt = (i, j) => { const h = (p[j].t - p[i].t) / 3600; return h > 0 && haversine(p[i].lat, p[i].lon, p[j].lat, p[j].lon) / h > FAHRT_KMH; };
+  let a = 0;
+  for (let j = 0; a < n; a++) { if (j < a) j = a; while (j < n - 1 && p[j].t - p[a].t < 60) j++; if (faehrt(a, j)) break; }
+  let e = n - 1;
+  for (let i = n - 1; e > 0; e--) { if (i > e) i = e; while (i > 0 && p[e].t - p[i].t < 60) i--; if (faehrt(i, e)) break; }
+  if (a >= e) return { p, vorne: 0, hinten: 0 };
+  return { p: p.slice(a, e + 1), vorne: (p[a].t - p[0].t) / 60, hinten: (p[n - 1].t - p[e].t) / 60 };
+}
 
 /** Stopps, Fahrabschnitte, Tempo – rein rechnerisch. */
 function werteAus(p) {
@@ -410,6 +457,52 @@ function werteAus(p) {
   for (const q of p) if (!letzt || haversine(letzt.lat, letzt.lon, q.lat, q.lon) > 0.3) { spur.push([q.lat, q.lon]); letzt = q; }
   const fahrMin = fahrten.reduce((s, f) => s + f.min, 0);
   return { p, n, inStopp, stopps, fahrten, verteilung, tempo5, spur, km: ende.km, dauerMin: (ende.t - p[0].t) / 60, fahrMin, t0: p[0].t, t1: ende.t, mitHoehe: p.some(q => q.ele !== null) };
+}
+
+/**
+ * Stau-Analyse (Christof 18.10.2026: „wie viel länger als ohne Stau?"). Je km: Tempo inkl. kurzer Halte gegen das freie
+ * Tempo der Umgebung (85. Perzentil der km im Umkreis von ±15 km, höchstens 130). Unter 60 % davon, wo frei ≥ 70 km/h
+ * gefahren wird = Stau; Verlust = gebrauchte Zeit − Zeit mit freiem Tempo. Laden und lange Pausen (≥ 10 min) zählen nicht.
+ */
+function stauAnalyse() {
+  const p = F.p, stuecke = [];
+  const pausen = F.stopps.filter(s => s.geladen || s.art !== 'halt' || s.min >= LADEN_MIN_S / 60);
+  let i = 0;
+  for (let k = 1; k <= Math.floor(F.km); k++) {
+    let j = i; while (j < F.n - 1 && p[j].km < k) j++;
+    if (j <= i) continue;
+    const t = p[j].t - p[i].t, km = p[j].km - p[i].km;
+    stuecke.push({ i, j, km0: p[i].km, km, t, v: t > 0 ? km / (t / 3600) : 0, aus: pausen.some(s => s.von < j && s.bis > i) });
+    i = j;
+  }
+  const gute = stuecke.filter(s => !s.aus && s.km > 0.5);
+  for (const s of stuecke) {
+    const nachbarn = gute.filter(g => Math.abs(g.km0 - s.km0) <= STAU_UMKREIS_KM).map(g => g.v).sort((a, b) => a - b);
+    s.frei = nachbarn.length >= 5 ? Math.min(130, nachbarn[Math.floor(nachbarn.length * 0.85)]) : 0;
+    s.stau = !s.aus && s.frei >= STAU_FREI_MIN && s.v < STAU_ANTEIL * s.frei;
+    s.verlust = s.stau ? Math.max(0, s.t - s.km / s.frei * 3600) : 0;
+  }
+  const ereignisse = [];
+  for (const s of stuecke) {
+    if (!s.stau) continue;
+    const l = ereignisse[ereignisse.length - 1];
+    if (l && s.km0 - l.km1 <= STAU_LUECKE_KM) Object.assign(l, { j: s.j, km1: s.km0 + s.km, verlust: l.verlust + s.verlust, t: l.t + s.t, km: l.km + s.km, freiSumme: l.freiSumme + s.frei * s.km });
+    else ereignisse.push({ i: s.i, j: s.j, km0: s.km0, km1: s.km0 + s.km, verlust: s.verlust, t: s.t, km: s.km, freiSumme: s.frei * s.km });
+  }
+  // Nur „eingebettete" Staus: davor und danach je 3 km zügig (≥ 75 % des freien Tempos) – sonst ist es Ausfahrt,
+  // Ortsdurchfahrt, Bergstraße am Anfang oder die Zufahrt zur Ladestation (erste Fassung zählte die mit: 26 „Staus").
+  const zuegig = (von, bis, frei) => {
+    const teil = stuecke.filter(s => !s.aus && s.km0 >= von && s.km0 + s.km <= bis);
+    const km = teil.reduce((a, s) => a + s.km, 0), t = teil.reduce((a, s) => a + s.t, 0);
+    return km >= STAU_RAND_KM * 0.6 && t > 0 && km / (t / 3600) >= STAU_RAND_ANTEIL * frei;
+  };
+  const liste = ereignisse
+    .map(e => ({ ...e, t0: p[e.i].t, t1: p[e.j].t, v: e.km / (e.t / 3600), vFrei: e.freiSumme / e.km, verlust: e.verlust / 60 }))
+    .filter(e => e.verlust >= STAU_MIN_VERLUST_MIN && zuegig(e.km0 - STAU_RAND_KM, e.km0, e.vFrei) && zuegig(e.km1, e.km1 + STAU_RAND_KM, e.vFrei))
+    // Abstecher zu Pause oder Ladestopp (Villeneuve Bahnhof) ist kein Stau
+    .filter(e => !pausen.some(s => s.km >= e.km0 - 1 && s.km <= e.km1 + 1));
+  for (const s of F.stopps) s.stau = s.art === 'halt' && !s.geladen && s.min < LADEN_MIN_S / 60 && liste.some(e => s.t0 >= e.t0 - 60 && s.t1 <= e.t1 + 60);
+  return { liste, verlust: liste.reduce((s, e) => s + e.verlust, 0) };
 }
 
 /** Abschnitte zwischen den angehakten Ladestopps (Start → Laden 1 → … → Ziel). */
@@ -490,23 +583,33 @@ const akkuWerte = {};   // id → { an, ab }
 
 function zeigeAlles() {
   $('ergebnis').hidden = false;
+  F.stau = stauAnalyse();
   zeigeKacheln();
   zeigeZeitachse();
   zeigeTempo();
   zeigeVerteilung();
   zeigeSpur();
+  zeigeStau();
   zeigeStopps();
   zeigeFahrten();
   zeigeAkku();
 }
 
+/** Ladestopp an- oder abgehakt: alles, was davon abhängt, neu. */
+function stoppsGeaendert() {
+  F.stau = stauAnalyse();
+  zeigeKacheln(); zeigeZeitachse(); zeigeTempo(); zeigeSpur(); zeigeStau(); zeigeAkku();
+}
+
 function zeigeKacheln() {
-  const laden = F.stopps.filter(s => s.geladen), halte = F.stopps.filter(s => s.art === 'halt' && !s.geladen);
+  const laden = F.stopps.filter(s => s.geladen), halte = F.stopps.filter(s => s.art === 'halt' && !s.geladen && !s.stau);
+  const stau = F.stau || { liste: [], verlust: 0 };
   const box = $('kacheln'); box.replaceChildren();
   for (const [name, wert, zusatz] of [
     ['Unterwegs', hm(F.dauerMin), uhr(F.t0) + ' – ' + uhr(F.t1)],
     ['Strecke', zahl(F.km) + ' km', 'laut Aufzeichnung'],
     ['Fahren', hm(F.fahrMin), 'Ø ' + Math.round(F.km / (F.fahrMin / 60)) + ' km/h inkl. Stau'],
+    ['Stau', stau.liste.length ? '+' + hm(stau.verlust) : 'keiner', stau.liste.length ? stau.liste.length + ' × · ohne Stau an ' + uhr(F.t1 - stau.verlust * 60) : 'freie Fahrt'],
     ['Laden', hm(laden.reduce((s, x) => s + x.min, 0)), laden.length + ' Stopp(s)'],
     ['Halte', hm(halte.reduce((s, x) => s + x.min, 0)), halte.length + ' Stopp(s)'],
   ]) {
@@ -558,14 +661,14 @@ function zeigeTempo() {
   const platz = Math.max(1, Math.floor((R - L) / 60));
   const schritt = [10, 20, 50, 100, 200, 250, 500].find(s => maxKm / s <= platz) || 500;
   for (let k = 0; k <= maxKm; k += schritt) sv('text', { x: Math.min(R - 20, x(k)), y: U + 18, 'text-anchor': k === 0 ? 'start' : 'middle' }, svg).textContent = k + ' km';
+  for (const e of (F.stau && F.stau.liste) || []) {
+    sv('rect', { x: x(e.km0), y: O, width: Math.max(3, x(e.km1) - x(e.km0)), height: U - O, fill: 'var(--stau)', opacity: .3 }, svg);
+  }
   for (const s of F.stopps.filter(s => s.geladen)) {
     sv('rect', { x: x(s.km) - 2, y: O, width: 4, height: U - O, fill: 'var(--laden)', opacity: .35 }, svg);
     const t = sv('text', { x: x(s.km) + (x(s.km) > W - 90 ? -5 : 5), y: O + 10, 'text-anchor': x(s.km) > W - 90 ? 'end' : 'start' }, svg);
     t.textContent = Math.round(s.min) + ' min';
   }
-  const schnitt = F.km / (F.fahrMin / 60);
-  sv('line', { x1: L, x2: R, y1: y(schnitt), y2: y(schnitt), stroke: 'var(--text-muted)', 'stroke-dasharray': '4 4' }, svg);
-  sv('text', { x: R, y: y(schnitt) - 4, 'text-anchor': 'end' }, svg).textContent = 'Ø ' + Math.round(schnitt);
   const pts = F.tempo5.filter(t => t.kmh > 0);
   if (!pts.length) return;
   sv('path', { d: pts.map((t, i) => (i ? 'L' : 'M') + x(t.km + t.laenge / 2).toFixed(1) + ' ' + y(t.kmh).toFixed(1)).join(''), fill: 'none', stroke: 'var(--fahren)', 'stroke-width': 2, 'stroke-linejoin': 'round' }, svg);
@@ -613,7 +716,7 @@ window.addEventListener('resize', () => {
 const LEAFLET_URL = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/';
 const LEAFLET_JS_SRI = 'sha512-BwHfrr4c9kmRkLw6iXFdzcdWV/PGkVgiIyIWLLlTSXzWQzxuSg4DiQUCpauz/EWjgk5TYQqX/kvn9pG1NpYfqg==';
 const LEAFLET_CSS_SRI = 'sha512-Zcn6bjR/8RZbLEpLIeOwNtzREBAJnUKESxces60Mpoj+2okopSAcSUIUOseddDm0cxnGQzxIR7vJgsLZbdLE3w==';
-let leafletLaedt = null, karte = null, kartenEbene = null;
+let leafletLaedt = null, karte = null, kartenEbene = null, kartenGrenzen = null;
 function ladeLeaflet() {
   if (window.L) return Promise.resolve();
   if (leafletLaedt) return leafletLaedt;
@@ -646,16 +749,58 @@ async function zeigeSpur() {
   const linie = F.spur.map(q => [q[0], q[1]]);
   L.polyline(linie, { color: '#ffffff', weight: 8, opacity: .9 }).addTo(kartenEbene);
   const route = L.polyline(linie, { color: '#6a2fd6', weight: 5 }).addTo(kartenEbene);
+  const farbeVon = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  for (const e of (F.stau && F.stau.liste) || []) {
+    const stueck = []; let letzt = null;
+    for (let x = e.i; x <= e.j; x++) { const q = F.p[x]; if (!letzt || haversine(letzt.lat, letzt.lon, q.lat, q.lon) > 0.05) { stueck.push([q.lat, q.lon]); letzt = q; } }
+    L.polyline(stueck, { color: farbeVon('--stau') || '#e34948', weight: 7 })
+      .bindTooltip('Stau ' + uhr(e.t0) + '–' + uhr(e.t1) + ' · +' + Math.round(e.verlust) + ' min').addTo(kartenEbene);
+  }
   for (const st of F.stopps) {
-    const farbe = st.geladen ? getComputedStyle(document.documentElement).getPropertyValue('--laden') : getComputedStyle(document.documentElement).getPropertyValue('--halt');
-    const text = (st.geladen ? 'Laden' : st.art === 'start' ? 'Start' : st.art === 'ankunft' ? 'Ankunft' : 'Halt') + ' ' + uhr(st.t0) + '–' + uhr(st.t1) + ' · ' + Math.round(st.min) + ' min' + (st.station ? '<br>' + st.station : '');
+    const farbe = farbeVon(st.geladen ? '--laden' : st.stau ? '--stau' : '--halt');
+    const text = (st.geladen ? 'Laden' : st.stau ? 'Halt im Stau' : 'Halt') + ' ' + uhr(st.t0) + '–' + uhr(st.t1) + ' · ' + Math.round(st.min) + ' min' + (st.station ? '<br>' + st.station : '');
     L.circleMarker([st.lat, st.lon], { radius: st.geladen ? 9 : 7, color: '#ffffff', weight: 2, fillColor: farbe.trim() || '#1baf7a', fillOpacity: 1 })
       .bindTooltip(text).addTo(kartenEbene);
   }
   L.circleMarker(linie[0], { radius: 6, color: '#ffffff', weight: 2, fillColor: '#000000', fillOpacity: 1 }).bindTooltip('Start ' + uhr(F.t0)).addTo(kartenEbene);
   L.circleMarker(linie[linie.length - 1], { radius: 6, color: '#ffffff', weight: 2, fillColor: '#000000', fillOpacity: 1 }).bindTooltip('Ziel ' + uhr(F.t1)).addTo(kartenEbene);
+  kartenGrenzen = route.getBounds();
   karte.invalidateSize();
-  karte.fitBounds(route.getBounds(), { padding: [16, 16] });
+  karte.fitBounds(kartenGrenzen, { padding: [16, 16] });
+}
+
+// Karte im Vollbild (Christof 18.10.2026); Zurück-Taste schließt es
+function vollbild(an) {
+  const r = $('karte-rahmen');
+  if (an === r.classList.contains('vollbild')) return;
+  r.classList.toggle('vollbild', an);
+  document.body.style.overflow = an ? 'hidden' : '';
+  if (an) history.pushState({ vollbild: true }, '');
+  if (karte) setTimeout(() => { karte.invalidateSize(); if (kartenGrenzen) karte.fitBounds(kartenGrenzen, { padding: [24, 24] }); }, 80);
+}
+$('vollbild').addEventListener('click', () => vollbild(true));
+$('vollbild-zu').addEventListener('click', () => history.state && history.state.vollbild ? history.back() : vollbild(false));
+window.addEventListener('popstate', () => vollbild(false));
+
+function zeigeStau() {
+  const s = F.stau, box = $('stau');
+  $('stau-erkl').textContent = 'Stau = mindestens 1 km deutlich langsamer (unter 60 %) als das freie Tempo der Umgebung – dem Tempo, ' +
+    'das du im Umkreis von 15 km auf den meisten Kilometern gefahren bist. Ortsdurchfahrten und Baustellen mit gleichmäßigem Tempo zählen nicht. ' +
+    'Halte unter 10 min mitten im Stau zählen dazu.';
+  box.replaceChildren();
+  if (!s.liste.length) { box.append(el('p', 'leer', 'Kein Stau erkannt.')); return; }
+  const kopf = el('p', 'summe');
+  kopf.textContent = 'Stau kostete ≈ ' + hm(s.verlust) + ' · ohne Stau unterwegs ≈ ' + hm(F.dauerMin - s.verlust) + ' (Ankunft ≈ ' + uhr(F.t1 - s.verlust * 60) + ' statt ' + uhr(F.t1) + ')';
+  box.append(kopf);
+  for (const e of s.liste) {
+    const z = el('div', 'liste-zeile');
+    const links = el('div', '', uhr(e.t0) + '–' + uhr(e.t1));
+    links.append(el('small', '', 'km ' + Math.round(e.km0) + '–' + Math.round(e.km1) + ' · ' + zahl(e.km1 - e.km0) + ' km'));
+    const rechts = el('div', 'rechts', '+' + Math.round(e.verlust) + ' min');
+    rechts.append(el('small', '', 'Ø ' + Math.round(e.v) + ' statt ' + Math.round(e.vFrei) + ' km/h'));
+    z.append(links, rechts);
+    box.append(z);
+  }
 }
 
 function zeigeSkizze() {
@@ -693,8 +838,9 @@ function zeigeStopps() {
     let art;
     if (s.art === 'halt') {
       const l = el('label', 'geladen'), c = el('input'); c.type = 'checkbox'; c.checked = s.geladen;
-      c.addEventListener('change', () => { s.geladen = c.checked; zeigeKacheln(); zeigeZeitachse(); zeigeTempo(); zeigeSpur(); zeigeAkku(); });
+      c.addEventListener('change', () => { s.geladen = c.checked; stoppsGeaendert(); });
       l.append(c, 'geladen'); art = l;
+      if (s.stau) { const box = el('div'); box.append(l, el('small', '', 'im Stau')); art = box; }
     } else art = s.art === 'start' ? 'Start' : 'Ankunft';
     return [uhr(s.t0) + '–' + uhr(s.t1), Math.round(s.min) + ' min', Math.round(s.km), art,
       s.station || ('keine bekannte Station in der Nähe (' + zahl(s.abstand, 1) + ' km)')];
@@ -702,9 +848,8 @@ function zeigeStopps() {
 }
 
 function zeigeFahrten() {
-  tabelle('t-fahrten', [['Zeit'], ['km', 1], ['Dauer', 1], ['Ø km/h', 1], ['Höhe'], ['auf / ab', 1]], F.fahrten.map(f => [
-    uhr(f.t0) + '–' + uhr(f.t1), zahl(f.km), hm(f.min), Math.round(f.kmh),
-    f.ele0 !== null ? Math.round(f.ele0) + ' → ' + Math.round(f.ele1) + ' m' : '–', F.mitHoehe ? '+' + Math.round(f.auf) + ' / −' + Math.round(f.ab) : '–']));
+  tabelle('t-fahrten', [['Zeit'], ['km', 1], ['Dauer', 1], ['Ø km/h', 1]], F.fahrten.map(f => [
+    uhr(f.t0) + '–' + uhr(f.t1), zahl(f.km), hm(f.min), Math.round(f.kmh)]));
 }
 
 function feld(id, art) {
@@ -768,6 +913,7 @@ async function rechneAbschnitte() {
   }
   if (lauf !== rechenLauf) return;
   $('abschnitte').replaceChildren(...zeilen);
+  zeigeVerbrauch(liste);
   const knopf = $('senden');
   knopf.disabled = !stuecke.length;
   knopf.textContent = stuecke.length ? stuecke.length + ' Messwert(e) speichern' : 'Als Messwerte speichern (erst Akkustände eintragen)';
@@ -777,8 +923,53 @@ async function rechneAbschnitte() {
   };
 }
 
+/**
+ * Verbrauch des Autos aus den Akkuständen (Christof 18.10.2026): je Abschnitt kWh und kWh/100 km,
+ * je Ladestopp geladene kWh und Ø Ladeleistung, dazu die Summe. 1 % = 0,58 kWh (58 kWh nutzbar).
+ */
+function zeigeVerbrauch(liste) {
+  const kap = (modell && modell.fahrzeug && modell.fahrzeug.kapazitaet_kwh) || 58;
+  const box = $('verbrauch'); box.replaceChildren();
+  const zeile = (links, unter, rechts, rechtsUnter) => {
+    const z = el('div', 'liste-zeile'), l = el('div', '', links), r = el('div', 'rechts', rechts);
+    if (unter) l.append(el('small', '', unter));
+    if (rechtsUnter) r.append(el('small', '', rechtsUnter));
+    z.append(l, r); return z;
+  };
+  let km = 0, kwh = 0, geladen = 0, ladeMin = 0;
+  const fahrt = [], laden = [];
+  for (const a of liste) {
+    const soc0 = (akkuWerte[a.von.id] || {}).ab, soc1 = (akkuWerte[a.bis.id] || {}).an;
+    if (soc0 === undefined || soc1 === undefined || !(soc0 > soc1)) continue;
+    const strecke = F.p[a.j].km - F.p[a.i].km, e = (soc0 - soc1) / 100 * kap;
+    km += strecke; kwh += e;
+    fahrt.push(zeile(kurz(a.von.name) + ' → ' + kurz(a.bis.name), zahl(strecke) + ' km · ' + soc0 + ' → ' + soc1 + ' %',
+      zahl(e / strecke * 100, 1) + ' kWh/100 km', zahl(e, 1) + ' kWh'));
+  }
+  for (const s of F.stopps.filter(s => s.geladen)) {
+    const w = akkuWerte['l' + F.stopps.filter(x => x.geladen).indexOf(s)] || {};
+    if (w.an === undefined || w.ab === undefined || !(w.ab > w.an)) continue;
+    const e = (w.ab - w.an) / 100 * kap;
+    geladen += e; ladeMin += s.min;
+    laden.push(zeile(kurz(s.station || 'Ladestopp'), uhr(s.t0) + ' · ' + Math.round(s.min) + ' min · ' + w.an + ' → ' + w.ab + ' %',
+      'Ø ' + Math.round(e / (s.min / 60)) + ' kW', zahl(e, 1) + ' kWh geladen'));
+  }
+  if (!fahrt.length && !laden.length) { box.append(el('p', 'leer', 'Erst Akkustände eintragen.')); return; }
+  if (fahrt.length) {
+    const k = el('p', 'summe');
+    k.textContent = 'Ø ' + zahl(kwh / km * 100, 1) + ' kWh/100 km · ' + zahl(kwh, 1) + ' kWh auf ' + zahl(km) + ' km';
+    box.append(k, ...fahrt);
+  }
+  if (laden.length) {
+    const k = el('p', 'summe');
+    k.style.marginTop = '12px';
+    k.textContent = 'Geladen ' + zahl(geladen, 1) + ' kWh in ' + hm(ladeMin) + ' (Ø ' + Math.round(geladen / (ladeMin / 60)) + ' kW)';
+    box.append(k, ...laden);
+  }
+}
+
 // Für Tests
-window.auswertung = { leseGpx, werteAus, kennzahlen, abschnitte, modellVerbrauch, get fahrt() { return F; }, set fahrt(f) { F = f; }, akkuWerte, zeigeAlles, rechneAbschnitte };
+window.auswertung = { leseGpx, kuerzeAufFahrt, stauAnalyse, werteAus, kennzahlen, abschnitte, modellVerbrauch, get fahrt() { return F; }, set fahrt(f) { F = f; }, akkuWerte, zeigeAlles, rechneAbschnitte };
 </script>
 </body>
 </html>
