@@ -1,6 +1,6 @@
 # Ladeplanung Cupra Born — Projektstand für Claude
 
-**Stand 17.10.2026** · App (`index.html`) v0.31.1 · Fahrt auswerten (`auswertung.html`) v0.8.0 · Apps Script (`apps-script/Code.js`) v0.23.0 · Veröffentlichen per GitHub Action (`.github/workflows/apps-script.yml`) v1.0.0 · Bundesdaten-Action (`.github/workflows/bundesdaten.yml`) v1.1.0
+**Stand 19.10.2026** · App (`index.html`) v0.32.0 · Fahrt auswerten (`auswertung.html`) v0.8.0 · Apps Script (`apps-script/Code.js`) v0.23.0 · Veröffentlichen per GitHub Action (`.github/workflows/apps-script.yml`) v1.0.0 · Bundesdaten-Action (`.github/workflows/bundesdaten.yml`) v1.1.0
 Ursprünglicher Auftrag: [`docs/Umsetzungsbrief_v5.0.md`](docs/Umsetzungsbrief_v5.0.md). Diese Datei beschreibt den **tatsächlichen** Stand inklusive aller späteren Entscheidungen und hat Vorrang vor dem Brief.
 
 ---
@@ -202,7 +202,7 @@ Startwerte abgeglichen mit EV Database (Born 150 kW 58 kWh, 110 km/h): **18,1 kW
 - p003 Porsche Destination gelöscht; 5 Dubletten zusammengeführt (p020→p006, p021→p007, p032→p010, p035→p025, p034→p026).
 - Anzeige: ein Richtungsknopf „nach X ⇄"; Namen ohne „Ladestation/Charging Station"; Straße im Titel („EnBW Appenweier (A 5)"); Betreiber nicht doppelt; getrennt „Navigieren (Google Maps)" / „In Google Maps ansehen" (gespeicherter Maps-Link).
 - **ABRP-Link:** `destinations` ist die Wegpunktliste, **erster Eintrag = Start** (aktuelle Position), sonst „keine Positionsdaten".
-- **My CUPRA:** Teilen geht nicht → „Adresse kopieren" und dort einfügen.
+- **My CUPRA:** Teilen geht nicht → „Adresse kopieren" und dort einfügen. **Seit App v0.32.0 (Christof 19.10.2026):** Details → **„In My CUPRA öffnen"** (Hauptknopf) kopiert die Adresse und öffnet My CUPRA direkt auf der Karte: `intent://map#Intent;scheme=cupra;package=com.cupra.mycupra;S.browser_fallback_url=…?mycupra=fehlt;end` (Route `/map` aus der My-CUPRA-APK 2.15.0; Adresse kann nicht mitgegeben werden; nie Play Store). Gleicher Baustein wie Projekt `obitusde/cupra-ziel` (Maps-Ort teilen → Adresse → My CUPRA, mit Favoriten), dort steht der APK-Befund. „Adresse kopieren" bleibt als zweiter Knopf.
 - Schreibender Endpunkt (eigentlich Stufe 4): Web-App nur für Christofs Konto – Bearbeiten, Löschen, Hinzufügen, Wartung, Kalibrieren, Vergleich.
 - **Akku-Prognose mit roter Schrift** (bewusst gegen das Nicht-Ziel „Farblogik"). Alles optional; **keine Dauermessung, Handy muss nicht an bleiben**.
 - Mehrere Varianten je Stammstrecke erlaubt (Savona, Ingolstadt).
