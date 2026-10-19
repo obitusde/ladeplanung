@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.32.0 — „In My CUPRA öffnen" in den Details: kopiert die Adresse und öffnet My CUPRA direkt auf der Karte
+                   (cupra://map, Route aus der My-CUPRA-APK 2.15.0, siehe Projekt cupra-ziel); nie über den Play Store.
   Version 0.31.1 — Info-Text: Verbrauch mit höherem Tempo als das Reisetempo richtig erklärt, ohne „Verbrauchstempo".
   Version 0.31.0 — Messwerte statt „Fahrt beenden": jeder Akkuwert ist ein Messpunkt, ab 50 km auf derselben Strecke ohne
                    Laden entsteht ein Messstück, „Messwerte senden (n)" öffnet die Seite „Messwerte". Verbrauch mit Verbrauchstempo
@@ -331,8 +333,9 @@
     <p id="d-gross" class="gross"></p>
     <dl id="d-felder"></dl>
     <div class="aktionen">
-      <button id="d-kopieren" class="knopf haupt" type="button">Adresse kopieren</button>
-      <p class="klein-hinweis">Danach in My CUPRA ins Zielfeld einfügen – Teilen an My CUPRA geht nicht.</p>
+      <button id="d-mycupra" class="knopf haupt" type="button">In My CUPRA öffnen</button>
+      <p class="klein-hinweis">Kopiert die Adresse und öffnet My CUPRA auf der Karte – dort Suche → Einfügen → An Fahrzeug senden.</p>
+      <button id="d-kopieren" class="knopf" type="button">Adresse kopieren</button>
       <a id="d-uebernehmen" class="knopf haupt" target="_blank" rel="noopener" hidden>In meine Liste übernehmen</a>
       <button id="d-karte" class="knopf" type="button">Auf Karte</button>
       <a id="d-maps" class="knopf" target="_blank" rel="noopener">Navigieren (Google Maps)</a>
@@ -561,7 +564,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.31.1';
+    const APP_VERSION = '0.32.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -2350,6 +2353,24 @@
       toast(ok ? 'Adresse kopiert' : 'Kopieren nicht möglich — Adresse lange drücken');
     }
 
+    /**
+     * My CUPRA direkt auf der Karte öffnen (v0.32.0). Die App nimmt cupra:/<route> an (DeepLinkManager, APK 2.15.0);
+     * eine Adresse lässt sich nicht mitgeben → vorher in die Zwischenablage. Klappt der Intent nicht, kommt Chrome über
+     * browser_fallback_url zurück in diese App statt in den Play Store.
+     */
+    const MYCUPRA_KARTE = 'intent://map#Intent;scheme=cupra;package=com.cupra.mycupra;S.browser_fallback_url=' +
+      encodeURIComponent(new URL('./?mycupra=fehlt', location.href).href) + ';end';
+
+    async function oeffneMyCupra() {
+      const text = detailPunkt && detailPunkt.adresse;
+      if (!text) { toast('Keine Adresse vorhanden'); return; }
+      let ok = false;
+      try { await navigator.clipboard.writeText(text); ok = true; } catch (e) { ok = false; }
+      if (!ok) { kopiereRueckfall(text); }
+      else toast('Adresse kopiert – My CUPRA öffnet');
+      setTimeout(() => { location.href = MYCUPRA_KARTE; }, 250);
+    }
+
     function kopiereAdresse() {
       const text = detailPunkt && detailPunkt.adresse;
       if (!text) { toast('Keine Adresse vorhanden'); return; }
@@ -2560,6 +2581,11 @@
       }
       $('info-zurueck').addEventListener('click', () => history.back());
       $('d-kopieren').addEventListener('click', kopiereAdresse);
+      $('d-mycupra').addEventListener('click', oeffneMyCupra);
+      if (new URLSearchParams(location.search).get('mycupra') === 'fehlt') {
+        history.replaceState(null, '', location.pathname);
+        setTimeout(() => toast('My CUPRA ließ sich nicht öffnen – die Adresse ist kopiert'), 600);
+      }
       $('d-sim').addEventListener('click', () => {
         if (!detailPunkt) return;
         zustand.sim = { aktiv: true, lat: detailPunkt.lat, lon: detailPunkt.lon, label: 'auf ' + detailPunkt.name };
