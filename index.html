@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.33.0 — „Ans Auto senden" in den Details (Christof 19.10.2026): ruft den MacroDroid-Webhook aus Cupra-Ziel auf
+                   (localStorage 'cupra-ziel.webhook', gleicher Ursprung), das Makro füllt My CUPRA aus und sendet.
+                   Ohne Webhook oder ohne Netz wie bisher kopieren und My CUPRA öffnen.
   Version 0.32.0 — „In My CUPRA öffnen" in den Details: kopiert die Adresse und öffnet My CUPRA direkt auf der Karte
                    (cupra://map, Route aus der My-CUPRA-APK 2.15.0, siehe Projekt cupra-ziel); nie über den Play Store.
   Version 0.31.1 — Info-Text: Verbrauch mit höherem Tempo als das Reisetempo richtig erklärt, ohne „Verbrauchstempo".
@@ -333,8 +336,9 @@
     <p id="d-gross" class="gross"></p>
     <dl id="d-felder"></dl>
     <div class="aktionen">
+      <button id="d-auto" class="knopf haupt" type="button" hidden>Ans Auto senden</button>
       <button id="d-mycupra" class="knopf haupt" type="button">In My CUPRA öffnen</button>
-      <p class="klein-hinweis">Kopiert die Adresse und öffnet My CUPRA auf der Karte – dort Suche → Einfügen → An Fahrzeug senden.</p>
+      <p class="klein-hinweis" id="d-mycupra-hinweis">Kopiert die Adresse und öffnet My CUPRA auf der Karte – dort Suche → Einfügen → An Fahrzeug senden.</p>
       <button id="d-kopieren" class="knopf" type="button">Adresse kopieren</button>
       <a id="d-uebernehmen" class="knopf haupt" target="_blank" rel="noopener" hidden>In meine Liste übernehmen</a>
       <button id="d-karte" class="knopf" type="button">Auf Karte</button>
@@ -564,7 +568,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.32.0';
+    const APP_VERSION = '0.33.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -1487,6 +1491,13 @@
       dl.replaceChildren();
       for (const [k, v] of felder) dl.append(el('dt', '', k), el('dd', '', v));
 
+      // Ans Auto senden nur mit Webhook aus Cupra-Ziel; dann ist „In My CUPRA öffnen" der zweite Weg
+      const mitWebhook = !!cupraWebhook();
+      $('d-auto').hidden = !mitWebhook;
+      $('d-mycupra').className = mitWebhook ? 'knopf' : 'knopf haupt';
+      $('d-mycupra-hinweis').textContent = mitWebhook
+        ? '„Ans Auto senden": MacroDroid füllt My CUPRA aus und sendet – Handy entsperrt und hochkant lassen.'
+        : 'Kopiert die Adresse und öffnet My CUPRA auf der Karte – dort Suche → Einfügen → An Fahrzeug senden.';
       $('d-maps').href = mapsUrl(p);
       $('d-ort').href = ortUrl(p);
       const anbieter = preisEintrag(p);
@@ -2371,6 +2382,37 @@
       setTimeout(() => { location.href = MYCUPRA_KARTE; }, 250);
     }
 
+    /**
+     * Ans Auto senden (v0.33.0) über den MacroDroid-Webhook, den Cupra-Ziel in seinen Einstellungen speichert
+     * (gleicher Ursprung obitusde.github.io → gleicher localStorage). Webhook …/cupra?ziel=<Adresse>, no-cors
+     * (Antwort nicht lesbar, Bestätigung zeigt MacroDroid). Makro und Koordinaten: obitusde/cupra-ziel, Ordner macrodroid/.
+     */
+    const WEBHOOK_SPEICHER = 'cupra-ziel.webhook';
+    const WEBHOOK_MUSTER = /^https:\/\/trigger\.macrodroid\.com\/[A-Za-z0-9-]+\/[A-Za-z0-9_-]+$/;
+    const SENDEN_SPERRE_MS = 20000;
+    function cupraWebhook() {
+      try { const w = (localStorage.getItem(WEBHOOK_SPEICHER) || '').trim(); return WEBHOOK_MUSTER.test(w) ? w : ''; }
+      catch (e) { return ''; }
+    }
+    let letzterVersand = { text: '', zeit: 0 };
+    async function sendeAnsAuto() {
+      const text = detailPunkt && detailPunkt.adresse;
+      if (!text) { toast('Keine Adresse vorhanden'); return; }
+      const w = cupraWebhook();
+      if (!w) { oeffneMyCupra(); return; }
+      if (letzterVersand.text === text && Date.now() - letzterVersand.zeit < SENDEN_SPERRE_MS) { toast('Wird schon gesendet …'); return; }
+      letzterVersand = { text: text, zeit: Date.now() };
+      toast('Wird ans Auto gesendet …');
+      try {
+        await fetch(w + '?ziel=' + encodeURIComponent(text), { mode: 'no-cors', cache: 'no-store' });
+        toast('An MacroDroid geschickt – My CUPRA öffnet gleich. Handy entsperrt lassen.');
+      } catch (e) {
+        letzterVersand.zeit = 0;
+        toast('Nicht gesendet (kein Netz?) – Adresse wird kopiert');
+        setTimeout(oeffneMyCupra, 1500);
+      }
+    }
+
     function kopiereAdresse() {
       const text = detailPunkt && detailPunkt.adresse;
       if (!text) { toast('Keine Adresse vorhanden'); return; }
@@ -2582,6 +2624,7 @@
       $('info-zurueck').addEventListener('click', () => history.back());
       $('d-kopieren').addEventListener('click', kopiereAdresse);
       $('d-mycupra').addEventListener('click', oeffneMyCupra);
+      $('d-auto').addEventListener('click', sendeAnsAuto);
       if (new URLSearchParams(location.search).get('mycupra') === 'fehlt') {
         history.replaceState(null, '', location.pathname);
         setTimeout(() => toast('My CUPRA ließ sich nicht öffnen – die Adresse ist kopiert'), 600);
