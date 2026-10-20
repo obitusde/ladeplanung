@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.34.0 — Fahrt live: Knopf „Fahrt" → eigener dunkler Bildschirm mit Unterwegs, Fahren, Pausen, Ø km/h, gefahren/
+                   verbleibend, Ankunft ≈, Akku; Start per Knopf, Ende von selbst am Ziel; GPS jede Minute bei offener Ansicht,
+                   „Bildschirm anlassen", Inhalt wandert gegen Einbrennen.
   Version 0.33.0 — „Ans Auto senden" in den Details (Christof 19.10.2026): ruft den MacroDroid-Webhook aus Cupra-Ziel auf
                    (localStorage 'cupra-ziel.webhook', gleicher Ursprung), das Makro füllt My CUPRA aus und sendet.
                    Ohne Webhook oder ohne Netz wie bisher kopieren und My CUPRA öffnen.
@@ -233,6 +236,32 @@
     #karte-info .text { flex: 1; font-weight: 600; font-variant-numeric: tabular-nums; }
     #karte-info .knopf { min-height: 44px; }
     .leaflet-tooltip.schild { font: 700 14px/1.2 system-ui, sans-serif; pointer-events: auto; cursor: pointer; }
+
+    /* Fahrt live (v0.34.0): immer dunkel (OLED: Schwarz = Pixel aus), Werte farbig je Bedeutung, alle ≥ 7:1 auf Schwarz */
+    header #reise-knopf { flex: none; padding: 0 12px; }
+    header #reise-knopf.laeuft { border-color: #5ee38b; color: #5ee38b; }
+    #reise-seite { position: fixed; inset: 0; z-index: 5; overflow-y: auto; background: #000; color: #f2f2f2;
+      padding: env(safe-area-inset-top) 0 calc(env(safe-area-inset-bottom) + 12px); }
+    .reise-kopf { display: flex; gap: 10px; align-items: center; padding: 8px 10px; }
+    #reise-seite .knopf { background: #161616; color: #f2f2f2; border-color: #3a3a3a; min-height: 48px; }
+    #reise-seite .knopf.haupt { background: #ffac4a; border-color: #ffac4a; color: #000; }
+    #reise-ende { color: #ff8f8f !important; border-color: #6b2a2a !important; }
+    .reise-route { font-weight: 800; font-size: 19px; color: #ffac4a; overflow-wrap: anywhere; }
+    .reise-inhalt { padding: 4px 10px 10px; transition: transform 1.5s ease; }
+    .reise-kacheln { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+    .reise-kachel { background: #0d0d0d; border: 1px solid #2c2c2c; border-radius: 12px; padding: 8px 12px 10px; min-width: 0; }
+    .reise-kachel.breit { grid-column: 1 / -1; }
+    .reise-kachel .name { color: #bdbdbd; font-size: 15px; font-weight: 700; }
+    .reise-kachel .wert { font-size: 32px; font-weight: 800; line-height: 1.15; font-variant-numeric: tabular-nums; }
+    .reise-kachel.breit .wert { font-size: 40px; }
+    .reise-kachel .zusatz { color: #a8a8a8; font-size: 14px; margin-top: 2px; }
+    .c-zeit { color: #ffffff; } .c-fahren { color: #5ee38b; } .c-pause { color: #ffd166; }
+    .c-tempo { color: #6cc8ff; } .c-rest { color: #ffac4a; } .c-rot { color: #ff6b6b; }
+    .reise-unten { color: #d0d0d0; font-size: 16px; margin: 10px 2px; line-height: 1.4; }
+    .reise-knoepfe { display: flex; flex-wrap: wrap; gap: 8px; }
+    .reise-knoepfe .knopf { flex: 1 1 140px; min-height: 54px !important; font-size: 19px; }
+    .reise-wach { display: flex; gap: 10px; align-items: center; width: 100%; margin-top: 4px; font-weight: 700; color: #e6e6e6; }
+    .reise-wach input { width: 26px; height: 26px; accent-color: #5ee38b; }
     .leaflet-tooltip.schild.klein { font-size: 12px; padding: 1px 5px; }
     .leaflet-tooltip.schild.rot { color: #c00018; }
 
@@ -316,6 +345,7 @@
       <select id="ueber" class="ort" aria-label="über" hidden></select>
       <button id="standort" class="knopf haupt" type="button">Standort</button>
       <button id="karte-knopf" class="knopf" type="button" aria-label="Karte: Weg zur nächsten Station">Karte</button>
+      <button id="reise-knopf" class="knopf" type="button" aria-label="Fahrt: Statistik der laufenden Fahrt">Fahrt</button>
     </div>
   </header>
 
@@ -376,6 +406,7 @@
         <b>Messwerte senden (n)</b> öffnet die Seite „Messwerte" mit allen gesammelten Stücken; dort einmal speichern.
         <b>✕</b> verwirft den Akkustand – z. B. nach einem Test oder einem Tippfehler; danach erscheint wieder „Akku jetzt".</li>
       <li><b>„Messwerte geöffnet … – gespeichert?":</b> Erinnerung, falls die Seite nicht gespeichert wurde. <b>Öffnen</b> zeigt sie nochmals, <b>✕</b> blendet die Erinnerung aus.</li>
+      <li><b>Fahrt:</b> eigener Bildschirm mit der laufenden Fahrt – Unterwegs, Fahren, Pausen, Ø km/h, gefahren/verbleibend, Ankunft ≈ und Akku. „▶ Fahrt starten" beginnt die Messung, am Ziel endet sie von selbst (oder „■ Beenden"). Gemessen wird, solange die App offen ist: beim Öffnen, alle 2 min und bei offener Fahrt-Ansicht jede Minute. Ist die App länger zu, füllt sie die Lücke beim nächsten Öffnen (ganz gefahren oder ganz gestanden). „Bildschirm anlassen" hält das Display an, solange die Ansicht offen ist – am besten in der Halterung am Ladekabel. Der Knopf „Fahrt" ist grün, solange eine Fahrt läuft.</li>
       <li><b>☰ → Fahrt auswerten (GPX):</b> eine aufgezeichnete Fahrt (z. B. von der Garmin-Uhr) auswerten – nur im Browser, die Datei verlässt das Gerät nicht. Mit den Akkuständen an den Ladestopps entstehen daraus Messwerte mit echtem Tempoverlauf.</li>
       <li><b>Karte:</b> ganze Strecke, dein Standort (blau) und der Weg bis zur nächsten Station. Eine andere Station antippen zeigt den Weg dorthin; <b>Ganze Strecke</b> zoomt heraus, <b>Details</b> öffnet die Station. In den Details jeder Station gibt es dafür auch <b>Auf Karte</b>.</li>
       <li><b>⇄</b> tauscht von und nach. Der letzte bekannte Akkustand gilt für jede Strecke, die du oben wählst – die Liste zeigt sofort, was damit erreichbar ist.</li>
@@ -475,6 +506,22 @@
     </div>
   </section>
 
+  <section id="reise-seite" hidden>
+    <div class="reise-kopf">
+      <button id="reise-zurueck" class="knopf" type="button">← Zurück</button>
+      <span id="reise-route" class="reise-route"></span>
+    </div>
+    <div id="reise-inhalt" class="reise-inhalt">
+      <div id="reise-kacheln" class="reise-kacheln"></div>
+      <p id="reise-unten" class="reise-unten"></p>
+      <div class="reise-knoepfe">
+        <button id="reise-start" class="knopf haupt" type="button">▶ Fahrt starten</button>
+        <button id="reise-ende" class="knopf" type="button" hidden>■ Beenden</button>
+        <label class="reise-wach"><input type="checkbox" id="reise-wach"> Bildschirm anlassen</label>
+      </div>
+    </div>
+  </section>
+
   <section id="preise-seite" hidden>
     <button id="preise-zurueck" class="knopf" type="button">← Zurück</button>
     <h2>Ladepreise</h2>
@@ -568,7 +615,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.33.0';
+    const APP_VERSION = '0.34.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -578,6 +625,10 @@
     const ABSEITS = { label: 'Weit abseits (Annecy)', lat: 45.8992, lon: 6.1294 };
     const TEMPERATUR_ERSATZ_C = 15;
     const ANKUNFT_OFFEN_MS = 12 * 3600e3;  // so lange erinnert die Leiste an geöffnete, vielleicht nicht gespeicherte Messwerte
+    const REISE_GPS_MS = 60e3;         // Fahrt-Ansicht offen: Standort jede Minute (Balance Genauigkeit/Akku, Christof 20.10.2026)
+    const REISE_ANZEIGE_MS = 30e3;     // Anzeige alle 30 s neu (Zeiten), ohne neue GPS-Abfrage
+    const REISE_SCHIEBEN_MS = 120e3;   // gegen Einbrennen: alle 2 min ein paar Pixel verschieben
+    const REISE_PAUSE_KMH = 5, REISE_PAUSE_MIN_S = 180;   // langsamer = stehen; ab 3 min stehen = Pause (sonst Ampel/Stau)
     const MESSSTUECK_MIN_KM = 50;          // kürzere Stücke sind zu ungenau (Akku ±0,5 % je Wert; Christof, 17.10.2026)
     const MESSSTUECKE_MAX = 20;            // so viele passen in eine Adresse an die Seite „Messwerte"
     // Route ab hier (v0.25.0): OpenRouteService direkt aus dem Handy; Schlüssel nur in localStorage, nie im Repo
@@ -856,6 +907,7 @@
         ankunft: null,   // { url, zeit, anzahl } — Seite „Messwerte" geöffnet, zur Erinnerung
         messung: null,   // letzter Akkuwert als Messpunkt { soc, zeit, lat, lon, km_stand, route, richtung, km, hm_hin, hm_rueck, q }
         stuecke: [],     // Messstücke ab 50 km, noch nicht gesendet
+        reise: null,     // Fahrt live { route, route_name, richtung, start, ende, punkte: [[zeit, lat, lon, km, q]] }
         abStandort: false,     // true = auch weit weg von der Route ab dem eigenen Standort rechnen (Luftlinie)
         letzterStandort: null, // { lat, lon, genauigkeit, zeit } — gilt, bis das GPS antwortet
       };
@@ -1252,6 +1304,7 @@
 
     function render() {
       if (!daten) return;
+      $('reise-knopf').classList.toggle('laeuft', !!(zustand.reise && !zustand.reise.ende));   // grün, solange eine Fahrt läuft
       const route = aktuelleRoute();
       zustand.route = route.id;
 
@@ -1611,6 +1664,209 @@
         km: pr.km, hm_hin: pr.hm_hin, hm_rueck: pr.hm_rueck, q: pr.q });
     }
 
+    // -----------------------------------------------------------------------
+    // Fahrt live (Christof 20.10.2026): eigener Bildschirm mit Statistik der laufenden Fahrt – Unterwegs, Fahren,
+    // Pausen, Ø km/h, gefahren/verbleibend, Ankunft, Akku. Start per Knopf, Ende von selbst am Ziel oder per Knopf.
+    // Messpunkte nur, solange die App offen ist: jede Standortabfrage (beim Öffnen, alle 2 min), bei offener
+    // Fahrt-Ansicht jede Minute. Zwischen zwei Punkten: langsamer als 5 km/h = stehen; Stehen ab 3 min = Pause.
+    // -----------------------------------------------------------------------
+
+    function reiseRoute() {
+      const r = zustand.reise;
+      return r && daten ? daten.routen.find(x => x.id === r.route) : null;
+    }
+
+    /** Messpunkt für die laufende Fahrt: [zeit, lat, lon, routenKm, querKm]; nicht bei Simulation, höchstens alle 20 s. */
+    function merkeReisePunkt(pos, zeit) {
+      const r = zustand.reise, route = reiseRoute();
+      if (!r || r.ende || !route || !pos || pos.sim || pos.alt) return;
+      const t = zeit || Date.now(), letzt = r.punkte[r.punkte.length - 1];
+      if (letzt && t - letzt[0] < 20e3) return;
+      const pr = projiziere(route.linie, pos.lat, pos.lon, lat0Von(route));
+      const runde5 = x => Math.round(x * 1e5) / 1e5;
+      r.punkte.push([t, runde5(pos.lat), runde5(pos.lon), Math.round(pr.km * 100) / 100, Math.round(pr.q * 10) / 10]);
+      // Ende von selbst: weniger als 1 km vor dem Ziel und seit 5 min nicht mehr bewegt (Christof: 3a)
+      const s = reiseStatistik(r, route, t);
+      if (s.rest !== null && s.rest <= 1) {
+        const p = r.punkte, l = p[p.length - 1];
+        let j = p.length - 1;
+        while (j > 0 && haversine(p[j - 1][1], p[j - 1][2], l[1], l[2]) <= 0.2) j--;
+        if (l[0] - p[j][0] >= 5 * 60e3) { r.ende = p[j][0]; toast('Angekommen – Fahrt beendet'); }
+      }
+      speichere();
+    }
+
+    /** Statistik aus den Messpunkten (rein rechnerisch). bis = Zeitpunkt „jetzt" (bzw. Fahrtende). */
+    function reiseStatistik(r, route, bis) {
+      const p = r.punkte, ende = r.ende || bis || Date.now();
+      let fahrS = 0, pauseS = 0, km = 0, pausen = 0, stehen = 0;
+      const schliesseStehen = () => {
+        if (stehen >= REISE_PAUSE_MIN_S) { pauseS += stehen; pausen++; } else fahrS += stehen;
+        stehen = 0;
+      };
+      for (let i = 1; i < p.length; i++) {
+        const a = p[i - 1], b = p[i], dt = (b[0] - a[0]) / 1000;
+        if (dt <= 0 || b[0] > ende) continue;   // nach dem Ankommen zählt nichts mehr
+        let d = haversine(a[1], a[2], b[1], b[2]);
+        if (a[4] <= 2 && b[4] <= 2) d = Math.max(d, Math.abs(b[3] - a[3]));   // auf der Route: Straßen- statt Luftlinie
+        if (d / (dt / 3600) < REISE_PAUSE_KMH) stehen += dt;
+        else { schliesseStehen(); fahrS += dt; km += d; }
+      }
+      const laeuftPause = stehen >= REISE_PAUSE_MIN_S;
+      schliesseStehen();
+      const l = p[p.length - 1];
+      let rest = null;
+      if (route && l && l[4] <= QUER_MAX_KM) rest = Math.max(0, r.richtung === 'hin' ? route.laenge_km - l[3] : l[3]);
+      return {
+        unterwegsS: (ende - r.start) / 1000, fahrS, pauseS, pausen, km, rest, laeuftPause,
+        schnitt: fahrS >= 60 ? km / (fahrS / 3600) : null, letzte: l ? l[0] : null,
+      };
+    }
+
+    function dauerText(s, kurz) {
+      const min = Math.max(0, Math.round(s / 60));
+      return Math.floor(min / 60) + ' h ' + String(min % 60).padStart(2, '0') + (kurz ? '' : ' min');
+    }
+
+    let reiseAnzeigeTimer = null, reiseGpsTimer = null, reiseSchiebeTimer = null, reiseWachSperre = null;
+
+    function zeigeReise() {
+      if ($('reise-seite').hidden) {
+        $('reise-seite').hidden = false;
+        history.pushState({ reise: true }, '');
+      }
+      nachVorn('reise-seite');
+      $('reise-wach').checked = !!zustand.einst.reiseWach;
+      renderReise();
+      clearInterval(reiseAnzeigeTimer); clearInterval(reiseGpsTimer); clearInterval(reiseSchiebeTimer);
+      reiseAnzeigeTimer = setInterval(renderReise, REISE_ANZEIGE_MS);
+      reiseGpsTimer = setInterval(() => {
+        const r = zustand.reise;
+        if (r && !r.ende && document.visibilityState === 'visible' && !zustand.sim.aktiv && !gpsLaeuft) holeStandort();
+      }, REISE_GPS_MS);
+      // gegen Einbrennen (OLED): Inhalt alle 2 min um ein paar Pixel verschieben
+      reiseSchiebeTimer = setInterval(() => {
+        const x = Math.round(Math.random() * 12 - 6), y = Math.round(Math.random() * 12 - 6);
+        $('reise-inhalt').style.transform = 'translate(' + x + 'px,' + y + 'px)';
+      }, REISE_SCHIEBEN_MS);
+      wachHalten();
+    }
+
+    function schliesseReise() {
+      $('reise-seite').hidden = true;
+      clearInterval(reiseAnzeigeTimer); clearInterval(reiseGpsTimer); clearInterval(reiseSchiebeTimer);
+      reiseAnzeigeTimer = reiseGpsTimer = reiseSchiebeTimer = null;
+      if (reiseWachSperre) { reiseWachSperre.release().catch(() => {}); reiseWachSperre = null; }
+    }
+
+    /** Bildschirm anlassen, solange die Fahrt-Ansicht offen ist (Christof: 2a). */
+    async function wachHalten() {
+      const soll = zustand.einst.reiseWach && !$('reise-seite').hidden && document.visibilityState === 'visible';
+      if (!soll) { if (reiseWachSperre) { reiseWachSperre.release().catch(() => {}); reiseWachSperre = null; } return; }
+      if (reiseWachSperre || !('wakeLock' in navigator)) return;
+      try {
+        reiseWachSperre = await navigator.wakeLock.request('screen');
+        reiseWachSperre.addEventListener('release', () => { reiseWachSperre = null; });
+      } catch (e) { reiseWachSperre = null; }
+    }
+
+    function starteReise() {
+      const pos = aktuellePosition(), route = letzteAnsicht && letzteAnsicht.route;
+      if (!route) { toast('Erst oben eine Strecke wählen'); return; }
+      if (!pos || pos.alt) { toast('Standort wird gesucht – gleich nochmal tippen'); holeStandort(); return; }
+      zustand.reise = { route: route.id, route_name: route.name, richtung: zustand.richtung, start: Date.now(), ende: null, punkte: [] };
+      merkeReisePunkt(pos, zustand.reise.start);
+      speichere();
+      renderReise();
+      render();
+    }
+
+    function beendeReise() {
+      const r = zustand.reise;
+      if (!r || r.ende) return;
+      const pos = aktuellePosition();
+      if (pos) merkeReisePunkt(pos);
+      r.ende = Date.now();
+      speichere();
+      renderReise();
+      render();
+    }
+
+    function renderReise() {
+      if ($('reise-seite').hidden) return;
+      const r = zustand.reise, route = r ? reiseRoute() : (letzteAnsicht && letzteAnsicht.route);
+      const kacheln = $('reise-kacheln');
+      kacheln.replaceChildren();
+      const kachel = (name, wert, farbe, zusatz, breit) => {
+        const k = el('div', 'reise-kachel' + (breit ? ' breit' : ''));
+        k.append(el('div', 'name', name), el('div', 'wert ' + (farbe || ''), wert));
+        if (zusatz) k.append(el('div', 'zusatz', zusatz));
+        kacheln.append(k);
+      };
+      const t = route ? routenTeile(route) : null;
+      const richtung = r ? r.richtung : zustand.richtung;
+      $('reise-route').textContent = t ? (richtung === 'hin' ? t.start + ' → ' + t.ziel : t.ziel + ' → ' + t.start) : '';
+      $('reise-start').hidden = !!(r && !r.ende);
+      $('reise-start').textContent = r && r.ende ? '▶ Neue Fahrt starten' : '▶ Fahrt starten';
+      $('reise-ende').hidden = !(r && !r.ende);
+      if (!r) {
+        kachel('Noch keine Fahrt', 'bereit', 'c-zeit', 'Mit „Fahrt starten" beginnt die Messung für die oben gewählte Strecke.', true);
+        $('reise-unten').textContent = 'Gemessen wird, solange die App offen ist – am genauesten in der Halterung mit offener Ansicht.';
+        return;
+      }
+      const jetzt = Date.now(), s = reiseStatistik(r, route, jetzt);
+      kachel('Unterwegs', dauerText(s.unterwegsS), 'c-zeit', 'seit ' + uhrzeit(r.start) + (r.ende ? ' · beendet ' + uhrzeit(r.ende) : ''), true);
+      kachel('Fahren', dauerText(s.fahrS, true), 'c-fahren');
+      kachel('Pausen', s.pausen + ' · ' + Math.round(s.pauseS / 60) + ' min', 'c-pause', s.laeuftPause && !r.ende ? 'gerade Pause' : '');
+      kachel('Ø beim Fahren', s.schnitt ? Math.round(s.schnitt) + ' km/h' : '–', 'c-tempo');
+      kachel('Gefahren', fmtKm(s.km) + ' km', 'c-tempo');
+      kachel('Verbleibend', s.rest === null ? '–' : fmtKm(s.rest) + ' km', 'c-rest', s.rest === null ? 'neben der Route' : '');
+      // Ankunft: Rest mit deinem Ø (ab 15 min Fahrt), sonst mit dem Reisetempo der Route; ohne Laden
+      if (!r.ende && s.rest !== null) {
+        const v = s.schnitt && s.fahrS >= 900 && s.schnitt >= 30 ? s.schnitt : tempo(route).wert;
+        kachel('Ankunft ≈', uhrzeit(jetzt + s.rest / v * 3600e3), 'c-zeit', 'ohne Laden, mit ' + Math.round(v) + ' km/h');
+      }
+      // Akku: wie in der Liste („Akku jetzt" aus dem letzten Wert, am Ziel mit Deckel bei 100 %)
+      const l = r.punkte[r.punkte.length - 1];
+      if (l && l[4] <= QUER_MAX_KM && !r.ende) {
+        const lp = { km: l[3], ...punktWerte(route, l[3]) };
+        const akku = akkuJetzt(route.id, lp);
+        const ende = r.richtung === 'hin' ? route.linie[route.linie.length - 1] : route.linie[0];
+        const amZiel = akkuProfil(route, r.richtung, lp, akku === null ? 100 : akku).bei({ km: ende[2] });
+        const reserve = Number(zustand.einst.reserve || 0);
+        const farbe = amZiel < 0 ? 'c-rot' : amZiel < reserve ? 'c-pause' : 'c-fahren';
+        if (akku !== null) kachel('Akku jetzt ≈', Math.max(0, Math.round(akku)) + ' %', akku < reserve ? 'c-rot' : 'c-fahren',
+          amZiel < 0 ? 'am Ziel: nicht erreichbar' : 'am Ziel ≈ ' + Math.round(amZiel) + ' %');
+        else {
+          const bedarf = Math.round(Math.max(0, 100 - amZiel));
+          kachel('Akkubedarf bis Ziel', '≈ ' + bedarf + ' %', farbe, bedarf > 100 ? 'mehr als eine Ladung – unterwegs laden' : 'kein Akkustand eingetragen');
+        }
+      }
+      // unten: nächste Station und wie frisch die Messung ist
+      const teile = [];
+      if (l && !r.ende && l[4] <= QUER_MAX_KM) {
+        try {
+          const erg = berechneListe(daten, route.id, r.richtung, l[1], l[2]);
+          const e = erg.eintraege && erg.eintraege[0];
+          if (e) teile.push('nächste Station ' + kurzname(e.punkt.name) + ' in ' + fmtKm(e.weg) + ' km');
+        } catch (e) { /* ohne Liste */ }
+      }
+      if (s.letzte && !r.ende) {
+        const alt = Math.round((jetzt - s.letzte) / 60e3);
+        teile.push(alt < 1 ? 'Standort gerade gemessen' : 'letzte Messung vor ' + alt + ' min');
+      }
+      if (r.ende) teile.push('Fahrt beendet – Werte bleiben, bis du eine neue startest.');
+      $('reise-unten').textContent = teile.join(' · ');
+    }
+
+    /** hm-Werte an einem Streckenkilometer (für Akku-Rechnung an einem Messpunkt). */
+    function punktWerte(route, km) {
+      const l = route.linie;
+      let i = 1; while (i < l.length - 1 && l[i][2] < km) i++;
+      const a = l[i - 1], b = l[i], t = b[2] > a[2] ? Math.max(0, Math.min(1, (km - a[2]) / (b[2] - a[2]))) : 0;
+      return { hm_hin: a[3] + t * (b[3] - a[3]), hm_rueck: a[4] + t * (b[4] - a[4]) };
+    }
+
     /** Wartende Messstücke auf der Seite „Messwerte" öffnen (dort einmal speichern = kalibrieren). */
     function sendeMesswerte() {
       const url = FORMULAR_URL + '?seite=messwerte&stuecke=' + encodeURIComponent(JSON.stringify(zustand.stuecke));
@@ -1662,9 +1918,11 @@
         p => {
           gps = { lat: p.coords.latitude, lon: p.coords.longitude, genauigkeit: p.coords.accuracy };
           zustand.letzterStandort = { lat: gps.lat, lon: gps.lon, genauigkeit: gps.genauigkeit, zeit: Date.now() };
+          merkeReisePunkt(gps);
           speichere();
           gpsLaeuft = false;
           render();
+          renderReise();
         },
         err => {
           gpsLaeuft = false;
@@ -2589,6 +2847,12 @@
       $('adhoc-entfernen').addEventListener('click', entferneAdhoc);
       // Karte
       $('karte-knopf').addEventListener('click', () => zeigeKarte(null));
+      $('reise-knopf').addEventListener('click', zeigeReise);
+      $('reise-zurueck').addEventListener('click', () => history.back());
+      $('reise-start').addEventListener('click', starteReise);
+      $('reise-ende').addEventListener('click', () => { if (confirm('Fahrt beenden?')) beendeReise(); });
+      $('reise-wach').addEventListener('change', () => { zustand.einst.reiseWach = $('reise-wach').checked; speichere(); wachHalten(); });
+      document.addEventListener('visibilitychange', () => { wachHalten(); renderReise(); });
       $('d-karte').addEventListener('click', () => { if (detailEintrag) zeigeKarte(detailEintrag); });
       $('karte-zurueck').addEventListener('click', () => history.back());
       $('karte-details').addEventListener('click', () => {
@@ -2606,10 +2870,10 @@
       $('zurueck').addEventListener('click', () => history.back());
       // Zurück schließt nur die oberste Seite (z. B. Details über der Karte → zurück zur Karte)
       window.addEventListener('popstate', () => {
-        const offen = ['detail', 'info-seite', 'preise-seite', 'karte-seite'].filter(id => !$(id).hidden);
+        const offen = ['detail', 'info-seite', 'preise-seite', 'karte-seite', 'reise-seite'].filter(id => !$(id).hidden);
         if (!offen.length) return;
         offen.sort((x, y) => (Number($(y).style.zIndex) || 0) - (Number($(x).style.zIndex) || 0));
-        if (offen[0] === 'detail') schliesseDetail(); else $(offen[0]).hidden = true;
+        if (offen[0] === 'detail') schliesseDetail(); else if (offen[0] === 'reise-seite') schliesseReise(); else $(offen[0]).hidden = true;
       });
       function zeigeInfo() {
         const d = daten && new Date(daten.erzeugt);
@@ -2709,7 +2973,7 @@
     window.ladeplanung = {
       berechneListe, projiziere, haversine, punktBeiKm, mapsUrl, abrpUrl, energieAnteile, energieKwh, streckenwerte, bedarf,
       routenTeile, routenZwischen, zieleVon, simPunkte, preisKurz, preisEintrag, landVon, prognose, tempo, leseAdapter,
-      kumuliere, duenneAus, fuegeAdhocEin, merkeMesspunkt, verbrauchsTempo, sendeMesswerte, bekannteAbschnitte, akkuProfil, bedarf, akkuJetzt, adhocRichtung, uebernehmenUrl, zeigeKarte, durchMontBlanc, berechneAdhoc,
+      kumuliere, duenneAus, fuegeAdhocEin, merkeReisePunkt, reiseStatistik, renderReise, zeigeReise, merkeMesspunkt, verbrauchsTempo, sendeMesswerte, bekannteAbschnitte, akkuProfil, bedarf, akkuJetzt, adhocRichtung, uebernehmenUrl, zeigeKarte, durchMontBlanc, berechneAdhoc,
       get adhocRoute() { return adhocRoute; }, set adhocRoute(r) { adhocRoute = r; },
       get fremde() { return fremde; },
       get preise() { return preise; },
