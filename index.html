@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.35.0 — Fahrt live: Ladestopps erkannt (≥ 10 min neben bekannter Station oder Akku danach höher), Menge und Ø kW
+                   aus Akku an/ab (Adapter oder Eingabe), Laden getrennt von Pausen; Messtakt am Ladekabel 30 s, sonst 60 s,
+                   im Stand 2 min; Adapter ohne Tippen während der Fahrt (nie Geräteauswahl).
   Version 0.34.0 — Fahrt live: Knopf „Fahrt" → eigener dunkler Bildschirm mit Unterwegs, Fahren, Pausen, Ø km/h, gefahren/
                    verbleibend, Ankunft ≈, Akku; Start per Knopf, Ende von selbst am Ziel; GPS jede Minute bei offener Ansicht,
                    „Bildschirm anlassen", Inhalt wandert gegen Einbrennen.
@@ -262,6 +265,13 @@
     .reise-knoepfe .knopf { flex: 1 1 140px; min-height: 54px !important; font-size: 19px; }
     .reise-wach { display: flex; gap: 10px; align-items: center; width: 100%; margin-top: 4px; font-weight: 700; color: #e6e6e6; }
     .reise-wach input { width: 26px; height: 26px; accent-color: #5ee38b; }
+    .reise-ladestopp { margin-top: 8px; background: #0d0d0d; border: 1px solid #2c2c2c; border-left: 4px solid #ffac4a; border-radius: 12px; padding: 8px 12px; }
+    .reise-ladestopp .titel { font-weight: 800; color: #ffac4a; font-size: 17px; }
+    .reise-ladestopp .felder { display: flex; gap: 14px; margin-top: 6px; }
+    .reise-ladestopp label { display: flex; align-items: center; gap: 6px; color: #d0d0d0; font-weight: 700; }
+    .reise-ladestopp input { width: 4.4em; min-height: 46px; padding: 0 8px; text-align: right; font-size: 20px; font-weight: 700;
+      background: #000; color: #fff; border: 2px solid #3a3a3a; border-radius: 10px; }
+    .reise-ladestopp .ergebnis { margin-top: 6px; color: #e6e6e6; font-variant-numeric: tabular-nums; }
     .leaflet-tooltip.schild.klein { font-size: 12px; padding: 1px 5px; }
     .leaflet-tooltip.schild.rot { color: #c00018; }
 
@@ -406,7 +416,7 @@
         <b>Messwerte senden (n)</b> öffnet die Seite „Messwerte" mit allen gesammelten Stücken; dort einmal speichern.
         <b>✕</b> verwirft den Akkustand – z. B. nach einem Test oder einem Tippfehler; danach erscheint wieder „Akku jetzt".</li>
       <li><b>„Messwerte geöffnet … – gespeichert?":</b> Erinnerung, falls die Seite nicht gespeichert wurde. <b>Öffnen</b> zeigt sie nochmals, <b>✕</b> blendet die Erinnerung aus.</li>
-      <li><b>Fahrt:</b> eigener Bildschirm mit der laufenden Fahrt – Unterwegs, Fahren, Pausen, Ø km/h, gefahren/verbleibend, Ankunft ≈ und Akku. „▶ Fahrt starten" beginnt die Messung, am Ziel endet sie von selbst (oder „■ Beenden"). Gemessen wird, solange die App offen ist: beim Öffnen, alle 2 min und bei offener Fahrt-Ansicht jede Minute. Ist die App länger zu, füllt sie die Lücke beim nächsten Öffnen (ganz gefahren oder ganz gestanden). „Bildschirm anlassen" hält das Display an, solange die Ansicht offen ist – am besten in der Halterung am Ladekabel. Der Knopf „Fahrt" ist grün, solange eine Fahrt läuft.</li>
+      <li><b>Fahrt:</b> eigener Bildschirm mit der laufenden Fahrt – Unterwegs, Fahren, Pausen, Ø km/h, gefahren/verbleibend, Ankunft ≈ und Akku. „▶ Fahrt starten" beginnt die Messung, am Ziel endet sie von selbst (oder „■ Beenden"). Gemessen wird, solange die App offen ist: beim Öffnen, alle 2 min und bei offener Fahrt-Ansicht jede Minute. Ist die App länger zu, füllt sie die Lücke beim nächsten Öffnen (ganz gefahren oder ganz gestanden). „Bildschirm anlassen" hält das Display an, solange die Ansicht offen ist – am besten in der Halterung am Ladekabel (dort misst sie alle 30 s, sonst jede Minute, im Stand alle 2 min). Der Knopf „Fahrt" ist grün, solange eine Fahrt läuft. <b>Laden</b> erkennt sie selbst: mindestens 10 min neben einer bekannten Station. Die Menge rechnet sie aus dem Akku vorher/nachher – mit Adapter liest sie ihn während der Fahrt auch ohne Tippen (wenn Chrome das zulässt; sonst „Standort" tippen), sonst trägst du nach dem Laden „an/ab" ein.</li>
       <li><b>☰ → Fahrt auswerten (GPX):</b> eine aufgezeichnete Fahrt (z. B. von der Garmin-Uhr) auswerten – nur im Browser, die Datei verlässt das Gerät nicht. Mit den Akkuständen an den Ladestopps entstehen daraus Messwerte mit echtem Tempoverlauf.</li>
       <li><b>Karte:</b> ganze Strecke, dein Standort (blau) und der Weg bis zur nächsten Station. Eine andere Station antippen zeigt den Weg dorthin; <b>Ganze Strecke</b> zoomt heraus, <b>Details</b> öffnet die Station. In den Details jeder Station gibt es dafür auch <b>Auf Karte</b>.</li>
       <li><b>⇄</b> tauscht von und nach. Der letzte bekannte Akkustand gilt für jede Strecke, die du oben wählst – die Liste zeigt sofort, was damit erreichbar ist.</li>
@@ -513,6 +523,7 @@
     </div>
     <div id="reise-inhalt" class="reise-inhalt">
       <div id="reise-kacheln" class="reise-kacheln"></div>
+      <div id="reise-laden"></div>
       <p id="reise-unten" class="reise-unten"></p>
       <div class="reise-knoepfe">
         <button id="reise-start" class="knopf haupt" type="button">▶ Fahrt starten</button>
@@ -615,7 +626,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.34.0';
+    const APP_VERSION = '0.35.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -628,6 +639,10 @@
     const REISE_GPS_MS = 60e3;         // Fahrt-Ansicht offen: Standort jede Minute (Balance Genauigkeit/Akku, Christof 20.10.2026)
     const REISE_ANZEIGE_MS = 30e3;     // Anzeige alle 30 s neu (Zeiten), ohne neue GPS-Abfrage
     const REISE_SCHIEBEN_MS = 120e3;   // gegen Einbrennen: alle 2 min ein paar Pixel verschieben
+    const REISE_GPS_LADEKABEL_MS = 30e3, REISE_GPS_STEHEN_MS = 120e3;   // am Ladekabel öfter, im Stand seltener (Christof: 1 ja)
+    const ADAPTER_STILL_ABSTAND_MS = 3 * 60e3;                            // Adapter ohne Tippen höchstens alle 3 min
+    const ADAPTER_STILL_FAHREN_MS = 10 * 60e3, ADAPTER_STILL_STEHEN_MS = 5 * 60e3;   // in der Fahrt-Ansicht: fahrend / stehend
+    const LADEN_MIN_MS = 10 * 60e3, LADEN_STATION_KM = 0.4;               // Ladestopp: ≥ 10 min, Station ≤ 400 m (wie „Fahrt auswerten“)
     const REISE_PAUSE_KMH = 5, REISE_PAUSE_MIN_S = 180;   // langsamer = stehen; ab 3 min stehen = Pause (sonst Ampel/Stau)
     const MESSSTUECK_MIN_KM = 50;          // kürzere Stücke sind zu ungenau (Akku ±0,5 % je Wert; Christof, 17.10.2026)
     const MESSSTUECKE_MAX = 20;            // so viele passen in eine Adresse an die Seite „Messwerte"
@@ -1615,6 +1630,7 @@
         start: { km: pr.km, hm_hin: pr.hm_hin, hm_rueck: pr.hm_rueck, q: pr.q },
       };
       messpunktBei(pos, route, pr, soc, null);
+      merkeReiseAkku(soc, 'Eingabe');
       speichere();
       $('los-soc').value = '';
       $('los-soc').blur();
@@ -1728,7 +1744,39 @@
       return Math.floor(min / 60) + ' h ' + String(min % 60).padStart(2, '0') + (kurz ? '' : ' min');
     }
 
-    let reiseAnzeigeTimer = null, reiseGpsTimer = null, reiseSchiebeTimer = null, reiseWachSperre = null;
+    let reiseAnzeigeTimer = null, reiseMessTimer = null, reiseSchiebeTimer = null, reiseWachSperre = null;
+    let ladekabel = false;   // Handy am Ladekabel → öfter messen (Battery Status API, Chrome Android)
+    if (navigator.getBattery) {
+      navigator.getBattery().then(b => {
+        ladekabel = !!b.charging;
+        b.addEventListener('chargingchange', () => { ladekabel = !!b.charging; planeReiseMessung(); });
+      }).catch(() => {});
+    }
+
+    function reiseStehtGerade(r) {
+      const p = r.punkte, a = p[p.length - 2], b = p[p.length - 1];
+      return !!(a && b && haversine(a[1], a[2], b[1], b[2]) <= 0.1);
+    }
+
+    /**
+     * Nächste Messung bei offener Fahrt-Ansicht (Christof 20.10.2026: „sinnvolle Balance Batterie"):
+     * am Ladekabel alle 30 s, sonst jede Minute, im Stand alle 2 min. Dazu der Adapter ohne Tippen:
+     * fahrend alle 10 min, stehend alle 5 min (Ankunft und Abfahrt am Lader).
+     */
+    function planeReiseMessung() {
+      clearTimeout(reiseMessTimer); reiseMessTimer = null;
+      const r = zustand.reise;
+      if ($('reise-seite').hidden || !r || r.ende) return;
+      const steht = reiseStehtGerade(r);
+      const ms = ladekabel ? REISE_GPS_LADEKABEL_MS : steht ? REISE_GPS_STEHEN_MS : REISE_GPS_MS;
+      reiseMessTimer = setTimeout(() => {
+        reiseMessTimer = null;
+        if (document.visibilityState === 'visible' && !zustand.sim.aktiv && !gpsLaeuft) holeStandort();
+        const st = zustand.adapterStill;
+        if (!st || Date.now() - st.zeit >= (steht ? ADAPTER_STILL_STEHEN_MS : ADAPTER_STILL_FAHREN_MS)) leseAdapterStill();
+        planeReiseMessung();
+      }, ms);
+    }
 
     function zeigeReise() {
       if ($('reise-seite').hidden) {
@@ -1737,13 +1785,11 @@
       }
       nachVorn('reise-seite');
       $('reise-wach').checked = !!zustand.einst.reiseWach;
+      reiseLadenSchluessel = '';
       renderReise();
-      clearInterval(reiseAnzeigeTimer); clearInterval(reiseGpsTimer); clearInterval(reiseSchiebeTimer);
+      clearInterval(reiseAnzeigeTimer); clearInterval(reiseSchiebeTimer);
       reiseAnzeigeTimer = setInterval(renderReise, REISE_ANZEIGE_MS);
-      reiseGpsTimer = setInterval(() => {
-        const r = zustand.reise;
-        if (r && !r.ende && document.visibilityState === 'visible' && !zustand.sim.aktiv && !gpsLaeuft) holeStandort();
-      }, REISE_GPS_MS);
+      planeReiseMessung();
       // gegen Einbrennen (OLED): Inhalt alle 2 min um ein paar Pixel verschieben
       reiseSchiebeTimer = setInterval(() => {
         const x = Math.round(Math.random() * 12 - 6), y = Math.round(Math.random() * 12 - 6);
@@ -1754,8 +1800,8 @@
 
     function schliesseReise() {
       $('reise-seite').hidden = true;
-      clearInterval(reiseAnzeigeTimer); clearInterval(reiseGpsTimer); clearInterval(reiseSchiebeTimer);
-      reiseAnzeigeTimer = reiseGpsTimer = reiseSchiebeTimer = null;
+      clearInterval(reiseAnzeigeTimer); clearInterval(reiseSchiebeTimer); clearTimeout(reiseMessTimer);
+      reiseAnzeigeTimer = reiseMessTimer = reiseSchiebeTimer = null;
       if (reiseWachSperre) { reiseWachSperre.release().catch(() => {}); reiseWachSperre = null; }
     }
 
@@ -1774,11 +1820,15 @@
       const pos = aktuellePosition(), route = letzteAnsicht && letzteAnsicht.route;
       if (!route) { toast('Erst oben eine Strecke wählen'); return; }
       if (!pos || pos.alt) { toast('Standort wird gesucht – gleich nochmal tippen'); holeStandort(); return; }
-      zustand.reise = { route: route.id, route_name: route.name, richtung: zustand.richtung, start: Date.now(), ende: null, punkte: [] };
+      zustand.reise = { route: route.id, route_name: route.name, richtung: zustand.richtung, start: Date.now(), ende: null, punkte: [], akku: [], laden: {} };
       merkeReisePunkt(pos, zustand.reise.start);
       speichere();
+      reiseLadenSchluessel = '';
       renderReise();
       render();
+      planeReiseMessung();
+      adapterStillZuletzt = 0;
+      leseAdapterStill();   // Akku beim Start, falls der Adapter ohne Tippen antwortet
     }
 
     function beendeReise() {
@@ -1790,6 +1840,46 @@
       speichere();
       renderReise();
       render();
+    }
+
+    /** Nächste Ladestation bis 400 m: eigene zuerst (wie „Fahrt auswerten"), sonst aus den Registern. Name oder ''. */
+    function naechsteLadestation(lat, lon) {
+      const suche = liste => { let b = null, d = Infinity; for (const p of liste) { const x = haversine(lat, lon, p.lat, p.lon); if (x < d) { d = x; b = p; } } return d <= LADEN_STATION_KM ? b : null; };
+      const eigen = suche(((daten && daten.punkte) || []).filter(p => !p.fremd));
+      if (eigen) return kurzname(eigen.name);
+      const fremd = suche((fremde && fremde.punkte) || []);
+      return fremd ? kurzname(fremd.name) : '';
+    }
+
+    /**
+     * Stopps der Fahrt (≥ 3 min innerhalb 250 m) mit Ladestatus (Christof 20.10.2026: Laden, Menge und Ort erkennen).
+     * Laden = ≥ 10 min neben einer bekannten Station, oder Akku danach höher als davor (Adapter/Eingabe).
+     * Akku „an" aus einem Wert kurz vor/bei der Ankunft, „ab" aus einem Wert kurz vor/nach der Abfahrt; sonst von Hand.
+     */
+    function reiseStopps(r) {
+      const p = r.punkte, ende = r.ende || Infinity, akku = r.akku || [], laden = r.laden || {}, stopps = [];
+      for (let i = 0; i < p.length;) {
+        if (p[i][0] > ende) break;
+        let j = i;
+        while (j + 1 < p.length && p[j + 1][0] <= ende && haversine(p[i][1], p[i][2], p[j + 1][1], p[j + 1][2]) <= 0.25) j++;
+        const t0 = p[i][0], t1 = p[j][0], dauer = t1 - t0;
+        if (dauer < REISE_PAUSE_MIN_S * 1000) { i++; continue; }
+        const laufend = !r.ende && j === p.length - 1;
+        const station = naechsteLadestation(p[i][1], p[i][2]);
+        const id = String(t0), hand = laden[id] || {};
+        const vor = akku.filter(a => a[0] >= t0 - 3 * 60e3 && a[0] <= t0 + 5 * 60e3).shift();
+        const nach = akku.filter(a => a[0] >= Math.max(t0 + 5 * 60e3, t1 - 10 * 60e3) && a[0] <= t1 + 5 * 60e3).pop();
+        const an = hand.an !== undefined ? hand.an : vor ? vor[1] : undefined;
+        const ab = hand.ab !== undefined ? hand.ab : nach ? nach[1] : undefined;
+        const mitAkku = an !== undefined && ab !== undefined && ab > an + 2;
+        stopps.push({ id, t0, t1, min: dauer / 60e3, laufend, station, an, ab, lang: dauer >= LADEN_MIN_MS,
+          anAuto: vor ? vor[1] : '', abAuto: nach ? nach[1] : '',
+          geladen: mitAkku || (!!station && dauer >= LADEN_MIN_MS),
+          kwh: mitAkku ? (ab - an) / 100 * modell.fahrzeug.kapazitaet_kwh : null,
+          zuletzt: akku.filter(a => a[0] >= t0 - 3 * 60e3 && a[0] <= t1 + 5 * 60e3).pop() || null });
+        i = j + 1;
+      }
+      return stopps;
     }
 
     function renderReise() {
@@ -1812,12 +1902,24 @@
       if (!r) {
         kachel('Noch keine Fahrt', 'bereit', 'c-zeit', 'Mit „Fahrt starten" beginnt die Messung für die oben gewählte Strecke.', true);
         $('reise-unten').textContent = 'Gemessen wird, solange die App offen ist – am genauesten in der Halterung mit offener Ansicht.';
+        $('reise-laden').replaceChildren(); reiseLadenSchluessel = '';
         return;
       }
       const jetzt = Date.now(), s = reiseStatistik(r, route, jetzt);
+      const stopps = reiseStopps(r), laden = stopps.filter(x => x.geladen);
+      const ladeMin = laden.reduce((a, x) => a + x.min, 0), ladeKwh = laden.reduce((a, x) => a + (x.kwh || 0), 0);
+      const laufend = stopps.find(x => x.laufend && (x.geladen || x.station));
       kachel('Unterwegs', dauerText(s.unterwegsS), 'c-zeit', 'seit ' + uhrzeit(r.start) + (r.ende ? ' · beendet ' + uhrzeit(r.ende) : ''), true);
+      if (laufend) {
+        const z = laufend.zuletzt;
+        kachel('⚡ Laden' + (laufend.station ? ' · ' + laufend.station : ''), 'seit ' + Math.round(laufend.min) + ' min', 'c-rest',
+          z ? 'Akku ' + z[1] + ' % um ' + uhrzeit(z[0]) + (laufend.an !== undefined && z[1] > laufend.an ? ' (+' + (z[1] - laufend.an) + ' %)' : '') : 'Akkustand: Standort tippen (Adapter) oder unten eintragen', true);
+      }
       kachel('Fahren', dauerText(s.fahrS, true), 'c-fahren');
-      kachel('Pausen', s.pausen + ' · ' + Math.round(s.pauseS / 60) + ' min', 'c-pause', s.laeuftPause && !r.ende ? 'gerade Pause' : '');
+      // Pausen ohne Laden (Laden hat eine eigene Kachel)
+      const pausen = Math.max(0, s.pausen - laden.length), pauseMin = Math.max(0, Math.round((s.pauseS / 60) - ladeMin));
+      kachel('Pausen', pausen + ' · ' + pauseMin + ' min', 'c-pause', s.laeuftPause && !r.ende && !laufend ? 'gerade Pause' : '');
+      kachel('Laden', laden.length + ' · ' + Math.round(ladeMin) + ' min', 'c-rest', ladeKwh ? zahl(ladeKwh, 0) + ' kWh' + (ladeMin ? ' · Ø ' + Math.round(ladeKwh / (laden.filter(x => x.kwh).reduce((a, x) => a + x.min, 0) / 60)) + ' kW' : '') : '');
       kachel('Ø beim Fahren', s.schnitt ? Math.round(s.schnitt) + ' km/h' : '–', 'c-tempo');
       kachel('Gefahren', fmtKm(s.km) + ' km', 'c-tempo');
       kachel('Verbleibend', s.rest === null ? '–' : fmtKm(s.rest) + ' km', 'c-rest', s.rest === null ? 'neben der Route' : '');
@@ -1842,7 +1944,8 @@
           kachel('Akkubedarf bis Ziel', '≈ ' + bedarf + ' %', farbe, bedarf > 100 ? 'mehr als eine Ladung – unterwegs laden' : 'kein Akkustand eingetragen');
         }
       }
-      // unten: nächste Station und wie frisch die Messung ist
+      renderReiseLaden(r, stopps);
+      // unten: nächste Station, Frische der Messung, Adapter ohne Tippen
       const teile = [];
       if (l && !r.ende && l[4] <= QUER_MAX_KM) {
         try {
@@ -1853,10 +1956,62 @@
       }
       if (s.letzte && !r.ende) {
         const alt = Math.round((jetzt - s.letzte) / 60e3);
-        teile.push(alt < 1 ? 'Standort gerade gemessen' : 'letzte Messung vor ' + alt + ' min');
+        teile.push((alt < 1 ? 'Standort gerade gemessen' : 'letzte Messung vor ' + alt + ' min') + (ladekabel ? ' (am Kabel: alle 30 s)' : ''));
+      }
+      const st = zustand.adapterStill;
+      if (zustand.einst.obd && !r.ende && st && st.zeit >= r.start) {
+        teile.push(st.ok ? 'Adapter ohne Tippen: ' + st.soc + ' % um ' + uhrzeit(st.zeit) : 'Adapter ohne Tippen nicht erreicht (' + uhrzeit(st.zeit) + ') – Standort tippen liest ihn');
       }
       if (r.ende) teile.push('Fahrt beendet – Werte bleiben, bis du eine neue startest.');
       $('reise-unten').textContent = teile.join(' · ');
+    }
+
+    /**
+     * Abgeschlossene Ladestopps (und Pausen ab 10 min) mit Akku an/ab – fehlt etwas, hier eintragen. Neu gezeichnet nur,
+     * wenn neue Stopps dazukommen (sonst verlören die Felder beim 30-s-Takt die Eingabe).
+     */
+    let reiseLadenSchluessel = '';
+    function renderReiseLaden(r, stopps) {
+      const box = $('reise-laden');
+      const fertig = stopps.filter(x => !x.laufend && (x.geladen || x.lang));
+      // nur Stopps und Adapterwerte im Schlüssel – von Hand Eingetragenes nicht (sonst schlösse das Neuzeichnen beim Wechsel
+      // von „an" zu „ab" die Tastatur)
+      const schluessel = fertig.map(x => x.id + ':' + x.station + ':' + x.lang + ':' + x.anAuto + '/' + x.abAuto).join('|');
+      if (schluessel === reiseLadenSchluessel) return;
+      reiseLadenSchluessel = schluessel;
+      box.replaceChildren();
+      for (const x of fertig) {
+        const k = el('div', 'reise-ladestopp');
+        k.append(el('div', 'titel', (x.geladen ? '⚡ ' + (x.station || 'Ladestopp') : 'Pause') + ' · ' + uhrzeit(x.t0) + '–' + uhrzeit(x.t1) + ' · ' + Math.round(x.min) + ' min'));
+        const ergebnis = el('div', 'ergebnis');
+        const zeigeErgebnis = (an, ab) => {
+          if (an !== undefined && ab !== undefined && ab > an) {
+            const kwh = (ab - an) / 100 * modell.fahrzeug.kapazitaet_kwh;
+            ergebnis.textContent = an + ' → ' + ab + ' % · ' + zahl(kwh, 1) + ' kWh · Ø ' + Math.round(kwh / (x.min / 60)) + ' kW';
+          } else ergebnis.textContent = x.geladen ? 'Akku an/ab eintragen – dann rechnet die App die Menge' : 'falls geladen: Akku an/ab eintragen';
+        };
+        const zeile = el('div', 'felder');
+        const feld = (art, wert) => {
+          const lab = el('label', '', art), i = el('input');
+          i.type = 'number'; i.inputMode = 'numeric'; i.min = 0; i.max = 100; i.placeholder = '%';
+          if (wert !== undefined) i.value = wert;
+          i.addEventListener('change', () => {
+            const h = (r.laden = r.laden || {})[x.id] = r.laden[x.id] || {};
+            const v = i.value.trim() === '' ? undefined : Math.max(0, Math.min(100, Math.round(Number(i.value))));
+            if (v === undefined) delete h[art]; else h[art] = v;
+            speichere();
+            const neu = reiseStopps(r).find(y => y.id === x.id) || x;
+            zeigeErgebnis(neu.an, neu.ab);
+            renderReise();
+          });
+          lab.append(i);
+          return lab;
+        };
+        zeile.append(feld('an', x.an), feld('ab', x.ab));
+        zeigeErgebnis(x.an, x.ab);
+        k.append(zeile, ergebnis);
+        box.append(k);
+      }
     }
 
     /** hm-Werte an einem Streckenkilometer (für Akku-Rechnung an einem Messpunkt). */
@@ -1980,11 +2135,14 @@
       return b;
     }
 
-    /** Verbindet, liest 22028C (Akku) und 2202BD (Kilometerstand), trennt. Ergebnis { soc (Display, ganze %), bms, km_stand|null }. */
-    async function leseAdapter() {
+    /**
+     * Verbindet, liest 22028C (Akku) und 2202BD (Kilometerstand), trennt. Ergebnis { soc (Display, ganze %), bms, km_stand|null }.
+     * still = ohne Tippen (Fahrt live, v0.35.0): nie die Geräteauswahl öffnen und den Zustand für das nächste Tippen nicht verstellen.
+     */
+    async function leseAdapter(still) {
       if (!navigator.bluetooth) throw new Error('Bluetooth im Browser nicht verfügbar');
       // Schon einmal erlaubter Adapter ohne Geräteauswahl – geht nur, wenn Chrome getDevices kennt (Flag, s. Info-Seite)
-      if (!obdGeraet && !obdAuswahl && navigator.bluetooth.getDevices) {
+      if (!obdGeraet && (!obdAuswahl || still) && navigator.bluetooth.getDevices) {
         try {
           const erlaubt = await navigator.bluetooth.getDevices();
           obdGeraet = erlaubt.find(d => /veepeak|obd/i.test(d.name || '')) || erlaubt[0] || null;
@@ -1992,17 +2150,18 @@
         } catch (e) { obdGeraet = null; }
       }
       if (!obdGeraet) {
+        if (still) throw new Error('kein erlaubter Adapter');
         obdGeraet = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: OBD_DIENSTE });
         obdAusListe = false;
       }
-      obdAuswahl = false;
+      if (!still) obdAuswahl = false;
       const ausListe = obdAusListe;
       let server;
       try {
         if (ausListe && obdGeraet.watchAdvertisements) await warteAufWerbung(obdGeraet, 10000);
         server = await mitZeitlimit(obdGeraet.gatt.connect(), 10000, 'Adapter nicht erreichbar – Auto an?');
       } catch (e) {
-        if (ausListe) {
+        if (ausListe && !still) {
           obdAuswahl = true; obdGeraet = null;
           throw new Error((e && e.message || e) + ' – nochmal Standort tippen und VEEPEAK auswählen');
         }
@@ -2079,6 +2238,7 @@
     function uebernimmAdapter(w) {
       const pos = planung.pos || aktuellePosition();
       zustand.adapter = { soc: w.soc, bms: w.bms, km_stand: w.km_stand, zeit: Date.now() };
+      merkeReiseAkku(w.soc, 'Adapter');   // auch ohne Standort (Ladestopps: Akku vorher/nachher)
       if (!pos) { speichere(); render(); return false; }
       const route = aktuelleRoute();
       const pr = projiziere(route.linie, pos.lat, pos.lon, lat0Von(route));
@@ -2101,6 +2261,39 @@
       speichere();
       render();
       return geladen;   // true: eigene Meldung schon gezeigt
+    }
+
+    /** Akkuwert für die laufende Fahrt merken (Ladestopps: Menge aus vorher/nachher). */
+    function merkeReiseAkku(soc, quelle) {
+      const r = zustand.reise;
+      if (!r || r.ende || !(soc >= 0 && soc <= 100)) return;
+      (r.akku = r.akku || []).push([Date.now(), soc, quelle]);
+      if (r.akku.length > 200) r.akku.shift();
+    }
+
+    /**
+     * Adapter ohne Tippen lesen (Christof 20.10.2026, Variante 2b) – nur während einer laufenden Fahrt, nur mit schon
+     * erlaubtem Adapter (getDevices), nie mit Geräteauswahl, ohne Fehlermeldung; das Ergebnis steht in der Fahrt-Ansicht.
+     * Ob Chrome das ohne Tippen zulässt, zeigt erst der erste Test im Auto.
+     */
+    let adapterStillZuletzt = 0;
+    async function leseAdapterStill() {
+      const r = zustand.reise;
+      if (!zustand.einst.obd || !r || r.ende || obdLaeuft || zustand.sim.aktiv) return;
+      if (!navigator.bluetooth || !navigator.bluetooth.getDevices || document.visibilityState !== 'visible') return;
+      if (Date.now() - adapterStillZuletzt < ADAPTER_STILL_ABSTAND_MS) return;
+      adapterStillZuletzt = Date.now();
+      obdLaeuft = true;
+      try {
+        const w = await leseAdapter(true);
+        uebernimmAdapter(w);
+        zustand.adapterStill = { zeit: Date.now(), ok: true, soc: w.soc };
+      } catch (e) {
+        zustand.adapterStill = { zeit: Date.now(), ok: false, text: String(e && e.message || e).slice(0, 80) };
+      }
+      obdLaeuft = false;
+      speichere();
+      renderReise();
     }
 
     // -----------------------------------------------------------------------
@@ -2852,7 +3045,10 @@
       $('reise-start').addEventListener('click', starteReise);
       $('reise-ende').addEventListener('click', () => { if (confirm('Fahrt beenden?')) beendeReise(); });
       $('reise-wach').addEventListener('change', () => { zustand.einst.reiseWach = $('reise-wach').checked; speichere(); wachHalten(); });
-      document.addEventListener('visibilitychange', () => { wachHalten(); renderReise(); });
+      document.addEventListener('visibilitychange', () => {
+        wachHalten(); renderReise();
+        if (document.visibilityState === 'visible') { leseAdapterStill(); planeReiseMessung(); }
+      });
       $('d-karte').addEventListener('click', () => { if (detailEintrag) zeigeKarte(detailEintrag); });
       $('karte-zurueck').addEventListener('click', () => history.back());
       $('karte-details').addEventListener('click', () => {
@@ -2954,6 +3150,7 @@
       if (!await ladeDaten(false)) return;
       render();
       if (!zustand.sim.aktiv) holeStandort();
+      setTimeout(leseAdapterStill, 4000);   // laufende Fahrt: Akku ohne Tippen, sobald der Standort da ist
 
       // Zurück aus dem Formular (oder App wieder geöffnet): Daten still neu laden
       // Standort von selbst: beim Zurückkehren sofort, solange die App offen ist alle 2 min (Christof, 17.10.2026).
@@ -2973,7 +3170,7 @@
     window.ladeplanung = {
       berechneListe, projiziere, haversine, punktBeiKm, mapsUrl, abrpUrl, energieAnteile, energieKwh, streckenwerte, bedarf,
       routenTeile, routenZwischen, zieleVon, simPunkte, preisKurz, preisEintrag, landVon, prognose, tempo, leseAdapter,
-      kumuliere, duenneAus, fuegeAdhocEin, merkeReisePunkt, reiseStatistik, renderReise, zeigeReise, merkeMesspunkt, verbrauchsTempo, sendeMesswerte, bekannteAbschnitte, akkuProfil, bedarf, akkuJetzt, adhocRichtung, uebernehmenUrl, zeigeKarte, durchMontBlanc, berechneAdhoc,
+      kumuliere, duenneAus, fuegeAdhocEin, merkeReisePunkt, reiseStatistik, reiseStopps, merkeReiseAkku, renderReise, zeigeReise, leseAdapterStill, adapterStillZuruecksetzen: () => { adapterStillZuletzt = 0; }, merkeMesspunkt, verbrauchsTempo, sendeMesswerte, bekannteAbschnitte, akkuProfil, bedarf, akkuJetzt, adhocRichtung, uebernehmenUrl, zeigeKarte, durchMontBlanc, berechneAdhoc,
       get adhocRoute() { return adhocRoute; }, set adhocRoute(r) { adhocRoute = r; },
       get fremde() { return fremde; },
       get preise() { return preise; },
