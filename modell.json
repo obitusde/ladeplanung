@@ -16,24 +16,24 @@
   "heiz_schwelle_c": 18
  },
  "korrektur": {
-  "gesamt": 0.9060613029247455,
-  "fahrt": 0.9909961332749772,
-  "hoehe": 1.1146466468472152,
-  "heizung": 0.9645565717256025
+  "gesamt": 0.9060685795692708,
+  "fahrt": 0.9904324332700503,
+  "hoehe": 1.123725109330946,
+  "heizung": 0.9614117915754918
  },
- "erzeugt": "2026-10-21T11:53:56.130Z",
+ "erzeugt": "2026-10-21T13:43:56.914Z",
  "tempo": {
   "faktor": 0.814,
   "fahrten": 1,
-  "stand": "2026-10-21T11:53:56.130Z",
+  "stand": "2026-10-21T13:43:56.914Z",
   "verbrauch": 1.146,
   "verbrauch_fahrten": 3
  },
  "kalibrierung": {
-  "fahrten": 16,
-  "abweichung_prozent": 2.7,
-  "stand": "2026-10-21T11:53:56.130Z",
-  "methode": "Gesamt- und Einzelfaktoren aus 16 Werten",
+  "fahrten": 18,
+  "abweichung_prozent": 2.5,
+  "stand": "2026-10-21T13:43:56.914Z",
+  "methode": "Gesamt- und Einzelfaktoren aus 18 Werten",
   "quellen": {
    "ABRP": {
     "n": 8,
@@ -46,9 +46,9 @@
     "tendenz": 1.9
    },
    "gemessen": {
-    "n": 4,
-    "abweichung": 1.6,
-    "tendenz": -1.6
+    "n": 6,
+    "abweichung": 1.4,
+    "tendenz": -1.2
    },
    "GPX": {
     "n": 3,
