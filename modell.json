@@ -16,39 +16,39 @@
   "heiz_schwelle_c": 18
  },
  "korrektur": {
-  "gesamt": 0.9043389785326095,
-  "fahrt": 0.9918835868304534,
-  "hoehe": 1.1047102020806139,
-  "heizung": 0.963362255824292
+  "gesamt": 0.9050747951930846,
+  "fahrt": 0.9906675937491076,
+  "hoehe": 1.1184673521624924,
+  "heizung": 0.9621530446769053
  },
- "erzeugt": "2026-10-18T07:19:17.527Z",
+ "erzeugt": "2026-10-21T09:47:07.975Z",
  "tempo": {
   "faktor": 0.814,
   "fahrten": 1,
-  "stand": "2026-10-18T07:19:17.527Z",
+  "stand": "2026-10-21T09:47:07.975Z",
   "verbrauch": 1.146,
   "verbrauch_fahrten": 3
  },
  "kalibrierung": {
-  "fahrten": 13,
-  "abweichung_prozent": 2.8,
-  "stand": "2026-10-18T07:19:17.527Z",
-  "methode": "Gesamt- und Einzelfaktoren aus 13 Werten",
+  "fahrten": 15,
+  "abweichung_prozent": 2.6,
+  "stand": "2026-10-21T09:47:07.975Z",
+  "methode": "Gesamt- und Einzelfaktoren aus 15 Werten",
   "quellen": {
    "ABRP": {
     "n": 8,
     "abweichung": 4.4,
-    "tendenz": -0.7
+    "tendenz": -0.6
    },
    "My CUPRA": {
     "n": 1,
-    "abweichung": 1.7,
-    "tendenz": 1.7
+    "abweichung": 1.8,
+    "tendenz": 1.8
    },
    "gemessen": {
-    "n": 1,
-    "abweichung": 0.5,
-    "tendenz": -0.5
+    "n": 3,
+    "abweichung": 0.9,
+    "tendenz": -0.9
    },
    "GPX": {
     "n": 3,
