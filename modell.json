@@ -21,19 +21,19 @@
   "hoehe": 1.1213622712817393,
   "heizung": 0.9579254721222288
  },
- "erzeugt": "2026-10-21T16:27:26.066Z",
+ "erzeugt": "2026-10-21T17:13:32.115Z",
  "tempo": {
   "faktor": 0.814,
   "fahrten": 1,
-  "stand": "2026-10-21T16:27:26.066Z",
+  "stand": "2026-10-21T17:13:32.115Z",
   "verbrauch": 1.146,
   "verbrauch_fahrten": 3
  },
  "kalibrierung": {
   "fahrten": 19,
   "abweichung_prozent": 2.4,
-  "stand": "2026-10-21T16:27:26.066Z",
-  "methode": "Gesamt- und Einzelfaktoren aus 19 Werten, 1 Ausreißer nicht verwendet",
+  "stand": "2026-10-21T17:13:32.115Z",
+  "methode": "Gesamt- und Einzelfaktoren aus 19 Werten, 2 Ausreißer nicht verwendet",
   "quellen": {
    "ABRP": {
     "n": 8,
