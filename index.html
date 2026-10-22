@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.39.3 — Stationsdetails (Christof 22.10.2026): „Ankunft ≈ x %" statt „Rest bei Ankunft" (eine Zeile), Ladepunkte
+                   ohne „(TomTom)", App-Knopf ohne „(Laden starten)", ohne Knopf „Belegung in Google Maps" und ohne
+                   Hinweis „Handy entsperrt und hochkant lassen"; „Auf Karte" heißt „Auf interner Karte".
   Version 0.39.2 — Fahrt endet von selbst, wenn das Auto über 3 h an derselben Stelle steht (beim Ankommen dort), auch beim
                    Öffnen der App; ist eine andere Strecke/Richtung gewählt, beendet „▶ Neue Fahrt starten" die laufende.
   Version 0.39.1 — Stationsdetails knapper (Christof 22.10.2026): „Rest bei Ankunft" groß hervorgehoben, Akkubedarf nur in %,
@@ -439,9 +442,8 @@
       <p class="klein-hinweis" id="d-mycupra-hinweis">Kopiert die Adresse und öffnet My CUPRA auf der Karte – dort Suche → Einfügen → An Fahrzeug senden.</p>
       <button id="d-kopieren" class="knopf" type="button">Adresse kopieren</button>
       <a id="d-uebernehmen" class="knopf haupt" target="_blank" rel="noopener" hidden>In meine Liste übernehmen</a>
-      <button id="d-karte" class="knopf" type="button">Auf Karte</button>
+      <button id="d-karte" class="knopf" type="button">Auf interner Karte</button>
       <a id="d-maps" class="knopf" target="_blank" rel="noopener">Navigieren (Google Maps)</a>
-      <a id="d-ort" class="knopf" target="_blank" rel="noopener">Belegung in Google Maps</a>
       <a id="d-app" class="knopf" target="_blank" rel="noopener" hidden>App</a>
       <a id="d-abrp" class="knopf" target="_blank" rel="noopener">ABRP</a>
       <a id="d-bearbeiten" class="knopf" target="_blank" rel="noopener">Bearbeiten</a>
@@ -476,7 +478,7 @@
       <li><b>„Messwerte geöffnet … – gespeichert?":</b> Erinnerung, falls die Seite nicht gespeichert wurde. <b>Öffnen</b> zeigt sie nochmals, <b>✕</b> blendet die Erinnerung aus.</li>
       <li><b>Fahrt:</b> eigener Bildschirm mit der laufenden Fahrt – Unterwegs, Fahren, Pausen, Ø km/h, gefahren/verbleibend, Ankunft ≈ und Akku. „▶ Fahrt starten" beginnt die Messung, am Ziel endet sie von selbst (oder „■ Beenden"). Gemessen wird, solange die App offen ist: beim Öffnen, alle 2 min und bei offener Fahrt-Ansicht jede Minute. Ist die App länger zu, füllt sie die Lücke beim nächsten Öffnen (ganz gefahren oder ganz gestanden). „Bildschirm anlassen" hält das Display an, solange die Ansicht offen ist – am besten in der Halterung am Ladekabel (dort misst sie alle 30 s, sonst jede Minute, im Stand alle 2 min). Der Knopf „Fahrt" ist grün, solange eine Fahrt läuft. <b>Während der Fahrt musst du nichts tippen.</b> <b>Laden</b> erkennt sie selbst: mindestens 10 min neben einer bekannten Station oder Akku danach höher. Mit Adapter liest sie den Akku ohne Tippen (wenn Chrome das zulässt – das Protokoll unten zeigt es) und vergleicht den echten Verbrauch mit dem Modell: <b>Verbrauch heute</b> (z. B. +15 % bei Regen und Gegenwind) steckt dann in allen Prognosen. Im Stand liest sie jede Minute, beim Losfahren sofort – so stehen „an“ und „ab“ der Ladestopps fest, auch wenn du beim Laden nicht beim Auto bist. Wertest du danach die Uhr-Aufzeichnung auf diesem Handy aus, übernimmt „Fahrt auswerten“ die Werte; fehlt einer, trägst du ihn dort ein. Vergisst du „Fahrt starten", startet sie nach 10 km auf der Strecke von selbst. <b>Ankunft ≈</b> = Fahren + Stau voraus + nötiges Laden; mit TomTom-Schlüssel (Einstellungen) kennt sie den aktuellen Stau – Kachel antippen zeigt, wo und warum (Unfall, Baustelle, Sperrung). Schon vor dem Start steht dort „Ankunft, wenn du jetzt losfährst". Am Ziel: „Fahrt speichern" nur, wenn du keine Uhr-Aufzeichnung auswertest.</li>
       <li><b>☰ → Fahrt auswerten (GPX):</b> eine aufgezeichnete Fahrt (z. B. von der Garmin-Uhr) auswerten – nur im Browser, die Datei verlässt das Gerät nicht. Mit den Akkuständen an den Ladestopps entstehen daraus Messwerte mit echtem Tempoverlauf.</li>
-      <li><b>Karte:</b> ganze Strecke, dein Standort (blau) und der Weg bis zur nächsten Station. Eine andere Station antippen zeigt den Weg dorthin; <b>Ganze Strecke</b> zoomt heraus, <b>Details</b> öffnet die Station. In den Details jeder Station gibt es dafür auch <b>Auf Karte</b>.</li>
+      <li><b>Karte:</b> ganze Strecke, dein Standort (blau) und der Weg bis zur nächsten Station. Eine andere Station antippen zeigt den Weg dorthin; <b>Ganze Strecke</b> zoomt heraus, <b>Details</b> öffnet die Station. In den Details jeder Station gibt es dafür auch <b>Auf interner Karte</b>.</li>
       <li><b>⇄</b> tauscht von und nach. Der letzte bekannte Akkustand gilt für jede Strecke, die du oben wählst – die Liste zeigt sofort, was damit erreichbar ist.</li>
       <li><b>☰ Menü:</b> Ladepunkt oder Route hinzufügen, Einstellungen, Simulation, Ladepreise, Preise aktualisieren, Wartung &amp; Status und diese Seite.</li>
     </ul>
@@ -534,7 +536,7 @@
     <p>Einmalig nötig: den <b>OpenRouteService-Schlüssel</b> unter Menü → Einstellungen eintragen. Er bleibt nur auf diesem Handy.</p>
 
     <h3>Details</h3>
-    <p>Eine Station antippen: <b>Adresse kopieren</b> (in My CUPRA einfügen), <b>Navigieren</b> in Google Maps, <b>Belegung in Google Maps</b>, die <b>App des Betreibers</b>, <b>ABRP</b> (Plan von deinem Standort), <b>Bearbeiten</b> (Notiz, Straße, kW, Favorit … und Löschen) und <b>Vergleichswert eintragen</b> (siehe Akku-Prognose). In der Simulation zusätzlich <b>Simulierte Position hierher</b>.</p>
+    <p>Eine Station antippen: <b>Adresse kopieren</b> (in My CUPRA einfügen), <b>Navigieren</b> in Google Maps, die <b>App des Betreibers</b>, <b>ABRP</b> (Plan von deinem Standort), <b>Bearbeiten</b> (Notiz, Straße, kW, Favorit … und Löschen) und <b>Vergleichswert eintragen</b> (siehe Akku-Prognose). In der Simulation zusätzlich <b>Simulierte Position hierher</b>.</p>
     <p><b>Belegung:</b> Google Maps zeigt bei vielen Ladeparks, wie viele Punkte frei sind („12/12"), weil die Betreiber das liefern. Bei anderen steht nur die Gesamtzahl. Geprüft am 22.09.2026: bei EnBW ja, bei Migrol nein. Eine eigene Anzeige hat die App bewusst nicht.</p>
 
     <h3>Daten pflegen</h3>
@@ -708,7 +710,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.39.2';
+    const APP_VERSION = '0.39.3';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -975,12 +977,6 @@
       return 'https://www.google.com/maps/dir/?api=1&destination=' + p.lat + ',' + p.lon;
     }
 
-    /** Ort ohne Route: der gespeicherte Maps-Link öffnet die genaue Ortskarte; sonst eine Stecknadel auf den Koordinaten. */
-    function ortUrl(p) {
-      if (p.link && /^https:\/\/(maps\.app\.goo\.gl|(www\.)?google\.[a-z.]+\/maps|goo\.gl\/maps)/.test(p.link)) return p.link;
-      return 'https://www.google.com/maps/search/?api=1&query=' + p.lat + ',' + p.lon;
-    }
-
     /**
      * ABRP-Deep-Link. „destinations" ist die ganze Wegpunktliste, der erste Eintrag ist der Start
      * (Beispiel der ABRP-Doku: Lund → Stockholm). Ohne Start meldet ABRP „keine Positionsdaten" —
@@ -1202,7 +1198,7 @@
     /** Leistung und Ladepunkte in einer Zeile: TomTom (gemerkt), sonst die eigenen Angaben. */
     function ladepunkteText(p) {
       const tt = ttInfo(p);
-      if (tt && tt.alle && tt.maxKw) return tt.alle + ' × bis ' + tt.maxKw + ' kW (TomTom)';
+      if (tt && tt.alle && tt.maxKw) return tt.alle + ' × bis ' + tt.maxKw + ' kW';
       if (p.kw) return (p.anzahl ? p.anzahl + ' × ' : '') + p.kw + ' kW';
       return p.anzahl ? p.anzahl + ' Ladepunkte' : '–';
     }
@@ -1797,7 +1793,7 @@
         akkuZeile.className = 'akku-gross' + (pg.unterReserve || pg.nichtErreichbar ? ' rot' : '');
         if (pg.nichtErreichbar) akkuZeile.append('nicht erreichbar', el('small', '', pg.angenommen ? 'braucht ≈ ' + Math.round(pg.prozent) + ' % (voller Akku angenommen)' : 'es fehlen ≈ ' + Math.round(-pg.ankunft) + ' %'));
         else if (pg.angenommen) akkuZeile.append('braucht ≈ ' + Math.round(pg.prozent) + ' %', el('small', '', 'ohne „Akku jetzt" – voller Akku angenommen'));
-        else akkuZeile.append('Rest bei Ankunft ≈ ' + Math.round(pg.ankunft) + ' %');
+        else akkuZeile.append('Ankunft ≈ ' + Math.round(pg.ankunft) + ' %');
       }
       $('d-gross').textContent = fmtKm(e.weg) + ' km ' + (modus === 'luftlinie' ? 'Luftlinie' : 'voraus') +
         (e.weg > e.km ? ' (davon ' + fmtKm(e.weg - e.km) + ' km abseits)' : '');
@@ -1826,14 +1822,11 @@
       const mitWebhook = !!cupraWebhook();
       $('d-auto').hidden = !mitWebhook;
       $('d-mycupra').className = mitWebhook ? 'knopf' : 'knopf haupt';
-      $('d-mycupra-hinweis').textContent = mitWebhook
-        ? '„Ans Auto senden": MacroDroid füllt My CUPRA aus und sendet – Handy entsperrt und hochkant lassen.'
-        : 'Kopiert die Adresse und öffnet My CUPRA auf der Karte – dort Suche → Einfügen → An Fahrzeug senden.';
+      $('d-mycupra-hinweis').hidden = mitWebhook;   // mit Webhook kein Hinweis (Christof 22.10.2026)
       $('d-maps').href = mapsUrl(p);
-      $('d-ort').href = ortUrl(p);
       const anbieter = preisEintrag(p);
       $('d-app').hidden = !(anbieter && anbieter.app);
-      if (anbieter && anbieter.app) { $('d-app').href = appUrl(anbieter.app); $('d-app').textContent = 'App ' + anbieter.app.name + ' (Laden starten)'; }
+      if (anbieter && anbieter.app) { $('d-app').href = appUrl(anbieter.app); $('d-app').textContent = 'App ' + anbieter.app.name; }
       $('d-bearbeiten').href = FORMULAR_URL + '?id=' + encodeURIComponent(p.id);
       $('d-vergleich').href = FORMULAR_URL + '?seite=vergleich&route=' + encodeURIComponent(zustand.route) +
         '&richtung=' + zustand.richtung + '&nach=' + encodeURIComponent(p.id);
