@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.39.0 — Belegung in den Stationsdetails (TomTom, nur beim Öffnen, höchstens alle 3 min je Station): „3 von 6 frei";
+                   Zuordnung zur TomTom-Station einmal je Station gemerkt (nur gleiche Firma). Anschlüsse und kW von TomTom
+                   bleiben gespeichert und erscheinen in Liste und Details, sonst wie bisher die eigenen Angaben.
   Version 0.38.1 — Tageskorrektur nur aus lückenlos gemessenen Stücken (≤ 3 h, Messpunkte höchstens 15 min auseinander, Akku
                    mindestens 60 % des Modells gesunken), begrenzt auf 0,8–1,4; Kachel „Verbrauch heute" tippbar mit den
                    Stücken. Fahrt endet von selbst, wenn 6 h kein Messpunkt kam (21.10. lief bis heute weiter → −30 %).
@@ -346,6 +349,9 @@
     #info-seite p, #info-seite li { margin: 0 0 8px; }
     #info-seite ol, #info-seite ul { padding-left: 22px; margin: 0 0 8px; }
     #tt-seite h2 { margin: 10px 0 2px; font-size: 21px; }
+    #d-belegung { margin: -6px 0 12px; font-size: 19px; font-weight: 700; }
+    #d-belegung .frei { color: var(--akzent); }
+    #d-belegung small { display: block; font-size: 14px; font-weight: 400; color: var(--leise); }
     .tt-zeile { border-bottom: 1px solid var(--linie); padding: 8px 0; }
     .tt-zeile b { display: block; }
     .tt-zeile .ok { color: var(--akzent); font-weight: 700; }
@@ -417,6 +423,7 @@
     <button id="zurueck" class="knopf" type="button">← Zurück</button>
     <h2 id="d-name"></h2>
     <p id="d-gross" class="gross"></p>
+    <p id="d-belegung" class="belegung" hidden></p>
     <dl id="d-felder"></dl>
     <div class="aktionen">
       <button id="d-auto" class="knopf haupt" type="button" hidden>Ans Auto senden</button>
@@ -693,7 +700,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.38.1';
+    const APP_VERSION = '0.39.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -730,7 +737,8 @@
     // Routen/Monat (ohne Kreditkarte) – die App bleibt weit darunter und hört bei diesen Grenzen von selbst auf.
     const TOMTOM_SPEICHER = 'ladeplanung.tomtom';
     const TOMTOM_BASIS = 'https://api.tomtom.com';
-    const TOMTOM_GRENZE = { routing: 1500, suche: 500, kacheln: 3000 };   // je Monat
+    const TOMTOM_GRENZE = { routing: 1500, suche: 500, kacheln: 3000, belegung: 1000 };   // je Monat
+    const BELEGUNG_FRISCH_MS = 3 * 60e3, ZUORDNUNG_NEU_MS = 30 * 864e5;   // Belegung je Station höchstens alle 3 min; Zuordnung 30 Tage
     const VERKEHR_ABSTAND_MS = 10 * 60e3;   // Verkehr höchstens alle 10 min abfragen
     const VERKEHR_GUELTIG_MS = 30 * 60e3;   // älter: nicht mehr für die Ankunft verwenden
     const TEMPO_GEGEN_TOMTOM = 1.15;        // du brauchst ohne Stau ≈ 15 % länger als die Routendienste (16.10.: 1,19, 21.10.: 1,14)
@@ -1487,8 +1495,9 @@
 
     function metaZeile(e) {
       const teile = [];
-      const p = e.punkt;
-      if (p.kw) teile.push((p.anzahl ? p.anzahl + ' × ' : '') + p.kw + ' kW');
+      const p = e.punkt, tt = ttInfo(p);
+      if (tt && tt.alle && tt.maxKw) teile.push(tt.alle + ' × bis ' + tt.maxKw + ' kW');   // von TomTom (beim Öffnen der Details gemerkt)
+      else if (p.kw) teile.push((p.anzahl ? p.anzahl + ' × ' : '') + p.kw + ' kW');
       else if (p.anzahl) teile.push(p.anzahl + ' Ladepunkte');
       const b = e.punkt.betreiber;
       if (b && kurzname(e.punkt.name).toLowerCase().indexOf(b.toLowerCase()) === -1) teile.push(b);
@@ -1768,8 +1777,8 @@
           const zeilen = tarifeFuer(a, p).map(t => t.name + ': ' + tarifText(t, a.waehrung));
           return (zeilen.length ? zeilen.join('\n') : 'kein Preis hinterlegt') + (a.hinweis ? '\n' + a.hinweis : '') + '\nStand ' + datumText(preise.stand);
         })()],
-        ['Leistung', p.kw ? p.kw + ' kW' : '–'],
-        ['Ladepunkte', p.anzahl ? String(p.anzahl) : '–'],
+        ['Leistung', (() => { const tt = ttInfo(p); return tt && tt.maxKw ? 'bis ' + tt.maxKw + ' kW (TomTom)' + (p.kw ? ' · deine Angabe ' + p.kw + ' kW' : '') : p.kw ? p.kw + ' kW' : '–'; })()],
+        ['Ladepunkte', (() => { const tt = ttInfo(p); return tt && tt.alle ? tt.alle + ' Anschlüsse (TomTom)' + (p.anzahl ? ' · deine Angabe ' + p.anzahl : '') : p.anzahl ? String(p.anzahl) : '–'; })()],
         ['Richtung', { hin: 'nur Hinfahrt', rueck: 'nur Rückfahrt', beide: 'beide' }[p.richtung] || p.richtung],
         ['Streckenkm', e.z ? zahl(e.z.km, 1) + ' km ab Start' : '–'],
       ];
@@ -1807,6 +1816,7 @@
       $('detail').hidden = false;
       nachVorn('detail');
       history.pushState({ detail: true }, '');
+      zeigeBelegung(p);
     }
 
     /** Formular „Hinzufügen", vorbelegt mit den Bundesdaten; der Link mit Koordinaten ersetzt den Maps-Link. */
@@ -2209,7 +2219,7 @@
     /** Aufruf zählen; false, wenn die Monatsgrenze erreicht ist (dann wird nicht abgefragt). */
     function tomtomZaehle(art, n) {
       const monat = new Date().toISOString().slice(0, 7);
-      const z = zustand.tomtom && zustand.tomtom.monat === monat ? zustand.tomtom : (zustand.tomtom = { monat, routing: 0, suche: 0, kacheln: 0 });
+      const z = zustand.tomtom && zustand.tomtom.monat === monat ? zustand.tomtom : (zustand.tomtom = { monat, routing: 0, suche: 0, kacheln: 0, belegung: 0 });
       if ((z[art] || 0) + (n || 1) > TOMTOM_GRENZE[art]) return false;
       z[art] = (z[art] || 0) + (n || 1);
       return true;
@@ -2436,14 +2446,90 @@
       speichere();
     }
 
+    /** Gemerkte TomTom-Daten einer Station: { id (Belegung) | null, name, anders, zeit, alle, maxKw, frei, belegungZeit }. */
+    function ttInfo(p) {
+      return (zustand.ttStationen || {})[p.id] || null;
+    }
+
     /**
-     * Test „Belegung meiner Stationen" (Christof: 4 ausprobieren): je eigene Station die nächste TomTom-Ladestation
-     * (≤ 300 m) suchen und, wenn TomTom Belegungsdaten hat, die freien Ladepunkte zeigen. ≈ 2 Abfragen je Station, einmalig.
+     * Zuordnung eigene Station → TomTom-Station (einmal, 30 Tage gemerkt): Ladestationen ≤ 300 m, nur dieselbe Firma (Name
+     * oder Marke bei TomTom), sonst nur was ≤ 60 m daneben steht. Ohne Belegungsdaten → id null.
+     */
+    async function ttZuordnung(p, schluessel) {
+      const alt = ttInfo(p);
+      if (alt && Date.now() - alt.zeit < ZUORDNUNG_NEU_MS) return alt;
+      if (!tomtomZaehle('suche')) throw new Error('Monatsgrenze für Suchen erreicht');
+      const u = TOMTOM_BASIS + '/search/2/nearbySearch/.json?lat=' + p.lat + '&lon=' + p.lon + '&radius=300&categorySet=7309&limit=5&key=' + encodeURIComponent(schluessel);
+      const a = await fetch(u);
+      if (!a.ok) throw new Error(a.status === 401 || a.status === 403 ? 'Schlüssel abgelehnt' : 'HTTP ' + a.status);
+      const treffer = ((await a.json()).results || []).sort((x, y) => (x.dist || 0) - (y.dist || 0));
+      const firma = firmaVon(p).toLowerCase();
+      const gleich = x => {
+        const namen = [x.poi && x.poi.name].concat(((x.poi && x.poi.brands) || []).map(b => b.name)).filter(Boolean).join(' ').toLowerCase();
+        return firma && namen.includes(firma.split(' ')[0]);
+      };
+      const eigen = treffer.filter(gleich);
+      // andere Firma nur, wenn sie fast genau an derselben Stelle steht – nie für Tesla (dort steht oft ein anderer Anbieter daneben)
+      const kandidaten = eigen.length ? eigen : firma.startsWith('tesla') ? [] : treffer.filter(x => (x.dist || 0) <= 60);
+      const mit = kandidaten.find(x => x.dataSources && x.dataSources.chargingAvailability) || null;
+      const w = kandidaten[0] && kandidaten[0].poi ? kandidaten[0].poi.name : '';
+      const info = Object.assign(alt || {}, { id: mit ? mit.dataSources.chargingAvailability.id : null, name: mit && mit.poi ? mit.poi.name : w,
+        anders: !eigen.length, gefunden: kandidaten.length > 0, daneben: treffer[0] && treffer[0].poi ? treffer[0].poi.name : '', zeit: Date.now() });
+      (zustand.ttStationen = zustand.ttStationen || {})[p.id] = info;
+      speichere();
+      return info;
+    }
+
+    /** Belegung jetzt (eine Abfrage); Anschlüsse und höchste kW bleiben bei der Station gemerkt. */
+    async function holeBelegung(p, erzwingen) {
+      const schluessel = tomtomSchluessel();
+      if (!schluessel) return null;
+      const info = await ttZuordnung(p, schluessel);
+      if (!info.id) return info;
+      if (!erzwingen && info.belegungZeit && Date.now() - info.belegungZeit < BELEGUNG_FRISCH_MS) return info;
+      if (!tomtomZaehle('belegung')) throw new Error('Monatsgrenze für Belegung erreicht');
+      const b = await fetch(TOMTOM_BASIS + '/search/2/chargingAvailability.json?chargingAvailability=' + encodeURIComponent(info.id) + '&key=' + encodeURIComponent(schluessel));
+      if (!b.ok) throw new Error('HTTP ' + b.status);
+      let frei = 0, alle = 0, maxKw = 0;
+      for (const c of (await b.json()).connectors || []) {
+        const av = c.availability || {}, cur = av.current || {};
+        frei += cur.available || 0; alle += c.total || 0;
+        for (const s of av.perPowerLevel || []) if (s.powerKW > maxKw) maxKw = s.powerKW;
+      }
+      Object.assign(info, { frei, alle, maxKw: maxKw ? Math.round(maxKw) : info.maxKw || null, belegungZeit: Date.now() });
+      speichere();
+      return info;
+    }
+
+    /** Belegung unter dem Titel der Details (Christof: nur hier abfragen, nicht in der Liste). */
+    async function zeigeBelegung(p) {
+      const box = $('d-belegung');
+      box.replaceChildren();
+      box.hidden = !tomtomSchluessel() || !!p.ziel;
+      if (box.hidden) return;
+      box.textContent = 'Belegung wird abgefragt …';
+      try {
+        const info = await holeBelegung(p);
+        if (detailPunkt !== p) return;
+        box.replaceChildren();
+        if (!info || !info.gefunden) box.append('Belegung: bei TomTom nicht gefunden');
+        else if (!info.id) box.append('Belegung: keine Daten bei TomTom');
+        else {
+          const s = el('span', info.frei ? 'frei' : 'rot', info.frei + ' von ' + info.alle + ' frei');
+          box.append('Belegung jetzt: ', s, el('small', '', 'TomTom ' + uhrzeit(info.belegungZeit) + (info.anders ? ' · dort als „' + info.name + '"' : '')));
+        }
+      } catch (e) {
+        if (detailPunkt === p) box.textContent = 'Belegung: ' + (e && e.message || e);
+      }
+    }
+
+    /**
+     * Test „Belegung meiner Stationen" (Christof: 4 ausprobieren): je eigene Station die TomTom-Station derselben Firma
+     * (≤ 300 m) und, wenn TomTom Belegungsdaten hat, die freien Ladepunkte. Nutzt dieselben Bausteine wie die Details.
      */
     async function testeBelegung() {
       if ($('dlg').open) $('dlg').close();   // speichert den eben eingetragenen Schlüssel
-      const schluessel = tomtomSchluessel();
-      if (!schluessel) { toast('Erst den TomTom-Schlüssel eintragen'); return; }
+      if (!tomtomSchluessel()) { toast('Erst den TomTom-Schlüssel eintragen'); return; }
       const box = $('tt-inhalt'), stand = $('tt-stand');
       box.replaceChildren();
       $('tt-seite').hidden = false; nachVorn('tt-seite'); $('tt-seite').scrollTop = 0;
@@ -2453,43 +2539,21 @@
       for (const p of eigene) {
         if ($('tt-seite').hidden) return;
         n++;
-        stand.textContent = 'Prüfe ' + n + ' von ' + eigene.length + ' … (TomTom-Suchen diesen Monat: ' + tomtomStand('suche') + ')';
+        stand.textContent = 'Prüfe ' + n + ' von ' + eigene.length + ' …';
         const z = el('div', 'tt-zeile');
         z.append(el('b', '', kurzname(p.name)));
         box.append(z);
-        if (!tomtomZaehle('suche')) { z.append(el('span', '', 'Monatsgrenze erreicht')); break; }
         try {
-          const u = TOMTOM_BASIS + '/search/2/nearbySearch/.json?lat=' + p.lat + '&lon=' + p.lon + '&radius=300&categorySet=7309&limit=5&key=' + encodeURIComponent(schluessel);
-          const a = await fetch(u);
-          if (!a.ok) throw new Error('HTTP ' + a.status);
-          const treffer = ((await a.json()).results || []).sort((x, y) => (x.dist || 0) - (y.dist || 0));
-          if (!treffer.length) { z.append(el('span', '', 'bei TomTom nicht gefunden')); continue; }
+          const info = await holeBelegung(p, true);
+          if (!info.gefunden) { z.append(el('span', '', 'als ' + firmaVon(p) + ' bei TomTom nicht gefunden' + (info.daneben ? ' (daneben: „' + info.daneben + '")' : ''))); continue; }
           gefunden++;
-          // dieselbe Firma (Name oder Marke bei TomTom); sonst nur, was fast genau an derselben Stelle steht (≤ 60 m)
-          const firma = firmaVon(p).toLowerCase();
-          const gleich = x => {
-            const namen = [x.poi && x.poi.name].concat(((x.poi && x.poi.brands) || []).map(b => b.name)).filter(Boolean).join(' ').toLowerCase();
-            return firma && namen.includes(firma.split(' ')[0]);
-          };
-          const eigen = treffer.filter(gleich);
-          const kandidaten = eigen.length ? eigen : treffer.filter(x => (x.dist || 0) <= 60);
-          if (!kandidaten.length) { z.append(el('span', '', 'als ' + firmaVon(p) + ' bei TomTom nicht gefunden (daneben: „' + (treffer[0].poi ? treffer[0].poi.name : '?') + '")')); continue; }
-          const mit = kandidaten.find(x => x.dataSources && x.dataSources.chargingAvailability) || null;
-          const name = (mit || kandidaten[0]).poi ? (mit || kandidaten[0]).poi.name : '?';
-          if (!mit) { z.append(el('span', '', 'gefunden („' + name + '"), aber ohne Belegungsdaten')); continue; }
-          if (!tomtomZaehle('suche')) { z.append(el('span', '', 'Monatsgrenze erreicht')); break; }
-          const b = await fetch(TOMTOM_BASIS + '/search/2/chargingAvailability.json?chargingAvailability=' + encodeURIComponent(mit.dataSources.chargingAvailability.id) + '&key=' + encodeURIComponent(schluessel));
-          if (!b.ok) throw new Error('Belegung HTTP ' + b.status);
-          const verf = (await b.json()).connectors || [];
-          let frei = 0, alle = 0;
-          for (const c of verf) { const cur = c.availability && c.availability.current || {}; frei += cur.available || 0; alle += c.total || 0; }
+          if (!info.id) { z.append(el('span', '', 'gefunden („' + info.name + '"), aber ohne Belegungsdaten')); continue; }
           mitDaten++;
-          z.append(el('span', 'ok', frei + ' von ' + alle + ' Ladepunkten frei'), el('div', 'klein', 'TomTom: „' + name + '"' + (eigen.length ? '' : ' – anderer Name, gleiche Stelle')));
-        } catch (e) { z.append(el('span', '', 'Fehler: ' + (e && e.message || e))); }
+          z.append(el('span', 'ok', info.frei + ' von ' + info.alle + ' frei' + (info.maxKw ? ' · bis ' + info.maxKw + ' kW' : '')),
+            el('div', 'klein', 'TomTom: „' + info.name + '"' + (info.anders ? ' – anderer Name, gleiche Stelle' : '')));
+        } catch (e) { z.append(el('span', '', String(e && e.message || e))); if (/Monatsgrenze|Schlüssel/.test(String(e && e.message))) break; }
       }
-      stand.textContent = 'Fertig: ' + gefunden + ' von ' + eigene.length + ' Stationen bei TomTom gefunden, ' + mitDaten + ' mit Belegung. ' +
-        'TomTom-Suchen diesen Monat: ' + tomtomStand('suche') + ' von ' + TOMTOM_GRENZE.suche + '.';
-      speichere();
+      stand.textContent = 'Fertig: ' + gefunden + ' von ' + eigene.length + ' Stationen bei TomTom gefunden, ' + mitDaten + ' mit Belegung.';
     }
 
     /** Hat zwischen zwei Akkuwerten ein Ladestopp stattgefunden? 3 min Spielraum: ein Wert kurz vor der Abfahrt oder kurz
@@ -3659,7 +3723,8 @@
       $('e-ors').value = orsSchluessel();
       $('e-tomtom').value = tomtomSchluessel();
       $('e-tomtom-zaehler').textContent = 'Diesen Monat: ' + tomtomStand('routing') + ' von ' + TOMTOM_GRENZE.routing + ' Routen, ' +
-        tomtomStand('suche') + ' von ' + TOMTOM_GRENZE.suche + ' Suchen, ' + tomtomStand('kacheln') + ' von ' + TOMTOM_GRENZE.kacheln + ' Kartenbildern.';
+        tomtomStand('suche') + ' von ' + TOMTOM_GRENZE.suche + ' Suchen, ' + tomtomStand('belegung') + ' von ' + TOMTOM_GRENZE.belegung + ' Belegungen, ' +
+        tomtomStand('kacheln') + ' von ' + TOMTOM_GRENZE.kacheln + ' Kartenbildern.';
       einstellungenOffen = true;
       $('dlg').showModal();
     }
@@ -3934,7 +3999,7 @@
     window.ladeplanung = {
       berechneListe, projiziere, haversine, punktBeiKm, mapsUrl, abrpUrl, energieAnteile, energieKwh, streckenwerte, bedarf,
       routenTeile, routenZwischen, zieleVon, simPunkte, preisKurz, preisEintrag, landVon, prognose, tempo, leseAdapter,
-      kumuliere, duenneAus, fuegeAdhocEin, merkeReisePunkt, messLuecke, zeigeVerbrauchDetail, archiviereReise, holeVerkehr, ankunftSchaetzung, aktuelleAnkunft, zeigeAnkunftDetail, tomtomZaehle, tomtomStand, testeBelegung, schalteVerkehrKarte, reiseStatistik, reiseStopps, merkeReiseAkku, renderReise, zeigeReise, tagesKorrektur, modellProzent, pruefeAutoStart, reiseZusammenfassung, zustandNeuLesen, ladenZwischen, zielEintrag, leseAdapterStill, adapterStillZuruecksetzen: () => { adapterStillZuletzt = 0; }, merkeMesspunkt, verbrauchsTempo, sendeMesswerte, bekannteAbschnitte, akkuProfil, bedarf, akkuJetzt, adhocRichtung, uebernehmenUrl, zeigeKarte, durchMontBlanc, berechneAdhoc,
+      kumuliere, duenneAus, fuegeAdhocEin, merkeReisePunkt, messLuecke, zeigeVerbrauchDetail, archiviereReise, holeVerkehr, ankunftSchaetzung, aktuelleAnkunft, zeigeAnkunftDetail, tomtomZaehle, tomtomStand, testeBelegung, holeBelegung, ttZuordnung, ttInfo, schalteVerkehrKarte, reiseStatistik, reiseStopps, merkeReiseAkku, renderReise, zeigeReise, tagesKorrektur, modellProzent, pruefeAutoStart, reiseZusammenfassung, zustandNeuLesen, ladenZwischen, zielEintrag, leseAdapterStill, adapterStillZuruecksetzen: () => { adapterStillZuletzt = 0; }, merkeMesspunkt, verbrauchsTempo, sendeMesswerte, bekannteAbschnitte, akkuProfil, bedarf, akkuJetzt, adhocRichtung, uebernehmenUrl, zeigeKarte, durchMontBlanc, berechneAdhoc,
       get adhocRoute() { return adhocRoute; }, set adhocRoute(r) { adhocRoute = r; },
       get fremde() { return fremde; },
       get preise() { return preise; },
