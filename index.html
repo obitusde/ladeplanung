@@ -1,6 +1,13 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.36.0 — Nach der ersten echten Fahrt (Christof 22.10.2026): während der Fahrt nichts tippen (keine Felder an/ab,
+                   kein „Messwerte senden", keine Meldungen); Laden auch an unbekannter Station, wenn der Akku danach höher ist;
+                   kein Messstück über einen Ladestopp oder bei viel zu wenig Verbrauch; Tageskorrektur (echter Verbrauch gegen
+                   Modell, gilt für Liste, Ziel und Fahrt-Ansicht); Ziel als letzte Zeile der Liste; Adapter an der Säule alle
+                   3 min, Protokoll „Adapter ohne Tippen"; Start von selbst, falls vergessen (10 km auf der Strecke, > 60 km/h),
+                   Uhr-Erinnerung, Kurzanleitung; „Fahrt speichern" am Ziel (Fahrtenbuch ohne GPX); App zweimal offen →
+                   liest den Stand der anderen statt ihn zu überschreiben.
   Version 0.35.0 — Fahrt live: Ladestopps erkannt (≥ 10 min neben bekannter Station oder Akku danach höher), Menge und Ø kW
                    aus Akku an/ab (Adapter oder Eingabe), Laden getrennt von Pausen; Messtakt am Ladekabel 30 s, sonst 60 s,
                    im Stand 2 min; Adapter ohne Tippen während der Fahrt (nie Geräteauswahl).
@@ -272,6 +279,17 @@
     .reise-ladestopp input { width: 4.4em; min-height: 46px; padding: 0 8px; text-align: right; font-size: 20px; font-weight: 700;
       background: #000; color: #fff; border: 2px solid #3a3a3a; border-radius: 10px; }
     .reise-ladestopp .ergebnis { margin-top: 6px; color: #e6e6e6; font-variant-numeric: tabular-nums; }
+    .reise-hinweis { margin: 0 0 8px; padding: 10px 12px; border-radius: 12px; border: 2px solid #ffd166; color: #ffd166;
+      font-size: 22px; font-weight: 800; line-height: 1.3; }
+    .reise-hinweis.anleitung { border-color: #3a3a3a; color: #e6e6e6; font-size: 18px; font-weight: 700; }
+    .reise-hinweis ol { margin: 4px 0 0; padding-left: 1.4em; }
+    #reise-speichern { margin-top: 10px; }
+    #reise-speichern .knopf { width: 100%; min-height: 54px; font-size: 19px; }
+    #reise-speichern p { color: #bdbdbd; margin: 6px 2px 0; }
+    .reise-protokoll { color: #bdbdbd; margin: 4px 2px 10px; }
+    .reise-protokoll summary { cursor: pointer; font-weight: 700; color: #d0d0d0; min-height: 32px; }
+    .reise-protokoll ol { margin: 4px 0; padding-left: 1.4em; font-variant-numeric: tabular-nums; }
+    .eintrag.ziel { border-top: 3px solid var(--linie); }
     .leaflet-tooltip.schild.klein { font-size: 12px; padding: 1px 5px; }
     .leaflet-tooltip.schild.rot { color: #c00018; }
 
@@ -416,7 +434,7 @@
         <b>Messwerte senden (n)</b> öffnet die Seite „Messwerte" mit allen gesammelten Stücken; dort einmal speichern.
         <b>✕</b> verwirft den Akkustand – z. B. nach einem Test oder einem Tippfehler; danach erscheint wieder „Akku jetzt".</li>
       <li><b>„Messwerte geöffnet … – gespeichert?":</b> Erinnerung, falls die Seite nicht gespeichert wurde. <b>Öffnen</b> zeigt sie nochmals, <b>✕</b> blendet die Erinnerung aus.</li>
-      <li><b>Fahrt:</b> eigener Bildschirm mit der laufenden Fahrt – Unterwegs, Fahren, Pausen, Ø km/h, gefahren/verbleibend, Ankunft ≈ und Akku. „▶ Fahrt starten" beginnt die Messung, am Ziel endet sie von selbst (oder „■ Beenden"). Gemessen wird, solange die App offen ist: beim Öffnen, alle 2 min und bei offener Fahrt-Ansicht jede Minute. Ist die App länger zu, füllt sie die Lücke beim nächsten Öffnen (ganz gefahren oder ganz gestanden). „Bildschirm anlassen" hält das Display an, solange die Ansicht offen ist – am besten in der Halterung am Ladekabel (dort misst sie alle 30 s, sonst jede Minute, im Stand alle 2 min). Der Knopf „Fahrt" ist grün, solange eine Fahrt läuft. <b>Laden</b> erkennt sie selbst: mindestens 10 min neben einer bekannten Station. Die Menge rechnet sie aus dem Akku vorher/nachher – mit Adapter liest sie ihn während der Fahrt auch ohne Tippen (wenn Chrome das zulässt; sonst „Standort" tippen), sonst trägst du nach dem Laden „an/ab" ein.</li>
+      <li><b>Fahrt:</b> eigener Bildschirm mit der laufenden Fahrt – Unterwegs, Fahren, Pausen, Ø km/h, gefahren/verbleibend, Ankunft ≈ und Akku. „▶ Fahrt starten" beginnt die Messung, am Ziel endet sie von selbst (oder „■ Beenden"). Gemessen wird, solange die App offen ist: beim Öffnen, alle 2 min und bei offener Fahrt-Ansicht jede Minute. Ist die App länger zu, füllt sie die Lücke beim nächsten Öffnen (ganz gefahren oder ganz gestanden). „Bildschirm anlassen" hält das Display an, solange die Ansicht offen ist – am besten in der Halterung am Ladekabel (dort misst sie alle 30 s, sonst jede Minute, im Stand alle 2 min). Der Knopf „Fahrt" ist grün, solange eine Fahrt läuft. <b>Während der Fahrt musst du nichts tippen.</b> <b>Laden</b> erkennt sie selbst: mindestens 10 min neben einer bekannten Station oder Akku danach höher. Mit Adapter liest sie den Akku ohne Tippen (wenn Chrome das zulässt – das Protokoll unten zeigt es) und vergleicht den echten Verbrauch mit dem Modell: <b>Verbrauch heute</b> (z. B. +15 % bei Regen und Gegenwind) steckt dann in allen Prognosen. Akku an/ab trägst du erst nach der Fahrt nach. Vergisst du „Fahrt starten", startet sie nach 10 km auf der Strecke von selbst. Am Ziel: „Fahrt speichern" nur, wenn du keine Uhr-Aufzeichnung auswertest.</li>
       <li><b>☰ → Fahrt auswerten (GPX):</b> eine aufgezeichnete Fahrt (z. B. von der Garmin-Uhr) auswerten – nur im Browser, die Datei verlässt das Gerät nicht. Mit den Akkuständen an den Ladestopps entstehen daraus Messwerte mit echtem Tempoverlauf.</li>
       <li><b>Karte:</b> ganze Strecke, dein Standort (blau) und der Weg bis zur nächsten Station. Eine andere Station antippen zeigt den Weg dorthin; <b>Ganze Strecke</b> zoomt heraus, <b>Details</b> öffnet die Station. In den Details jeder Station gibt es dafür auch <b>Auf Karte</b>.</li>
       <li><b>⇄</b> tauscht von und nach. Der letzte bekannte Akkustand gilt für jede Strecke, die du oben wählst – die Liste zeigt sofort, was damit erreichbar ist.</li>
@@ -522,9 +540,12 @@
       <span id="reise-route" class="reise-route"></span>
     </div>
     <div id="reise-inhalt" class="reise-inhalt">
+      <p id="reise-hinweis" class="reise-hinweis" hidden></p>
       <div id="reise-kacheln" class="reise-kacheln"></div>
       <div id="reise-laden"></div>
+      <div id="reise-speichern" hidden></div>
       <p id="reise-unten" class="reise-unten"></p>
+      <details id="reise-protokoll" class="reise-protokoll" hidden><summary></summary><ol></ol></details>
       <div class="reise-knoepfe">
         <button id="reise-start" class="knopf haupt" type="button">▶ Fahrt starten</button>
         <button id="reise-ende" class="knopf" type="button" hidden>■ Beenden</button>
@@ -610,7 +631,7 @@
       <p class="klein">Temperatur leer lassen = automatisch vom Wetter. Stationen mit Ankunft unter der Reserve erscheinen rot.</p>
       <h3>OBD-Adapter</h3>
       <label class="schalter"><input type="checkbox" id="e-obd"> Akku beim Tippen auf „Standort“ über den Adapter lesen</label>
-      <p class="klein">Veepeak OBDCheck BLE+ im Auto, Zündung an. Beim ersten Mal den Adapter in der Liste wählen. Liest nur auf Knopfdruck, nichts im Hintergrund.</p>
+      <p class="klein">Veepeak OBDCheck BLE+ im Auto, Zündung an. Beim ersten Mal den Adapter in der Liste wählen. Liest beim Tippen auf „Standort“; während einer laufenden Fahrt (Fahrt-Ansicht offen) auch von selbst – fahrend alle 10 min, im Stand alle 3 min –, wenn Chrome das ohne Tippen erlaubt. Der Adapter verbindet sich immer nur mit einem Handy: auf einem zweiten Handy hier ausschalten.</p>
       <p class="klein" id="e-adapter"></p>
       <h3>Route ab hier</h3>
       <label>OpenRouteService-Schlüssel <input type="text" id="e-ors" autocomplete="off" spellcheck="false" placeholder="Schlüssel einfügen"></label>
@@ -626,7 +647,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.35.0';
+    const APP_VERSION = '0.36.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -641,7 +662,13 @@
     const REISE_SCHIEBEN_MS = 120e3;   // gegen Einbrennen: alle 2 min ein paar Pixel verschieben
     const REISE_GPS_LADEKABEL_MS = 30e3, REISE_GPS_STEHEN_MS = 120e3;   // am Ladekabel öfter, im Stand seltener (Christof: 1 ja)
     const ADAPTER_STILL_ABSTAND_MS = 3 * 60e3;                            // Adapter ohne Tippen höchstens alle 3 min
-    const ADAPTER_STILL_FAHREN_MS = 10 * 60e3, ADAPTER_STILL_STEHEN_MS = 5 * 60e3;   // in der Fahrt-Ansicht: fahrend / stehend
+    const ADAPTER_STILL_FAHREN_MS = 10 * 60e3, ADAPTER_STILL_STEHEN_MS = 3 * 60e3;   // in der Fahrt-Ansicht: fahrend / stehend (Säule)
+    const ADAPTER_PROTOKOLL_MAX = 40;                                     // so viele Versuche „Adapter ohne Tippen" bleiben stehen
+    const TAG_MIN_PROZENT = 4, TAG_FAKTOR_MIN = 0.7, TAG_FAKTOR_MAX = 1.5;  // Tageskorrektur ab 4 % Modellverbrauch, begrenzt
+    const MESSSTUECK_MIN_ANTEIL = 0.6;     // Akku weniger als 60 % des Modells gesunken → unbemerkt geladen, kein Messstück
+    const AUTO_START_KM = 10, AUTO_START_KMH = 60, AUTO_VERWERFEN_Q_KM = 3;  // Start von selbst, falls vergessen
+    const UHR_HINWEIS_MS = 10 * 60e3, UHR_ENDE_HINWEIS_MS = 30 * 60e3;     // „⌚ Uhr gestartet?" / „⌚ Uhr stoppen"
+    const REISE_LEISTE_RUHE_MS = 24 * 3600e3;   // so lange nach der Fahrt kein „Messwerte senden" in der Leiste (dafür „Fahrt speichern")
     const LADEN_MIN_MS = 10 * 60e3, LADEN_STATION_KM = 0.4;               // Ladestopp: ≥ 10 min, Station ≤ 400 m (wie „Fahrt auswerten“)
     const REISE_PAUSE_KMH = 5, REISE_PAUSE_MIN_S = 180;   // langsamer = stehen; ab 3 min stehen = Pause (sonst Ampel/Stau)
     const MESSSTUECK_MIN_KM = 50;          // kürzere Stücke sind zu ungenau (Akku ±0,5 % je Wert; Christof, 17.10.2026)
@@ -922,7 +949,9 @@
         ankunft: null,   // { url, zeit, anzahl } — Seite „Messwerte" geöffnet, zur Erinnerung
         messung: null,   // letzter Akkuwert als Messpunkt { soc, zeit, lat, lon, km_stand, route, richtung, km, hm_hin, hm_rueck, q }
         stuecke: [],     // Messstücke ab 50 km, noch nicht gesendet
-        reise: null,     // Fahrt live { route, route_name, richtung, start, ende, punkte: [[zeit, lat, lon, km, q]] }
+        reise: null,     // Fahrt live { route, route_name, richtung, start, ende, punkte: [[zeit, lat, lon, km, q]], akku, laden, auto, gespeichert }
+        adapterLog: [],  // Adapter ohne Tippen: [{ zeit, ok, soc | text }] – zur Kontrolle (Christof 22.10.2026)
+        autoStart: null, // { route, richtung, zeit, km } – letzter Stand am Anfang der Strecke, für den Start von selbst
         abStandort: false,     // true = auch weit weg von der Route ab dem eigenen Standort rechnen (Luftlinie)
         letzterStandort: null, // { lat, lon, genauigkeit, zeit } — gilt, bis das GPS antwortet
       };
@@ -934,6 +963,18 @@
 
     function speichere() {
       try { localStorage.setItem(SPEICHER, JSON.stringify(zustand)); } catch (e) { /* privat oder gesperrt */ }
+    }
+
+    /** Stand aus dem Speicher übernehmen – eine zweite offene Kopie der App hat geschrieben (Christof 22.10.2026). */
+    function zustandNeuLesen(text) {
+      try {
+        const g = JSON.parse(text === undefined ? localStorage.getItem(SPEICHER) || 'null' : text);
+        if (!g || typeof g !== 'object') return false;
+        for (const k of Object.keys(g)) zustand[k] = g[k];
+        zustand.sim = { aktiv: false, lat: null, lon: null, label: '', ...(g.sim || {}) };
+        zustand.einst = { geschwindigkeit: 120, zusatzgewicht: 0, temperatur: '', reserve: 10, obd: false, ...(g.einst || {}) };
+        return true;
+      } catch (e) { return false; }
     }
 
     function aktuelleRoute() {
@@ -1165,10 +1206,12 @@
      * gedeckelt bei 100 %: was bergab nicht mehr in den vollen Akku passt, geht verloren (Christof, 16.10.2026 –
      * Ovronnaz mit 100 % ins Tal). bei(z) liefert den Akkustand an einer Linienposition (z.km), dahinter den Startwert.
      */
-    function akkuProfil(route, richtung, von, startSoc) {
+    function akkuProfil(route, richtung, von, startSoc, ohneTag) {
       const hin = richtung === 'hin', l = route.linie, k = modell.korrektur;
       const kmh = verbrauchsTempo(route), temp = temperatur().wert, zusatz = zustand.einst.zusatzgewicht;
-      const proKwh = 100 / modell.fahrzeug.kapazitaet_kwh;
+      // Tageskorrektur (Wind, Regen, Kälte, Fahrweise) nur für die Anzeige, nie für den erwarteten Wert eines Messstücks
+      const tag = ohneTag ? null : tagesKorrektur();
+      const proKwh = 100 / modell.fahrzeug.kapazitaet_kwh * (tag ? tag.faktor : 1);
       const prozent = (km, auf, ab) => {
         const a = energieAnteile(modell, km, auf, ab, kmh, temp, zusatz);
         return k.gesamt * (k.fahrt * a.fahrt + k.hoehe * a.hoehe + k.heizung * a.heiz) * proKwh;   // bergab auch negativ
@@ -1196,6 +1239,60 @@
           return socs[lo - 1] + t * (socs[lo] - socs[lo - 1]);
         },
       };
+    }
+
+    /** Modellverbrauch in % zwischen zwei Linienpositionen (ungedeckelt, ohne Tageskorrektur) – die Rechnung ist linear in
+        km, Anstieg und Gefälle, daher reichen die Summen. */
+    function modellProzent(route, richtung, von, bis) {
+      const w = streckenwerte(richtung, von, bis), k = modell.korrektur;
+      const a = energieAnteile(modell, w.km, w.auf, w.ab, verbrauchsTempo(route), temperatur().wert, zustand.einst.zusatzgewicht);
+      return k.gesamt * (k.fahrt * a.fahrt + k.hoehe * a.hoehe + k.heizung * a.heiz) * 100 / modell.fahrzeug.kapazitaet_kwh;
+    }
+
+    /**
+     * Tageskorrektur (Christof 22.10.2026: „während der Fahrt den Verbrauch kalibrieren, der war den ganzen Tag falsch" –
+     * Regen und Gegenwind, das Modell lag 5–7 % je Abschnitt zu hoch): echter Akkuverbrauch zwischen den Akkuwerten der
+     * laufenden Fahrt gegen das Modell auf denselben Stücken, ohne Ladestopps. Ab 4 % Modellverbrauch (≈ 25–30 km),
+     * begrenzt auf 0,7–1,5. Gilt nur, solange die Fahrt läuft.
+     */
+    let tagesCache = { schluessel: '', wert: null };
+    function tagesKorrektur() {
+      const r = zustand.reise;
+      if (!r || r.ende || !daten || !modell) return null;
+      const route = reiseRoute();
+      if (!route) return null;
+      const akku = (r.akku || []).slice().sort((a, b) => a[0] - b[0]);
+      const schluessel = r.start + ':' + akku.length + ':' + r.punkte.length + ':' + JSON.stringify(r.laden || {}) + ':' + temperatur().wert;
+      if (tagesCache.schluessel === schluessel) return tagesCache.wert;
+      const laden = reiseStopps(r).filter(s => s.geladen);
+      // Ort zu einem Akkuwert: nächster Messpunkt der Fahrt (höchstens 5 min daneben), auf der Route
+      const ort = t => {
+        let b = null;
+        for (const p of r.punkte) if (!b || Math.abs(p[0] - t) < Math.abs(b[0] - t)) b = p;
+        if (!b || Math.abs(b[0] - t) > 5 * 60e3 || b[4] > 2) return null;
+        return { km: b[3], ...punktWerte(route, b[3]) };
+      };
+      let echt = 0, mod = 0, km = 0;
+      for (let i = 1; i < akku.length; i++) {
+        const a = akku[i - 1], b = akku[i];
+        if (b[1] > a[1] + 1) continue;                                          // geladen
+        if (ladenUeberlappt(laden, a[0], b[0])) continue;                        // Ladestopp dazwischen oder läuft noch
+        const pa = ort(a[0]), pb = ort(b[0]);
+        if (!pa || !pb) continue;
+        const d = r.richtung === 'hin' ? pb.km - pa.km : pa.km - pb.km;
+        if (d < 1) continue;
+        echt += a[1] - b[1]; mod += modellProzent(route, r.richtung, pa, pb); km += d;
+      }
+      const wert = mod >= TAG_MIN_PROZENT && echt > 0
+        ? { faktor: Math.max(TAG_FAKTOR_MIN, Math.min(TAG_FAKTOR_MAX, echt / mod)), echt, modell: mod, km } : null;
+      tagesCache = { schluessel, wert };
+      return wert;
+    }
+
+    /** Text der Tageskorrektur: „+15 %" / „−5 %" / „wie erwartet". */
+    function tagesText(tag) {
+      const d = Math.round((tag.faktor - 1) * 100);
+      return d === 0 ? 'wie erwartet' : (d > 0 ? '+' : '−') + Math.abs(d) + ' %';
     }
 
     /** Geschätzter Akkustand jetzt aus dem letzten bekannten Wert – für jede gewählte Route und Richtung
@@ -1432,6 +1529,19 @@
         zeile.addEventListener('click', () => zeigeDetail(e, erg.modus));
         liste.append(zeile);
       });
+      // Ziel als letzte Zeile (Christof 22.10.2026: „damit ich sehe, mit wie viel % ich ankomme")
+      if (erg.modus === 'strecke' && profil && erg.rest !== null && erg.rest > AUSBLENDEN_KM) {
+        const z = zielEintrag(route, erg, profil);
+        const pg = z.prognose, rot = pg.unterReserve && !pg.nichtErreichbar ? ' rot' : '';
+        const zeile = el('button', 'eintrag ziel' + (pg.nichtErreichbar ? ' grau' : ''));
+        zeile.type = 'button';
+        const km = el('span', 'km' + rot, fmtKm(z.weg));
+        km.append(el('small', '', 'km'));
+        zeile.append(km, el('span', 'name' + rot, '🏁 Ziel ' + z.punkt.name), el('span', 'akku' + rot, akkuText(pg)));
+        if (z.hm !== null) zeile.append(el('span', 'meta', '+ ' + z.hm + ' hm bis dorthin'));
+        zeile.addEventListener('click', () => zeigeDetail(z, erg.modus));
+        liste.append(zeile);
+      }
 
       renderFahrt(route, erg);
       renderFuss(route, erg, pos);
@@ -1439,6 +1549,29 @@
       if (karte && !$('karte-seite').hidden) {
         zeichneKarte(karteWahl ? erg.eintraege.find(x => x.punkt.id === karteWahl.punkt.id) || null : null, false);
       }
+    }
+
+    /** Ziel der Route als Listeneintrag: Strecke, Höhenmeter und Akku bei Ankunft wie bei einer Station. */
+    function zielEintrag(route, erg, profil) {
+      const hin = zustand.richtung === 'hin', l = route.linie, ende = hin ? l[l.length - 1] : l[0];
+      const t = routenTeile(route);
+      const hm = hin ? ende[3] - erg.pos.hm_hin : erg.pos.hm_rueck - ende[4];
+      const ankunft = profil.bei({ km: ende[2] });
+      const prozent = Math.max(0, profil.start - ankunft);
+      return {
+        ziel: true, km: erg.rest, weg: erg.rest, hm: Math.max(0, Math.round(hm)), z: { km: ende[2] },
+        punkt: { id: 'ziel', ziel: true, name: hin ? t.ziel : t.start, lat: ende[0], lon: ende[1], adresse: '', notiz: '' },
+        prognose: { kwh: prozent * modell.fahrzeug.kapazitaet_kwh / 100, prozent, ankunft, angenommen: profil.angenommen,
+          nichtErreichbar: ankunft < 0, unterReserve: ankunft < Number(zustand.einst.reserve || 0) },
+      };
+    }
+
+    /** Fahrt live läuft – oder ist beendet, aber noch nicht gespeichert (dann gibt es „Fahrt speichern" statt „Messwerte senden"). */
+    function reiseBlockiertLeiste() {
+      const r = zustand.reise;
+      if (!r) return false;
+      if (!r.ende) return true;
+      return !r.gespeichert && Date.now() - r.ende < REISE_LEISTE_RUHE_MS;
     }
 
     /** Leiste über der Liste: Losfahren / Fahrt läuft / Angekommen – Kalibrierung offen. Alles optional. */
@@ -1469,18 +1602,18 @@
           if (f.route !== route.id || f.richtung !== zustand.richtung) text += ' (' + f.route_name + ', ' + (f.richtung === 'hin' ? 'Hinfahrt' : 'Rückfahrt') + ')';
         }
         leiste.append(el('span', 'text', text));
-        if (zustand.stuecke.length) leiste.append(knopf('Messwerte senden (' + zustand.stuecke.length + ')', 'haupt', sendeMesswerte, 'Messstücke für die Kalibrierung speichern'));
+        if (zustand.stuecke.length && !reiseBlockiertLeiste()) leiste.append(knopf('Messwerte senden (' + zustand.stuecke.length + ')', 'haupt', sendeMesswerte, 'Messstücke für die Kalibrierung speichern'));
         leiste.append(knopf('✕', '', verwerfeFahrt, 'Akkustand verwerfen'));
         return;
       }
-      if (zustand.stuecke.length) {
+      if (zustand.stuecke.length && !reiseBlockiertLeiste()) {
         $('los').hidden = false;   // Akku eintragen bleibt möglich
         leiste.append(el('span', 'text', zustand.stuecke.length + ' Messwert(e) für die Kalibrierung bereit'),
           knopf('Senden', 'haupt', sendeMesswerte, 'Messstücke für die Kalibrierung speichern'));
         return;
       }
       const a = zustand.ankunft;
-      if (a && Date.now() - a.zeit < ANKUNFT_OFFEN_MS) {
+      if (a && Date.now() - a.zeit < ANKUNFT_OFFEN_MS && !(zustand.reise && !zustand.reise.ende)) {
         const link = el('a', 'knopf', 'Öffnen');
         link.href = a.url; link.target = '_blank'; link.rel = 'noopener';
         leiste.append(el('span', 'text', 'Messwerte geöffnet ' + uhrzeit(a.zeit) + ' – gespeichert?'), link,
@@ -1514,6 +1647,8 @@
           fuss.append(s);
         }
       }
+      const tag = tagesKorrektur();
+      if (tag) teil('Verbrauch heute', tagesText(tag));
       const t = temperatur();
       teil('Temp', zahl(t.wert, 0) + ' °C' + (t.quelle === 'angenommen' ? ' (ang.)' : ''));
       if (planung.abStart) teil('ab', planung.abStart.ort);
@@ -1536,7 +1671,11 @@
       $('d-gross').className = 'gross' + (pg && pg.unterReserve ? ' rot' : '');
 
       // Ohne Annahmen, Favorit, Koordinaten, id; Notiz gleich nach dem Akkubedarf (Christof, 14.10.2026)
-      const felder = [
+      const felder = p.ziel ? [
+        ['Akkubedarf', pg ? '≈ ' + zahl(pg.kwh, 1) + ' kWh = ' + Math.round(pg.prozent) + ' %' : '–'],
+        ['Anstieg', e.hm === null ? '–' : '+ ' + e.hm + ' hm'],
+        ['Verbrauch heute', (() => { const tag = tagesKorrektur(); return tag ? tagesText(tag) + ' gegenüber dem Modell (eingerechnet)' : '–'; })()],
+      ] : [
         ['Lage', lageText(e.z) || '–'],
         ['Akkubedarf', pg ? '≈ ' + zahl(pg.kwh, 1) + ' kWh = ' + Math.round(pg.prozent) + ' %' : '–'],
         ['Notiz', p.notiz || '–'],
@@ -1579,8 +1718,10 @@
       // Station aus den Bundesdaten: übernehmen statt bearbeiten; Vergleichswerte nur für Stammstrecken (Script kennt „adhoc" nicht)
       $('d-uebernehmen').hidden = !p.fremd;
       if (p.fremd) $('d-uebernehmen').href = uebernehmenUrl(p);
-      $('d-bearbeiten').hidden = !!p.fremd;
-      $('d-vergleich').hidden = !!p.fremd || zustand.route === ADHOC_ID;
+      $('d-bearbeiten').hidden = !!p.fremd || !!p.ziel;
+      $('d-vergleich').hidden = !!p.fremd || !!p.ziel || zustand.route === ADHOC_ID;
+      if (p.ziel) $('d-app').hidden = true;
+      $('d-karte').hidden = !!p.ziel;
 
       $('detail').hidden = false;
       nachVorn('detail');
@@ -1655,6 +1796,11 @@
       const km = zaehler !== null && zaehler >= 0 && zaehler <= 2000 ? zaehler : w.km;
       if (km < MESSSTUECK_MIN_KM) { zustand.messung = l; return; }
       if (l.soc - m.soc < 3) return;
+      // Ladestopp dazwischen – auch einer, an dem der Startwert gelesen wurde und danach weiter geladen wurde
+      // (21.10.2026: 84 → 44 % über 344 km mit zwei Ladestopps; 45 % in Bern mitten im Laden, abgefahren mit 57 %)
+      if (ladenZwischen(l.zeit, m.zeit)) return;
+      const erwartet = akkuProfil(route, m.richtung, l, l.soc, true).bei(m);
+      if (l.soc - erwartet >= 5 && l.soc - m.soc < MESSSTUECK_MIN_ANTEIL * (l.soc - erwartet)) return;   // unbemerkt geladen
       const stunden = (m.zeit - l.zeit) / 3.6e6, geplant = tempo(route).wert;
       const gefahren = stunden > 0 ? km / stunden : 0;
       const mitPause = !(gefahren >= 0.6 * geplant);   // lange Pause im Stück: Ø-Tempo taugt nicht, Tempo der Route nehmen
@@ -1665,12 +1811,19 @@
         start_lat: runde5(l.lat), start_lon: runde5(l.lon), ende_lat: runde5(m.lat), ende_lon: runde5(m.lon),
         km: runde1(km), hm_auf: Math.round(w.auf), hm_ab: Math.round(w.ab), start_soc: l.soc, ende_soc: m.soc,
         kmh: Math.round(mitPause ? geplant : gefahren), geschwindigkeit: geplant,
-        erwartet: runde1(akkuProfil(route, m.richtung, l, l.soc).bei(m)),
+        erwartet: runde1(erwartet),
         zusatzgewicht: Number(zustand.einst.zusatzgewicht) || 0,
         notiz: [zaehler !== null ? 'km vom Kilometerzähler (Route ' + runde1(w.km) + ' km)' : '', mitPause ? 'mit Pause – Tempo der Route' : ''].filter(Boolean).join(' · '),
       });
       if (zustand.stuecke.length > MESSSTUECKE_MAX) zustand.stuecke.shift();
-      toast('Messwert für die Kalibrierung: ' + Math.round(km) + ' km, ' + (l.soc - m.soc) + ' % Akku');
+      if (!(zustand.reise && !zustand.reise.ende)) toast('Messwert für die Kalibrierung: ' + Math.round(km) + ' km, ' + (l.soc - m.soc) + ' % Akku');
+    }
+
+    /** Lag zwischen zwei Zeitpunkten ein Ladestopp der Fahrt live (oder lief er beim ersten noch)? */
+    function ladenZwischen(t0, t1) {
+      const r = zustand.reise;
+      if (!r || !r.punkte || !r.punkte.length) return false;
+      return ladenUeberlappt(reiseStopps(r).filter(s => s.geladen), t0, t1);
     }
 
     /** Messpunkt aus Position und Akkuwert; nicht bei Simulation oder Planung ab einem anderen Startort. */
@@ -1701,6 +1854,12 @@
       const pr = projiziere(route.linie, pos.lat, pos.lon, lat0Von(route));
       const runde5 = x => Math.round(x * 1e5) / 1e5;
       r.punkte.push([t, runde5(pos.lat), runde5(pos.lon), Math.round(pr.km * 100) / 100, Math.round(pr.q * 10) / 10]);
+      // Von selbst gestartet, aber gleich wieder weg von der Strecke (Fahrt nach Lausanne auf den ersten km): verwerfen
+      if (r.auto) {
+        const n = r.punkte.length;
+        if (n >= 2 && r.punkte[n - 1][4] > AUTO_VERWERFEN_Q_KM && r.punkte[n - 2][4] > AUTO_VERWERFEN_Q_KM &&
+            reiseStatistik(r, route, t).km < 4 * AUTO_START_KM) { zustand.reise = null; speichere(); render(); return; }
+      }
       // Ende von selbst: weniger als 1 km vor dem Ziel und seit 5 min nicht mehr bewegt (Christof: 3a)
       const s = reiseStatistik(r, route, t);
       if (s.rest !== null && s.rest <= 1) {
@@ -1820,7 +1979,8 @@
       const pos = aktuellePosition(), route = letzteAnsicht && letzteAnsicht.route;
       if (!route) { toast('Erst oben eine Strecke wählen'); return; }
       if (!pos || pos.alt) { toast('Standort wird gesucht – gleich nochmal tippen'); holeStandort(); return; }
-      zustand.reise = { route: route.id, route_name: route.name, richtung: zustand.richtung, start: Date.now(), ende: null, punkte: [], akku: [], laden: {} };
+      zustand.reise = { route: route.id, route_name: route.name, richtung: zustand.richtung, start: Date.now(), ende: null, punkte: [], akku: [], laden: {}, uhr: Date.now() };
+      zustand.autoStart = null;
       merkeReisePunkt(pos, zustand.reise.start);
       speichere();
       reiseLadenSchluessel = '';
@@ -1829,6 +1989,37 @@
       planeReiseMessung();
       adapterStillZuletzt = 0;
       leseAdapterStill();   // Akku beim Start, falls der Adapter ohne Tippen antwortet
+    }
+
+    /**
+     * Start von selbst, falls „Fahrt starten" vergessen (Christof 22.10.2026: „ich klicke auf Fahrt starten, App macht das
+     * nur, wenn ich es vergesse"): App offen, auf der gewählten Strecke (≤ 1 km daneben) 10 km in Fahrtrichtung bei über
+     * 60 km/h. Startzeit = zuletzt am Anfang gesehen (stehen bleibt der Anker). Verlässt sie die Strecke früh, verwirft sie sich.
+     */
+    function pruefeAutoStart(pos) {
+      if (!pos || pos.sim || pos.alt || zustand.sim.aktiv || !daten) return;
+      const r = zustand.reise;
+      if (r && (!r.ende || Date.now() - r.ende < 30 * 60e3)) return;   // läuft, oder eben angekommen
+      const route = aktuelleRoute();
+      const pr = projiziere(route.linie, pos.lat, pos.lon, lat0Von(route));
+      const jetzt = Date.now(), a = zustand.autoStart, hin = zustand.richtung === 'hin';
+      const neu = () => { zustand.autoStart = { route: route.id, richtung: zustand.richtung, zeit: jetzt, km: pr.km, lat: pos.lat, lon: pos.lon }; speichere(); };
+      if (pr.q > 1) { if (a) { zustand.autoStart = null; speichere(); } return; }
+      if (!a || a.route !== route.id || a.richtung !== zustand.richtung || jetzt - a.zeit > 3 * 3600e3) return neu();
+      const weg = hin ? pr.km - a.km : a.km - pr.km;
+      if (weg < 0.3) return neu();   // noch nicht losgefahren (oder rückwärts): Anker mitnehmen
+      const kmh = weg / ((jetzt - a.zeit) / 3.6e6);
+      if (weg < AUTO_START_KM) return;
+      if (kmh < AUTO_START_KMH) return neu();
+      zustand.reise = { route: route.id, route_name: route.name, richtung: zustand.richtung, start: a.zeit, ende: null,
+        punkte: [], akku: [], laden: {}, auto: true, uhr: jetzt };
+      zustand.autoStart = null;
+      merkeReisePunkt({ lat: a.lat, lon: a.lon }, a.zeit);
+      merkeReisePunkt(pos, jetzt);
+      speichere();
+      reiseLadenSchluessel = '';
+      adapterStillZuletzt = 0;
+      leseAdapterStill();
     }
 
     function beendeReise() {
@@ -1858,6 +2049,7 @@
      */
     function reiseStopps(r) {
       const p = r.punkte, ende = r.ende || Infinity, akku = r.akku || [], laden = r.laden || {}, stopps = [];
+      const beginne = [];   // Anfänge aller Stopps – der Akkuanstieg zählt nur bis kurz nach Beginn des nächsten
       for (let i = 0; i < p.length;) {
         if (p[i][0] > ende) break;
         let j = i;
@@ -1872,14 +2064,36 @@
         const an = hand.an !== undefined ? hand.an : vor ? vor[1] : undefined;
         const ab = hand.ab !== undefined ? hand.ab : nach ? nach[1] : undefined;
         const mitAkku = an !== undefined && ab !== undefined && ab > an + 2;
+        // Akku nach dem Stopp höher als davor (Christof 22.10.2026: kurz ad hoc geladen, Station unbekannt): letzter Wert
+        // vor der Ankunft (bis 1 h alt) gegen den höchsten Wert während des Stopps und bis 30 min nach der Abfahrt
+        const davor = akku.filter(a => a[0] <= t0 + 2 * 60e3 && a[0] >= t0 - 3600e3).pop();
+        const spaeter = akku.filter(a => a[0] > t0 && a[0] <= t1 + 30 * 60e3 && (!davor || a[0] > davor[0]));
         stopps.push({ id, t0, t1, min: dauer / 60e3, laufend, station, an, ab, lang: dauer >= LADEN_MIN_MS,
-          anAuto: vor ? vor[1] : '', abAuto: nach ? nach[1] : '',
+          anAuto: vor ? vor[1] : '', abAuto: nach ? nach[1] : '', davor, spaeter, mitAkku,
           geladen: mitAkku || (!!station && dauer >= LADEN_MIN_MS),
           kwh: mitAkku ? (ab - an) / 100 * modell.fahrzeug.kapazitaet_kwh : null,
           zuletzt: akku.filter(a => a[0] >= t0 - 3 * 60e3 && a[0] <= t1 + 5 * 60e3).pop() || null });
         i = j + 1;
       }
+      // Akkuanstieg: höchster Wert nach dem letzten vor der Ankunft, aber nur bis 2 min nach Beginn des nächsten Stopps
+      stopps.forEach((s, k) => {
+        const bis = k + 1 < stopps.length ? stopps[k + 1].t0 + 2 * 60e3 : Infinity;
+        s.anstieg = !!s.davor && s.spaeter.some(a => a[0] <= bis && a[1] > s.davor[1] + 2);
+        if (s.anstieg) s.geladen = true;
+        // Akku „an" fehlt, weil der Wert kurz vor dem erkannten Stopp lag (umgeparkt, vorher Pinkelpause): bis 10 min davor gilt er
+        if (s.an === undefined && s.davor && s.t0 - s.davor[0] <= 10 * 60e3) {
+          s.an = s.davor[1]; s.anAuto = s.davor[1];
+          if (s.ab !== undefined && s.ab > s.an + 2) { s.mitAkku = s.geladen = true; s.kwh = (s.ab - s.an) / 100 * modell.fahrzeug.kapazitaet_kwh; }
+        }
+        delete s.davor; delete s.spaeter;
+      });
       return stopps;
+    }
+
+    /** Hat zwischen zwei Akkuwerten ein Ladestopp stattgefunden? 3 min Spielraum: ein Wert kurz vor der Abfahrt oder kurz
+        nach der Ankunft an der Säule zählt noch (sonst fiele fast jedes Stück weg); einer mitten im Laden nicht. */
+    function ladenUeberlappt(laden, t0, t1) {
+      return laden.some(s => s.t1 > t0 + 3 * 60e3 && s.t0 < t1 - 3 * 60e3);
     }
 
     function renderReise() {
@@ -1899,10 +2113,13 @@
       $('reise-start').hidden = !!(r && !r.ende);
       $('reise-start').textContent = r && r.ende ? '▶ Neue Fahrt starten' : '▶ Fahrt starten';
       $('reise-ende').hidden = !(r && !r.ende);
+      renderReiseHinweis(r);
+      renderReiseProtokoll(r);
       if (!r) {
         kachel('Noch keine Fahrt', 'bereit', 'c-zeit', 'Mit „Fahrt starten" beginnt die Messung für die oben gewählte Strecke.', true);
         $('reise-unten').textContent = 'Gemessen wird, solange die App offen ist – am genauesten in der Halterung mit offener Ansicht.';
         $('reise-laden').replaceChildren(); reiseLadenSchluessel = '';
+        $('reise-speichern').hidden = true;
         return;
       }
       const jetzt = Date.now(), s = reiseStatistik(r, route, jetzt);
@@ -1913,7 +2130,7 @@
       if (laufend) {
         const z = laufend.zuletzt;
         kachel('⚡ Laden' + (laufend.station ? ' · ' + laufend.station : ''), 'seit ' + Math.round(laufend.min) + ' min', 'c-rest',
-          z ? 'Akku ' + z[1] + ' % um ' + uhrzeit(z[0]) + (laufend.an !== undefined && z[1] > laufend.an ? ' (+' + (z[1] - laufend.an) + ' %)' : '') : 'Akkustand: Standort tippen (Adapter) oder unten eintragen', true);
+          z ? 'Akku ' + z[1] + ' % um ' + uhrzeit(z[0]) + (laufend.an !== undefined && z[1] > laufend.an ? ' (+' + (z[1] - laufend.an) + ' %)' : '') : 'Akkustand kommt vom Adapter – sonst nach der Fahrt nachtragen', true);
       }
       kachel('Fahren', dauerText(s.fahrS, true), 'c-fahren');
       // Pausen ohne Laden (Laden hat eine eigene Kachel)
@@ -1944,7 +2161,16 @@
           kachel('Akkubedarf bis Ziel', '≈ ' + bedarf + ' %', farbe, bedarf > 100 ? 'mehr als eine Ladung – unterwegs laden' : 'kein Akkustand eingetragen');
         }
       }
-      renderReiseLaden(r, stopps);
+      // Tageskorrektur: echter Verbrauch gegen Modell (Wind, Regen, Kälte) – steckt schon in allen Akkuwerten
+      if (!r.ende) {
+        const tag = tagesKorrektur();
+        kachel('Verbrauch heute', tag ? tagesText(tag) : 'noch offen', tag ? (tag.faktor > 1.05 ? 'c-pause' : 'c-fahren') : 'c-zeit',
+          tag ? 'gegenüber dem Modell, aus ' + fmtKm(tag.km) + ' km – in allen Prognosen eingerechnet'
+            : 'braucht Akkuwerte vom Adapter über etwa 30 km', true);
+      }
+      // Akku an/ab erst nach der Fahrt (Christof 22.10.2026: „nicht während der Fahrt eintippen")
+      if (r.ende) renderReiseLaden(r, stopps); else { $('reise-laden').replaceChildren(); reiseLadenSchluessel = ''; }
+      renderReiseSpeichern(r, s, stopps);
       // unten: nächste Station, Frische der Messung, Adapter ohne Tippen
       const teile = [];
       if (l && !r.ende && l[4] <= QUER_MAX_KM) {
@@ -1960,9 +2186,9 @@
       }
       const st = zustand.adapterStill;
       if (zustand.einst.obd && !r.ende && st && st.zeit >= r.start) {
-        teile.push(st.ok ? 'Adapter ohne Tippen: ' + st.soc + ' % um ' + uhrzeit(st.zeit) : 'Adapter ohne Tippen nicht erreicht (' + uhrzeit(st.zeit) + ') – Standort tippen liest ihn');
+        teile.push(st.ok ? 'Adapter ohne Tippen: ' + st.soc + ' % um ' + uhrzeit(st.zeit) : 'Adapter ohne Tippen nicht erreicht (' + uhrzeit(st.zeit) + ')');
       }
-      if (r.ende) teile.push('Fahrt beendet – Werte bleiben, bis du eine neue startest.');
+      if (r.ende) teile.push('Fahrt beendet' + (r.auto ? ' (von selbst gestartet)' : '') + ' – Werte bleiben, bis du eine neue startest.');
       $('reise-unten').textContent = teile.join(' · ');
     }
 
@@ -2012,6 +2238,106 @@
         k.append(zeile, ergebnis);
         box.append(k);
       }
+    }
+
+    /** Großer Hinweis oben: Kurzanleitung vor dem Start, „⌚ Uhr gestartet?" nach dem Start, „⌚ Uhr stoppen" am Ziel. */
+    function renderReiseHinweis(r) {
+      const h = $('reise-hinweis'), jetzt = Date.now();
+      h.replaceChildren(); h.className = 'reise-hinweis'; h.hidden = false;
+      if (!r || (r.ende && jetzt - r.ende >= UHR_ENDE_HINWEIS_MS)) {
+        h.className = 'reise-hinweis anleitung';
+        h.append('So geht’s:');
+        const ol = el('ol');
+        ol.append(el('li', '', 'Uhr-Aufzeichnung starten'), el('li', '', '▶ Fahrt starten'),
+          el('li', '', 'Handy in die Halterung – sonst nichts tun. Am Ziel endet die Fahrt von selbst.'));
+        h.append(ol);
+        return;
+      }
+      if (r.ende) { h.textContent = '⌚ Uhr-Aufzeichnung stoppen und speichern'; return; }
+      if (jetzt - (r.uhr || r.start) < UHR_HINWEIS_MS) {
+        h.textContent = (r.auto ? 'Fahrt von selbst gestartet · ' : '') + '⌚ Uhr-Aufzeichnung gestartet?';
+        return;
+      }
+      h.hidden = true;
+    }
+
+    /** Protokoll „Adapter ohne Tippen" (aufklappbar, nur neu gezeichnet, wenn ein Eintrag dazukommt). */
+    let reiseProtokollSchluessel = '';
+    function renderReiseProtokoll(r) {
+      const box = $('reise-protokoll'), log = (zustand.adapterLog || []).filter(x => r && x.zeit >= r.start - 60e3);
+      const schluessel = (r ? r.start : '') + ':' + log.length;
+      if (schluessel === reiseProtokollSchluessel) return;
+      reiseProtokollSchluessel = schluessel;
+      box.hidden = !zustand.einst.obd || !r;
+      if (box.hidden) return;
+      const ok = log.filter(x => x.ok).length;
+      box.querySelector('summary').textContent = 'Adapter ohne Tippen: ' + (log.length ? ok + ' von ' + log.length + ' Versuchen geklappt' : 'noch kein Versuch');
+      const ol = box.querySelector('ol');
+      ol.replaceChildren(...log.slice().reverse().map(x => el('li', '', uhrzeit(x.zeit) + ' · ' + (x.ok ? x.soc + ' %' : 'nicht erreicht: ' + x.text))));
+    }
+
+    /**
+     * Nach der Fahrt: „Fahrt speichern" fürs Fahrtenbuch (Christof 22.10.2026: falls die Uhr-Aufzeichnung fehlt) mit den
+     * gesammelten Messwerten. Die GPX-Auswertung derselben Fahrt ersetzt die Zeilen später (Script v0.24.0).
+     */
+    function renderReiseSpeichern(r, s, stopps) {
+      const box = $('reise-speichern');
+      box.hidden = !r.ende;
+      if (!r.ende) return;
+      const schluessel = r.ende + ':' + (r.gespeichert || '') + ':' + zustand.stuecke.length + ':' + JSON.stringify(r.laden || {});
+      if (box.dataset.schluessel === schluessel) return;
+      box.dataset.schluessel = schluessel;
+      box.replaceChildren();
+      const k = el('button', 'knopf' + (r.gespeichert ? '' : ' haupt'),
+        r.gespeichert ? 'Fahrt gespeichert ' + uhrzeit(r.gespeichert) + ' – nochmal' : 'Fahrt speichern' + (zustand.stuecke.length ? ' (+ ' + zustand.stuecke.length + (zustand.stuecke.length === 1 ? ' Messwert)' : ' Messwerte)') : ''));
+      k.type = 'button';
+      k.addEventListener('click', () => speichereReise(r, s, stopps));
+      box.append(k, el('p', '', 'Nur nötig ohne Uhr-Aufzeichnung – wertest du die GPX-Datei aus, ersetzt sie diese Fahrt im Fahrtenbuch.'));
+    }
+
+    /** Zusammenfassung der Fahrt live im Format von „Fahrt auswerten" (Blatt „Reisen"), dazu die wartenden Messstücke. */
+    function reiseZusammenfassung(r, s, stopps) {
+      const p = r.punkte.filter(x => x[0] <= r.ende), a = p[0], z = p[p.length - 1];
+      const r3 = x => Math.round(x * 1e3) / 1e3, kap = modell.fahrzeug.kapazitaet_kwh;
+      const laden = stopps.filter(x => x.geladen);
+      const ladestopps = laden.map(x => {
+        const e = { name: x.station || 'Ladestopp', min: Math.round(x.min) };
+        if (x.an !== undefined && x.ab !== undefined && x.ab > x.an) Object.assign(e, { an: x.an, ab: x.ab, kwh: Math.round((x.ab - x.an) / 100 * kap * 10) / 10 });
+        return e;
+      });
+      // Verbrauch aus den Akkuwerten zwischen den Ladestopps (wie die Tageskorrektur)
+      const akku = (r.akku || []).slice().sort((x, y) => x[0] - y[0]);
+      let prozent = 0, km = 0;
+      for (let i = 1; i < akku.length; i++) {
+        const x = akku[i - 1], y = akku[i];
+        if (y[1] > x[1] + 1 || ladenUeberlappt(laden, x[0], y[0])) continue;
+        const px = p.filter(q => Math.abs(q[0] - x[0]) <= 5 * 60e3).pop(), py = p.filter(q => Math.abs(q[0] - y[0]) <= 5 * 60e3).pop();
+        if (!px || !py || px[4] > 2 || py[4] > 2) continue;
+        prozent += x[1] - y[1]; km += Math.abs(py[3] - px[3]);
+      }
+      const ladeMin = laden.reduce((x, l) => x + l.min, 0);
+      return {
+        start: new Date(r.start).toISOString(), ende: new Date(r.ende).toISOString(),
+        start_lat: r3(a[1]), start_lon: r3(a[2]), ende_lat: r3(z[1]), ende_lon: r3(z[2]),
+        km: Math.round(s.km * 10) / 10, unterwegs_min: Math.round(s.unterwegsS / 60), fahren_min: Math.round(s.fahrS / 60),
+        laden_min: Math.round(ladeMin), ladestopps, pausen_min: Math.max(0, Math.round(s.pauseS / 60 - ladeMin)),
+        stau_min: null, zaeh_min: null,
+        verbrauch_kwh: km >= 20 && prozent > 0 ? Math.round(prozent / 100 * kap * 10) / 10 : null, verbrauch_km: km >= 20 ? Math.round(km) : null,
+        temp: zustand.wetter ? zustand.wetter.temp : null, datei: 'App (Fahrt live)',
+      };
+    }
+
+    function speichereReise(r, s, stopps) {
+      const reise = reiseZusammenfassung(r, s, stopps);
+      const stuecke = zustand.stuecke.slice(-MESSSTUECKE_MAX);
+      const url = FORMULAR_URL + '?seite=messwerte&stuecke=' + encodeURIComponent(JSON.stringify(stuecke)) + '&reise=' + encodeURIComponent(JSON.stringify(reise));
+      window.open(url, '_blank', 'noopener');
+      zustand.ankunft = { url, zeit: Date.now(), anzahl: stuecke.length };
+      zustand.stuecke = [];
+      r.gespeichert = Date.now();
+      speichere();
+      renderReise();
+      render();
     }
 
     /** hm-Werte an einem Streckenkilometer (für Akku-Rechnung an einem Messpunkt). */
@@ -2074,6 +2400,7 @@
           gps = { lat: p.coords.latitude, lon: p.coords.longitude, genauigkeit: p.coords.accuracy };
           zustand.letzterStandort = { lat: gps.lat, lon: gps.lon, genauigkeit: gps.genauigkeit, zeit: Date.now() };
           merkeReisePunkt(gps);
+          pruefeAutoStart(gps);
           speichere();
           gpsLaeuft = false;
           render();
@@ -2248,7 +2575,7 @@
       // Mehr Akku als beim letzten Wert → unterwegs geladen: alte Messung endet, neue beginnt
       const vorher = f ? (f.stand ? f.stand.soc : f.start_soc) : null;
       const geladen = vorher !== null && w.soc > vorher + 2;
-      if (geladen) toast('Geladen erkannt (' + vorher + ' → ' + w.soc + ' %) – neue Fahrt');
+      if (geladen && !(zustand.reise && !zustand.reise.ende)) toast('Geladen erkannt (' + vorher + ' → ' + w.soc + ' %) – neue Fahrt');
       if (f && !geladen && f.route === route.id && f.richtung === zustand.richtung) {
         f.stand = stand;
       } else {
@@ -2280,9 +2607,15 @@
     async function leseAdapterStill() {
       const r = zustand.reise;
       if (!zustand.einst.obd || !r || r.ende || obdLaeuft || zustand.sim.aktiv) return;
-      if (!navigator.bluetooth || !navigator.bluetooth.getDevices || document.visibilityState !== 'visible') return;
+      if (document.visibilityState !== 'visible') return;
       if (Date.now() - adapterStillZuletzt < ADAPTER_STILL_ABSTAND_MS) return;
       adapterStillZuletzt = Date.now();
+      if (!navigator.bluetooth || !navigator.bluetooth.getDevices) {
+        zustand.adapterStill = { zeit: Date.now(), ok: false, text: 'Chrome erlaubt kein Lesen ohne Tippen (getDevices fehlt)' };
+        adapterProtokoll(zustand.adapterStill);
+        speichere(); renderReise();
+        return;
+      }
       obdLaeuft = true;
       try {
         const w = await leseAdapter(true);
@@ -2291,9 +2624,17 @@
       } catch (e) {
         zustand.adapterStill = { zeit: Date.now(), ok: false, text: String(e && e.message || e).slice(0, 80) };
       }
+      adapterProtokoll(zustand.adapterStill);
       obdLaeuft = false;
       speichere();
       renderReise();
+    }
+
+    /** Jeder Versuch „Adapter ohne Tippen" kommt ins Protokoll (Christof wusste nach der Fahrt nicht, ob es lief). */
+    function adapterProtokoll(eintrag) {
+      const log = zustand.adapterLog = Array.isArray(zustand.adapterLog) ? zustand.adapterLog : [];
+      log.push(eintrag);
+      while (log.length > ADAPTER_PROTOKOLL_MAX) log.shift();
     }
 
     // -----------------------------------------------------------------------
@@ -3046,8 +3387,14 @@
       $('reise-ende').addEventListener('click', () => { if (confirm('Fahrt beenden?')) beendeReise(); });
       $('reise-wach').addEventListener('change', () => { zustand.einst.reiseWach = $('reise-wach').checked; speichere(); wachHalten(); });
       document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && zustandNeuLesen()) render();
         wachHalten(); renderReise();
         if (document.visibilityState === 'visible') { leseAdapterStill(); planeReiseMessung(); }
+      });
+      // Zweite offene Kopie (App + Chrome-Tab) speichert: deren Stand übernehmen, sonst überschriebe diese ihn später
+      window.addEventListener('storage', ev => {
+        if (ev.key !== SPEICHER || ev.newValue === null) return;
+        if (zustandNeuLesen(ev.newValue)) { render(); renderReise(); }
       });
       $('d-karte').addEventListener('click', () => { if (detailEintrag) zeigeKarte(detailEintrag); });
       $('karte-zurueck').addEventListener('click', () => history.back());
@@ -3170,7 +3517,7 @@
     window.ladeplanung = {
       berechneListe, projiziere, haversine, punktBeiKm, mapsUrl, abrpUrl, energieAnteile, energieKwh, streckenwerte, bedarf,
       routenTeile, routenZwischen, zieleVon, simPunkte, preisKurz, preisEintrag, landVon, prognose, tempo, leseAdapter,
-      kumuliere, duenneAus, fuegeAdhocEin, merkeReisePunkt, reiseStatistik, reiseStopps, merkeReiseAkku, renderReise, zeigeReise, leseAdapterStill, adapterStillZuruecksetzen: () => { adapterStillZuletzt = 0; }, merkeMesspunkt, verbrauchsTempo, sendeMesswerte, bekannteAbschnitte, akkuProfil, bedarf, akkuJetzt, adhocRichtung, uebernehmenUrl, zeigeKarte, durchMontBlanc, berechneAdhoc,
+      kumuliere, duenneAus, fuegeAdhocEin, merkeReisePunkt, reiseStatistik, reiseStopps, merkeReiseAkku, renderReise, zeigeReise, tagesKorrektur, modellProzent, pruefeAutoStart, reiseZusammenfassung, zustandNeuLesen, ladenZwischen, zielEintrag, leseAdapterStill, adapterStillZuruecksetzen: () => { adapterStillZuletzt = 0; }, merkeMesspunkt, verbrauchsTempo, sendeMesswerte, bekannteAbschnitte, akkuProfil, bedarf, akkuJetzt, adhocRichtung, uebernehmenUrl, zeigeKarte, durchMontBlanc, berechneAdhoc,
       get adhocRoute() { return adhocRoute; }, set adhocRoute(r) { adhocRoute = r; },
       get fremde() { return fremde; },
       get preise() { return preise; },

@@ -1,6 +1,11 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.24.0 — Nach der ersten Fahrt mit „Fahrt live" (Christof 22.10.2026): je Messwert Gegenwind und Regen (Open-Meteo,
+ *                  Spalten „Gegenwind km/h", „Regen mm/h") – für später, ob Wind die Abweichungen erklärt. Fahrtenbuch: dieselbe
+ *                  Fahrt = Zeiten überschneiden sich (vorher Start ± 10 min; die zu spät gestartete Uhr ergab zwei Zeilen),
+ *                  GPX ersetzt eine Zeile aus der App, nicht umgekehrt; ohne Stau-Angabe bleibt das Feld leer. Start/Ende mit
+ *                  Uhrzeit; „Grund" beim Aussortieren nennt Quelle und Zeit statt Zeilennummern (die sich danach verschieben).
  * Version 0.23.0 — Fahrtenbuch: Blatt „Reisen“ (eine Zeile je ausgewertete Fahrt, Orte per Geocoder, Fahrzeit laut ORS als
  *                  Vergleich, gleiche Fahrt ersetzt). Doppelte Messwerte (Zeit überschneidet sich, Akku ±3 %) wandern vor jeder
  *                  Kalibrierung nach „Fahrten aussortiert“ (GPX vor gemessen vor Rest, sonst die neuere).
@@ -63,7 +68,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.23.0';
+const VERSION = '0.24.0';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -513,8 +518,9 @@ const SPALTEN_FAHRTEN = [
   'km', 'hm auf', 'hm ab', 'Dauer h', 'Ø km/h Bordcomputer', 'km/h verwendet', 'Zusatzgewicht kg',
   'Temp Start', 'Temp Ende', 'Temp Ø', 'Akku Start %', 'Akku Ende %', 'Akku erwartet %',
   'Verbrauch kWh', 'Anteil Fahrt kWh', 'Anteil Höhe kWh', 'Anteil Heizung kWh', 'Modell kWh', 'Abweichung %',
-  'verwenden', 'Notiz', 'Quelle', 'Kalibrierung',
+  'verwenden', 'Notiz', 'Quelle', 'Kalibrierung', 'Gegenwind km/h', 'Regen mm/h',
 ];
+const ZEIT_FORMAT = 'dd.MM.yyyy HH:mm';   // Start/Ende mit Uhrzeit (vorher nur das Datum sichtbar)
 // Gewicht je Quelle in der Kalibrierung: echte Fahrten zählen voll, Schätzungen anderer Apps nur wenig.
 const QUELLEN_VERGLEICH = ['ABRP', 'My CUPRA'];
 const MIN_FAHRTEN_EINZELFAKTOREN = 5;
@@ -809,8 +815,9 @@ function speichereFahrt(daten) {
  * kmh: f.kmh (z. B. Verbrauchstempo aus GPX), sonst Bordcomputer, sonst aus der Fahrzeit.
  */
 function fahrtZeile_(f, quelle) {
-  const tStart = temperaturBei_(f.start_lat, f.start_lon, f.start_zeit);
-  const tEnde = temperaturBei_(f.ende_lat, f.ende_lon, f.ende_zeit);
+  const wStart = wetterBei_(f.start_lat, f.start_lon, f.start_zeit), wEnde = wetterBei_(f.ende_lat, f.ende_lon, f.ende_zeit);
+  const tStart = wStart ? wStart.temp : null;
+  const tEnde = wEnde ? wEnde.temp : null;
   const vorhanden = [tStart, tEnde].filter(function (t) { return t !== null; });
   const tMittel = vorhanden.length ? vorhanden.reduce(function (a, b) { return a + b; }, 0) / vorhanden.length : null;
   const dauer = (new Date(f.ende_zeit).getTime() - new Date(f.start_zeit).getTime()) / 3.6e6;
@@ -830,6 +837,10 @@ function fahrtZeile_(f, quelle) {
   setze('Akku Start %', f.start_soc); setze('Akku Ende %', f.ende_soc);
   setze('Akku erwartet %', f.erwartet === null ? '' : Math.round(f.erwartet));
   setze('verwenden', 'ja'); setze('Notiz', f.notiz); setze('Quelle', quelle);
+  const gw = gegenwind_(f.start_lat, f.start_lon, f.ende_lat, f.ende_lon, [wStart, wEnde]);
+  const regen = [wStart, wEnde].filter(function (w) { return w && isFinite(w.regen); });
+  setze('Gegenwind km/h', gw === null ? '' : Math.round(gw));
+  setze('Regen mm/h', regen.length ? runde_(regen.reduce(function (a, w) { return a + w.regen; }, 0) / regen.length, 1) : '');
   return { zeile: zeile, kmh: kmh, tMittel: tMittel };
 }
 
@@ -860,7 +871,9 @@ function speichereMesswerte(liste, reise) {
         return fahrtZeile_(f, d.quelle === QUELLE_GPX ? QUELLE_GPX : 'gemessen').zeile;
       });
       const blatt = fahrtenBlatt_();
-      blatt.getRange(blatt.getLastRow() + 1, 1, zeilen.length, SPALTEN_FAHRTEN.length).setValues(zeilen);
+      const erste = blatt.getLastRow() + 1;
+      blatt.getRange(erste, 1, zeilen.length, SPALTEN_FAHRTEN.length).setValues(zeilen);
+      ['erfasst', 'Start', 'Ende'].forEach(function (s) { blatt.getRange(erste, SPALTEN_FAHRTEN.indexOf(s) + 1, zeilen.length, 1).setNumberFormat(ZEIT_FORMAT); });
       SpreadsheetApp.flush();
       const km = liste.reduce(function (s, d) { return s + Number(d.km); }, 0);
       teile.push(liste.length + ' Messwert(e) gespeichert (' + Math.round(km) + ' km).');
@@ -894,10 +907,19 @@ function dublettenFinden_(zeilen) {
         (rang(x.quelle) === rang(y.quelle) && (zeit(x.erfasst) || 0) >= (zeit(y.erfasst) || 0));
       const verlierer = besserA ? b : a, gewinner = besserA ? a : b;
       if (weg[gewinner]) continue;
-      weg[verlierer] = 'doppelt mit Zeile ' + (gewinner + 2) + ' (' + (String(zeilen[gewinner].quelle || '').trim() || 'gemessen') + ', genauer)';
+      weg[verlierer] = 'doppelt mit ' + (String(zeilen[gewinner].quelle || '').trim() || 'gemessen') + ' ' + zeitText_(zeilen[gewinner].start) + '–' +
+        zeitText_(zeilen[gewinner].ende).slice(-5) + ' (genauer)';
     }
   }
   return Object.keys(weg).map(function (i) { return { index: Number(i), grund: weg[i] }; }).sort(function (p, q) { return p.index - q.index; });
+}
+
+/** „21.10. 08:54" (Ortszeit des Scripts); rein rechnerisch. */
+function zeitText_(x) {
+  const d = x instanceof Date ? x : new Date(x);
+  if (isNaN(d)) return '?';
+  const zwei = function (n) { return String(n).padStart(2, '0'); };
+  return zwei(d.getDate()) + '.' + zwei(d.getMonth() + 1) + '. ' + zwei(d.getHours()) + ':' + zwei(d.getMinutes());
 }
 
 /** Doppelte Zeilen aus „Fahrten" nach „Fahrten aussortiert" verschieben (mit Datum und Grund). Gibt die Anzahl zurück. */
@@ -920,7 +942,23 @@ function sortiereDoppelteAus_(blatt) {
     archiv.getRange(1, 1, 1, kopf.length).setValues([kopf]).setFontWeight('bold');
     archiv.setFrozenRows(1);
   }
-  weg.forEach(function (w) { archiv.appendRow(werte[w.index].concat([new Date(), w.grund])); });
+  // nach Spaltennamen schreiben: fehlende Köpfe (neue Spalten in „Fahrten") hinten anhängen
+  let kopfArchiv = archiv.getRange(1, 1, 1, archiv.getLastColumn()).getValues()[0].map(String);
+  SPALTEN_FAHRTEN.concat(['aussortiert am', 'Grund']).forEach(function (k) {
+    if (kopfArchiv.indexOf(k) !== -1) return;
+    if (archiv.getMaxColumns() <= kopfArchiv.length) archiv.insertColumnsAfter(archiv.getMaxColumns(), 1);
+    archiv.getRange(1, kopfArchiv.length + 1).setValue(k).setFontWeight('bold');
+    kopfArchiv.push(k);
+  });
+  weg.forEach(function (w) {
+    const z = werte[w.index];
+    archiv.appendRow(kopfArchiv.map(function (k) {
+      if (k === 'aussortiert am') return new Date();
+      if (k === 'Grund') return w.grund;
+      const i = SPALTEN_FAHRTEN.indexOf(k);
+      return i === -1 ? '' : z[i];
+    }));
+  });
   weg.slice().reverse().forEach(function (w) { blatt.deleteRow(w.index + 2); });   // erst kopiert, dann aus „Fahrten" entfernt
   return weg.length;
 }
@@ -954,8 +992,10 @@ function speichereReise_(r) {
   setze('Laden Details', laden.map(function (l) {
     return String(l.name || 'Ladestopp').slice(0, 40) + ' ' + Math.round(l.min) + ' min' + (Number(l.kwh) > 0 ? ' ' + l.an + '→' + l.ab + ' % ' + runde_(l.kwh, 1) + ' kWh' : '');
   }).join('; '));
-  setze('Pausen min', Math.round(zahl(r.pausen_min) || 0)); setze('Stau min', Math.round(zahl(r.stau_min) || 0));
-  setze('zähfließend min', Math.round(zahl(r.zaeh_min) || 0));
+  setze('Pausen min', Math.round(zahl(r.pausen_min) || 0));
+  // „Fahrt live" in der App kennt keinen Stau → leer statt 0
+  setze('Stau min', r.stau_min === null || r.stau_min === undefined || zahl(r.stau_min) === '' ? '' : Math.round(zahl(r.stau_min)));
+  setze('zähfließend min', r.zaeh_min === null || r.zaeh_min === undefined || zahl(r.zaeh_min) === '' ? '' : Math.round(zahl(r.zaeh_min)));
   setze('Verbrauch kWh', zahl(r.verbrauch_kwh) ? runde_(r.verbrauch_kwh, 1) : '');
   setze('Ø kWh/100 km', zahl(r.verbrauch_kwh) && zahl(r.verbrauch_km) ? runde_(r.verbrauch_kwh / r.verbrauch_km * 100, 1) : '');
   setze('Temp Ø', zahl(r.temp) === '' ? '' : runde_(r.temp, 1));
@@ -970,15 +1010,37 @@ function speichereReise_(r) {
     blatt.getRange(1, 1, 1, SPALTEN_REISEN.length).setValues([SPALTEN_REISEN]).setFontWeight('bold');
     blatt.setFrozenRows(1);
   }
-  let ziel = blatt.getLastRow() + 1;
-  if (blatt.getLastRow() >= 2) {
-    const starts = blatt.getRange(2, SPALTEN_REISEN.indexOf('Start') + 1, blatt.getLastRow() - 1, 1).getValues();
-    starts.forEach(function (z, i) { if (z[0] instanceof Date && Math.abs(z[0].getTime() - start.getTime()) <= 10 * 60e3) ziel = i + 2; });
-  }
-  const ersetzt = ziel <= blatt.getLastRow();
+  const vorhanden = blatt.getLastRow() >= 2
+    ? blatt.getRange(2, 1, blatt.getLastRow() - 1, SPALTEN_REISEN.length).getValues().map(function (z) {
+      return { start: z[SPALTEN_REISEN.indexOf('Start')], ende: z[SPALTEN_REISEN.indexOf('Ende')], datei: z[SPALTEN_REISEN.indexOf('Datei')] };
+    }) : [];
+  const wahl = reiseZiel_(vorhanden, { start: start, ende: ende, datei: r.datei });
+  if (wahl.behalten) return 'Fahrtenbuch: diese Fahrt steht schon aus der GPX-Auswertung drin (Zeile bleibt).';
+  const ziel = wahl.index >= 0 ? wahl.index + 2 : blatt.getLastRow() + 1;
+  const ersetzt = wahl.index >= 0;
   blatt.getRange(ziel, 1, 1, SPALTEN_REISEN.length).setValues([zeile]);
+  ['erfasst', 'Start', 'Ende'].forEach(function (s) { blatt.getRange(2, SPALTEN_REISEN.indexOf(s) + 1, Math.max(1, blatt.getLastRow() - 1), 1).setNumberFormat(ZEIT_FORMAT); });
   return 'Fahrtenbuch' + (ersetzt ? ' (ersetzt)' : '') + ': ' + (zeile[3] || '?') + ' → ' + (zeile[4] || '?') + ', ' + Math.round(r.km) + ' km' +
     (routendienst && fahrenH ? ', gefahren ' + String(runde_(fahrenH, 1)).replace('.', ',') + ' h statt ' + String(runde_(routendienst, 1)).replace('.', ',') + ' h laut Routendienst' : '');
+}
+
+/**
+ * Dieselbe Fahrt im Fahrtenbuch (rein rechnerisch): Zeiten überschneiden sich. GPX (Datei *.gpx) ersetzt eine Zeile aus der
+ * App, eine Zeile aus der App ersetzt keine GPX-Zeile (behalten). → { index (−1 = neue Zeile), behalten }.
+ */
+function reiseZiel_(vorhanden, neu) {
+  const zeit = function (x) { const d = x instanceof Date ? x : new Date(x); return isNaN(d) ? null : d.getTime(); };
+  const gpx = function (datei) { return /\.gpx$/i.test(String(datei || '').trim()); };
+  const s = zeit(neu.start), e = zeit(neu.ende);
+  for (let i = 0; i < vorhanden.length; i++) {
+    const a = zeit(vorhanden[i].start), b = zeit(vorhanden[i].ende);
+    if (a === null || s === null) continue;
+    const ueberlappt = b !== null && e !== null ? Math.max(a, s) < Math.min(b, e) : Math.abs(a - s) <= 10 * 60e3;
+    if (!ueberlappt) continue;
+    if (gpx(vorhanden[i].datei) && !gpx(neu.datei)) return { index: i, behalten: true };
+    return { index: i, behalten: false };
+  }
+  return { index: -1, behalten: false };
 }
 
 function pruefeFahrt_(d) {
@@ -1028,6 +1090,9 @@ function fahrtenBlatt_() {
   const koepfe = blatt.getRange(1, 1, 1, SPALTEN_FAHRTEN.length).getValues()[0];
   koepfe.forEach(function (k, i) {
     if (k === '') blatt.getRange(1, i + 1).setValue(SPALTEN_FAHRTEN[i]).setFontWeight('bold');
+  });
+  if (blatt.getMaxRows() > 1) ['Start', 'Ende'].forEach(function (s) {
+    blatt.getRange(2, SPALTEN_FAHRTEN.indexOf(s) + 1, blatt.getMaxRows() - 1, 1).setNumberFormat(ZEIT_FORMAT);
   });
   return blatt;
 }
@@ -1213,26 +1278,57 @@ function speichereVergleich(daten) {
 
 /** Stündliche Temperatur von Open-Meteo (kostenlos, ohne Schlüssel) zur nächstgelegenen Stunde; null, wenn nicht verfügbar. */
 function temperaturBei_(lat, lon, iso) {
+  const w = wetterBei_(lat, lon, iso);
+  return w ? w.temp : null;
+}
+
+/**
+ * Wetter zur nächstgelegenen Stunde bei Open-Meteo: { temp °C, wind km/h (10 m), richtung ° (woher), regen mm/h } oder null.
+ * Vorhersage-Dienst reicht 5 Tage zurück; ältere Fahrten (GPX-Auswertung) aus dem Archiv. Kurz zwischengespeichert,
+ * weil Start und Ende eines Stücks oft dieselbe Abfrage brauchen.
+ */
+function wetterBei_(lat, lon, iso) {
   try {
-    // Vorhersage-Dienst reicht 5 Tage zurück; ältere Fahrten (GPX-Auswertung) aus dem Archiv
     const tag = new Date(iso).toISOString().slice(0, 10);
     const alt = Date.now() - new Date(iso).getTime() > 4 * 864e5;
+    const felder = 'temperature_2m,wind_speed_10m,wind_direction_10m,precipitation';
     const url = alt
-      ? 'https://archive-api.open-meteo.com/v1/archive?latitude=' + lat + '&longitude=' + lon + '&start_date=' + tag + '&end_date=' + tag + '&hourly=temperature_2m&timezone=UTC'
-      : 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon + '&hourly=temperature_2m&past_days=5&forecast_days=1&timezone=UTC';
-    const antwort = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-    if (antwort.getResponseCode() !== 200) return null;
-    const j = JSON.parse(antwort.getContentText());
-    const ziel = new Date(iso).getTime();
-    let beste = null, abstand = Infinity;
-    j.hourly.time.forEach(function (t, i) {
+      ? 'https://archive-api.open-meteo.com/v1/archive?latitude=' + lat + '&longitude=' + lon + '&start_date=' + tag + '&end_date=' + tag + '&hourly=' + felder + '&timezone=UTC'
+      : 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon + '&hourly=' + felder + '&past_days=5&forecast_days=1&timezone=UTC';
+    wetterBei_.cache = wetterBei_.cache || {};
+    let j = wetterBei_.cache[url];
+    if (!j) {
+      const antwort = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+      if (antwort.getResponseCode() !== 200) return null;
+      j = wetterBei_.cache[url] = JSON.parse(antwort.getContentText());
+    }
+    const ziel = new Date(iso).getTime(), h = j.hourly;
+    let beste = -1, abstand = Infinity;
+    h.time.forEach(function (t, i) {
       const d = Math.abs(new Date(t + ':00Z').getTime() - ziel);
-      if (d < abstand && j.hourly.temperature_2m[i] !== null) { abstand = d; beste = j.hourly.temperature_2m[i]; }
+      if (d < abstand && h.temperature_2m[i] !== null) { abstand = d; beste = i; }
     });
-    return abstand <= 2 * 3600e3 ? beste : null;
+    if (beste < 0 || abstand > 2 * 3600e3) return null;
+    const zahl = function (x) { return x === null || x === undefined ? null : Number(x); };
+    return { temp: zahl(h.temperature_2m[beste]), wind: zahl(h.wind_speed_10m && h.wind_speed_10m[beste]),
+      richtung: zahl(h.wind_direction_10m && h.wind_direction_10m[beste]), regen: zahl(h.precipitation && h.precipitation[beste]) };
   } catch (e) {
     return null;
   }
+}
+
+/**
+ * Gegenwind in km/h (positiv = von vorn, negativ = Rückenwind) für die Fahrt von A nach B, gemittelt über die Wetterwerte
+ * an Start und Ende. Fahrtrichtung = Kurs von A nach B (grob, reicht für die Frage „hatte ich Gegenwind?"). Rein rechnerisch.
+ */
+function gegenwind_(lat1, lon1, lat2, lon2, wetter) {
+  const rad = Math.PI / 180;
+  const y = Math.sin((lon2 - lon1) * rad) * Math.cos(lat2 * rad);
+  const x = Math.cos(lat1 * rad) * Math.sin(lat2 * rad) - Math.sin(lat1 * rad) * Math.cos(lat2 * rad) * Math.cos((lon2 - lon1) * rad);
+  const kurs = Math.atan2(y, x) / rad;   // wohin ich fahre, 0 = Nord
+  const werte = (wetter || []).filter(function (w) { return w && isFinite(w.wind) && isFinite(w.richtung); })
+    .map(function (w) { return w.wind * Math.cos((w.richtung - kurs) * rad); });   // Wind von vorn: woher = wohin
+  return werte.length ? werte.reduce(function (a, b) { return a + b; }, 0) / werte.length : null;
 }
 
 /** Liest das Blatt „Fahrten", kalibriert (kalibriereZeilen_), trägt Ergebnisse und Status ein und veröffentlicht modell.json. */

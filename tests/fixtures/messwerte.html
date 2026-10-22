@@ -3,6 +3,7 @@
   Ladeplanung — Messwerte speichern. Wird von doGet() mit ?seite=messwerte&stuecke=<JSON-Liste> ausgeliefert:
   Messstücke aus der App (zwischen zwei Akkuwerten, ab 50 km) oder aus „Fahrt auswerten" (GPX, zwischen Ladestopps).
   Alle angehakten Stücke werden ins Blatt „Fahrten" geschrieben, danach wird einmal kalibriert.
+  Version 0.3.0 (22.10.2026) — Fahrtenbuch auch aus „Fahrt live" der App (ohne Stau-Angabe); GPX-Auswertung derselben Fahrt ersetzt sie.
   Version 0.2.0 (18.10.2026) — Fahrtenbuch: Zusammenfassung der Fahrt (reise) anzeigen und mitspeichern.
   Version 0.1.1 (18.10.2026) — ohne „Verbrauchstempo" in der Anzeige.
   Version 0.1.0 (17.10.2026)
@@ -134,9 +135,9 @@
       const std = min => Math.floor(min / 60) + ' h ' + String(Math.round(min % 60)).padStart(2, '0');
       k.append(el('b', '', 'Fahrtenbuch · ' + zeit(reise.start) + ' · ' + zahl(reise.km) + ' km'));
       k.append(el('div', 'zeile', 'unterwegs ' + std(reise.unterwegs_min) + ' · fahren ' + std(reise.fahren_min) + ' · laden ' + std(reise.laden_min || 0) +
-        ' · Stau ≈ ' + Math.round(reise.stau_min || 0) + ' min'));
+        (reise.stau_min === null || reise.stau_min === undefined ? '' : ' · Zeitverlust Stau ≈ ' + Math.round(reise.stau_min) + ' min')));
       if (reise.verbrauch_kwh) k.append(el('div', 'zeile', zahl(reise.verbrauch_kwh) + ' kWh · ' + zahl(reise.verbrauch_kwh / reise.verbrauch_km * 100, 1) + ' kWh/100 km'));
-      k.append(el('div', 'zeile', 'Wird ins Blatt „Reisen" geschrieben (ohne Spur); dieselbe Fahrt nochmal ersetzt die Zeile.'));
+      k.append(el('div', 'zeile', 'Wird ins Blatt „Reisen" geschrieben (ohne Spur); dieselbe Fahrt nochmal ersetzt die Zeile' + (reise.datei && !/\.gpx$/i.test(reise.datei) ? ' – die GPX-Auswertung ersetzt sie später.' : '.')));
       $('reise').append(k);
       if (!stuecke.length) $('einleitung').textContent = 'Nur das Fahrtenbuch – für Messwerte fehlen die Akkustände.';
     }

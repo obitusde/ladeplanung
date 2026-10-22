@@ -6,7 +6,7 @@ const path = require('path');
 
 const wurzel = path.join(__dirname, '..');
 const quelle = fs.readFileSync(path.join(wurzel, 'apps-script', 'Code.js'), 'utf8');
-const gs = new Function(quelle + '; return { energieAnteile_, energieKwh_, kalibriere_, kalibriereZeilen_, loese3_, pruefeFahrt_, normalisiereFahrt_, tempoFaktor_, verbrauchFaktor_, dublettenFinden_, MODELL_STANDARD };')();
+const gs = new Function(quelle + '; return { energieAnteile_, energieKwh_, kalibriere_, kalibriereZeilen_, loese3_, pruefeFahrt_, normalisiereFahrt_, tempoFaktor_, verbrauchFaktor_, dublettenFinden_, reiseZiel_, gegenwind_, MODELL_STANDARD };')();
 const M = gs.MODELL_STANDARD;
 
 let fehler = 0;
@@ -158,6 +158,20 @@ const dub = gs.dublettenFinden_([
 pruefe(JSON.stringify(dub.map(x => x.index)) === '[2,3]', 'Doppelte: „gemessen" unter GPX und ältere GPX-Zeile raus: ' + JSON.stringify(dub));
 pruefe(gs.dublettenFinden_([{ start: d('2026-10-16T10:00'), ende: d('2026-10-16T12:00'), quelle: 'gemessen', startSoc: 90, endeSoc: 60 },
   { start: d('2026-10-16T11:00'), ende: d('2026-10-16T13:00'), quelle: 'GPX', startSoc: 70, endeSoc: 40 }]).length === 0, 'überlappend, aber anderer Akku → nicht doppelt');
+
+pruefe(/^doppelt mit GPX 16\.10\. \d\d:\d\d–\d\d:\d\d \(genauer\)$/.test(dub[0].grund), 'Grund ohne Zeilennummer: ' + dub[0].grund);
+
+// Fahrtenbuch (Script v0.24.0): dieselbe Fahrt = Zeiten überschneiden sich; GPX ersetzt App, App ersetzt GPX nicht
+const reisen = [{ start: d('2026-10-16T10:52'), ende: d('2026-10-16T21:56'), datei: 'activity_1.gpx' },
+  { start: d('2026-10-21T08:40'), ende: d('2026-10-21T19:57'), datei: 'App (Fahrt live)' }];
+pruefe(JSON.stringify(gs.reiseZiel_(reisen, { start: d('2026-10-21T08:54'), ende: d('2026-10-21T19:57'), datei: 'activity_2.gpx' })) === '{"index":1,"behalten":false}', 'GPX ersetzt App-Zeile (Uhr später gestartet)');
+pruefe(gs.reiseZiel_(reisen, { start: d('2026-10-16T10:40'), ende: d('2026-10-16T22:00'), datei: 'App (Fahrt live)' }).behalten === true, 'App ersetzt GPX nicht');
+pruefe(gs.reiseZiel_(reisen, { start: d('2026-10-25T08:00'), ende: d('2026-10-25T18:00'), datei: 'x.gpx' }).index === -1, 'neue Fahrt → neue Zeile');
+
+// Gegenwind: nach Süden fahren, Wind aus Süden (180°) = von vorn; aus Norden = Rückenwind
+pruefe(Math.abs(gs.gegenwind_(50, 8, 47, 7.5, [{ wind: 15, richtung: 180 }]) - 15) < 1, 'Südwind von vorn bei Fahrt nach Süden');
+pruefe(gs.gegenwind_(50, 8, 47, 7.5, [{ wind: 15, richtung: 0 }]) < -14, 'Nordwind = Rückenwind');
+pruefe(gs.gegenwind_(50, 8, 47, 7.5, [null]) === null, 'ohne Wetter null');
 
 console.log(fehler === 0 ? 'Alle Prüfungen bestanden.' : fehler + ' Prüfungen fehlgeschlagen.');
 process.exit(fehler === 0 ? 0 : 1);

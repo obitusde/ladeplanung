@@ -1,6 +1,10 @@
 <!DOCTYPE html>
 <!--
-  Ladeplanung — Fahrt auswerten (GPX). Version 0.8.0 (18.10.2026): Fahrtenbuch – Zusammenfassung der Fahrt wird mit den Messwerten
+  Ladeplanung — Fahrt auswerten (GPX). Version 0.9.0 (22.10.2026): Stau als Zeitverlust insgesamt (Christof: „wichtiger die
+  totale Zeit verloren abzuschätzen als zu sagen, wo genau wie lange Stau war") – jeder Autobahn-km langsamer als normal zählt,
+  ohne Nachweis einzelner Staus (der Stau Härkingen–Oensingen am 21.10. fiel vorher durch, weil eine 3-km-Lücke ihn in zwei
+  „nicht eingebettete" Teile zerlegte: 25 statt ≈ 61 min). Grobe Liste „ungefähr wo" ab 2 min.
+  Version 0.8.0 (18.10.2026): Fahrtenbuch – Zusammenfassung der Fahrt wird mit den Messwerten
   gespeichert (Blatt „Reisen", ohne Spur); Speichern auch ohne Akkustände (dann nur Fahrtenbuch).
   Version 0.7.0 (18.10.2026): Erklärungen und Stau-Liste aufklappbar; eigene Station hat Vorrang
   vor dem Register-Eintrag derselben Station (Herbolzheim, Hüttenberg standen als „nicht in deiner Liste").
@@ -167,20 +171,20 @@
     </section>
 
     <section>
-      <h2>Stau</h2>
+      <h2>Zeitverlust durch Stau</h2>
       <details class="hilfe"><summary>Wie wird gerechnet?</summary><p id="stau-erkl"></p></details>
       <div id="stau"></div>
     </section>
 
     <section>
       <h2>Tempo beim Fahren, je 5 km</h2>
-      <details class="hilfe"><summary>Erklärung</summary><p>Durchschnitt ohne Stopps. Rot hinterlegt: Stau, hellrot: zähfließend, orange: Laden.</p></details>
+      <details class="hilfe"><summary>Erklärung</summary><p>Durchschnitt ohne Stopps. Rot hinterlegt: Stau und Stockungen, orange: Laden.</p></details>
       <svg id="tempo" viewBox="0 0 900 260" role="img" aria-label="Tempo über die Strecke"></svg>
     </section>
 
     <section>
       <div class="zeile-kopf"><h2>Strecke</h2><button type="button" class="klein-knopf" id="vollbild">⛶ Vollbild</button></div>
-      <details class="hilfe"><summary>Erklärung</summary><p>Orange = Laden, grün = Halt, rot = Stau, rot gestrichelt = zähfließend. Die Kartenbilder kommen von OpenStreetMap – dabei sieht der Kartendienst, welchen Ausschnitt du anschaust, nicht die Datei.</p></details>
+      <details class="hilfe"><summary>Erklärung</summary><p>Orange = Laden, grün = Halt, rot = Stau und Stockungen. Die Kartenbilder kommen von OpenStreetMap – dabei sieht der Kartendienst, welchen Ausschnitt du anschaust, nicht die Datei.</p></details>
       <div id="karte-rahmen"><div id="karte"></div><button type="button" class="klein-knopf" id="vollbild-zu">✕ Schließen</button></div>
       <svg id="spur" viewBox="0 0 440 250" role="img" aria-label="Streckenverlauf" hidden></svg>
     </section>
@@ -208,11 +212,15 @@ const ERDRADIUS_KM = 6371.0088;
 const STOPP_RADIUS_KM = 0.25, STOPP_MIN_S = 180, LADEN_MIN_S = 600, STATION_MAX_KM = 0.4;
 const TEMPO_STUECK_KM = 5, ABSCHNITT_MIN_KM = 10, MESSWERTE_MAX = 20;
 const FAHRT_KMH = 20;                       // schneller = im Auto (Anfang/Ende der Fahrt)
-// Stau: je km das Tempo mit dem „freien" Tempo der Umgebung vergleichen (85. Perzentil im Umkreis von ±15 km);
-// langsamer als 60 % davon, wo frei mindestens 70 km/h gefahren wird = Stau (Ortsdurchfahrten zählen so nicht).
-const STAU_UMKREIS_KM = 15, STAU_ANTEIL = 0.5, STAU_FREI_MIN = 70, STAU_LUECKE_KM = 3, STAU_MIN_VERLUST_MIN = 2;
-const STAU_RAND_KM = 10, STAU_RAND_ANTEIL = 0.8;   // irgendwo im Umkreis davor und danach so zügig, sonst kein Stau
-const ZAEH_BIS_KMH = 72, ZAEH_FREI_MIN = 90, ZAEH_REFERENZ_KMH = 80;   // zähfließend: unter 72 km/h, Verlust gegen 80 (Baustellen)
+// Stau als Zeitverlust (v0.9.0): je km das Tempo gegen das „freie" Tempo der Umgebung (85. Perzentil, das größere aus ±15 und
+// ±40 km, damit ein langer Stau es nicht selbst drückt). Gezählt nur auf Autobahn-km (frei ≥ 90) mit normalem Fließen in den
+// 25 km davor und danach (≥ 80 % frei) – das lässt Anfang/Ende der Fahrt, Orte und Bergstraßen draußen.
+const STAU_UMKREIS_KM = 15, STAU_UMKREIS_WEIT_KM = 40, STAU_FREI_MAX = 130, STAU_AUTOBAHN_KMH = 90;
+const STAU_ANTEIL = 0.5;                 // unter halbem freiem Tempo = Stop-and-go: Verlust gegen das freie Tempo
+const STAU_REFERENZ_KMH = 80;            // sonst (stockend) Verlust gegen 80 km/h – Baustellen mit 80 zählen nicht
+const STAU_FLIESST_KM = 25, STAU_FLIESST_ANTEIL = 0.8;
+const STAU_PAUSE_RAND_KM = 5, STAU_HALT_RAND_KM = 1.5;   // um Laden/Pausen (Zufahrt, Ort) und kurze Halte nicht zählen
+const STAU_STELLE_LUECKE_KM = 5, STAU_STELLE_MIN = 2;    // Liste „ungefähr wo": Stücke bis 5 km Abstand zusammen, ab 2 min
 
 function haversine(lat1, lon1, lat2, lon2) {
   const rad = Math.PI / 180;
@@ -473,9 +481,11 @@ function werteAus(p) {
 }
 
 /**
- * Stau-Analyse (Christof 18.10.2026: „wie viel länger als ohne Stau?"). Je km: Tempo inkl. kurzer Halte gegen das freie
- * Tempo der Umgebung (85. Perzentil der km im Umkreis von ±15 km, höchstens 130). Unter 50 % davon, wo frei ≥ 70 km/h
- * gefahren wird = Stau; Verlust = gebrauchte Zeit − Zeit mit freiem Tempo. Laden und lange Pausen (≥ 10 min) zählen nicht.
+ * Zeitverlust durch Stau und Stockungen (Christof 22.10.2026: „ungefähr abschätzen, wie viel Zeit ich verloren habe … ungefähr
+ * wo und wie lange reicht"). Je km: gebrauchte Zeit (kurze Halte inklusive) gegen die Zeit mit Referenztempo – unter halbem
+ * freiem Tempo das freie Tempo, sonst 80 km/h. Nicht gezählt: Laden, Pausen ab 10 min und je 5 km davor/danach, kurze Halte
+ * mit zügiger Ankunft (Raststätte) ±1,5 km, Nicht-Autobahn, Stücke ohne normales Fließen in den 25 km davor und danach.
+ * Liefert die Summe und die Stellen (Stücke bis 5 km Abstand zusammen); in der Liste nur Stellen ab 2 min.
  */
 function stauAnalyse() {
   const p = F.p, stuecke = [];
@@ -489,48 +499,43 @@ function stauAnalyse() {
     i = j;
   }
   const gute = stuecke.filter(s => !s.aus && s.km > 0.5);
+  const perzentil = (km, r) => {
+    const n = gute.filter(g => Math.abs(g.km0 - km) <= r).map(g => g.v).sort((a, b) => a - b);
+    return n.length >= 5 ? n[Math.floor(n.length * 0.85)] : 0;
+  };
+  for (const s of stuecke) s.frei = Math.min(STAU_FREI_MAX, Math.max(perzentil(s.km0, STAU_UMKREIS_KM), perzentil(s.km0, STAU_UMKREIS_WEIT_KM)));
+  // Halte: Laden/Pausen/Start/Ziel mit Rand; kurzer Halt im Stop-and-go (langsam angekommen) zählt mit
+  const bei = km => stuecke.find(s => km >= s.km0 && km < s.km0 + s.km);
+  const gesperrt = [];
+  for (const s of F.stopps) {
+    const pause = s.geladen || s.art !== 'halt' || s.min >= LADEN_MIN_S / 60;
+    const vorher = bei(p[s.von].km - 1);
+    s.stau = !pause && !!vorher && vorher.v < STAU_ANTEIL * vorher.frei;
+    if (!s.stau) {
+      const rand = pause ? STAU_PAUSE_RAND_KM : STAU_HALT_RAND_KM;
+      gesperrt.push([p[s.von].km - rand, p[s.bis].km + rand]);
+    }
+  }
+  const fliesst = (von, bis) => stuecke.some(s => !s.aus && s.km0 >= von && s.km0 + s.km <= bis && s.v >= STAU_FLIESST_ANTEIL * s.frei);
+  let summe = 0, stauSumme = 0;
+  const stellen = [];
   for (const s of stuecke) {
-    const nachbarn = gute.filter(g => Math.abs(g.km0 - s.km0) <= STAU_UMKREIS_KM).map(g => g.v).sort((a, b) => a - b);
-    s.frei = nachbarn.length >= 5 ? Math.min(130, nachbarn[Math.floor(nachbarn.length * 0.85)]) : 0;
-    s.stau = !s.aus && s.frei >= STAU_FREI_MIN && s.v < STAU_ANTEIL * s.frei;
-    s.verlust = s.stau ? Math.max(0, s.t - s.km / s.frei * 3600) : 0;
+    if (s.aus || s.frei < STAU_AUTOBAHN_KMH) continue;
+    if (gesperrt.some(([a, b]) => s.km0 + s.km > a && s.km0 < b)) continue;
+    if (!fliesst(s.km0 - STAU_FLIESST_KM, s.km0) || !fliesst(s.km0 + s.km, s.km0 + s.km + STAU_FLIESST_KM)) continue;
+    const stop = s.v < STAU_ANTEIL * s.frei, ref = stop ? s.frei : Math.min(s.frei, STAU_REFERENZ_KMH);
+    if (s.v >= ref) continue;
+    const verlust = s.t - s.km / ref * 3600;
+    summe += verlust; if (stop) stauSumme += verlust;
+    const l = stellen[stellen.length - 1];
+    if (l && s.km0 - l.km1 <= STAU_STELLE_LUECKE_KM) Object.assign(l, { j: s.j, km1: s.km0 + s.km, verlust: l.verlust + verlust, freiSumme: l.freiSumme + s.frei * s.km, kmSumme: l.kmSumme + s.km });
+    else stellen.push({ i: s.i, j: s.j, km0: s.km0, km1: s.km0 + s.km, verlust, freiSumme: s.frei * s.km, kmSumme: s.km });
   }
-  const ereignisse = [];
-  for (const s of stuecke) {
-    if (!s.stau) continue;
-    const l = ereignisse[ereignisse.length - 1];
-    if (l && s.km0 - l.km1 <= STAU_LUECKE_KM) Object.assign(l, { j: s.j, km1: s.km0 + s.km, verlust: l.verlust + s.verlust, t: l.t + s.t, km: l.km + s.km, freiSumme: l.freiSumme + s.frei * s.km });
-    else ereignisse.push({ i: s.i, j: s.j, km0: s.km0, km1: s.km0 + s.km, verlust: s.verlust, t: s.t, km: s.km, freiSumme: s.frei * s.km });
-  }
-  // Nur „eingebettete" Staus: davor und danach je 3 km zügig (≥ 75 % des freien Tempos) – sonst ist es Ausfahrt,
-  // Ortsdurchfahrt, Bergstraße am Anfang oder die Zufahrt zur Ladestation (erste Fassung zählte die mit: 26 „Staus").
-  // (18.10.2026: „je 3 km davor/danach zügig" verwarf einen echten 15-min-Stau mit zähem Anlauf → jetzt: irgendwo
-  // innerhalb von 10 km davor und danach mindestens 80 % des freien Tempos gefahren.)
-  const zuegig = (von, bis, frei) => stuecke.some(s => !s.aus && s.km0 >= von && s.km0 + s.km <= bis && s.v >= STAU_RAND_ANTEIL * frei);
-  const liste = ereignisse
-    .map(e => ({ ...e, t0: p[e.i].t, t1: p[e.j].t, v: e.km / (e.t / 3600), vFrei: e.freiSumme / e.km, verlust: e.verlust / 60 }))
-    .filter(e => e.verlust >= STAU_MIN_VERLUST_MIN && zuegig(e.km0 - STAU_RAND_KM, e.km0, e.vFrei) && zuegig(e.km1, e.km1 + STAU_RAND_KM, e.vFrei))
-    // Abstecher zu Pause oder Ladestopp (Villeneuve Bahnhof) ist kein Stau
-    .filter(e => !pausen.some(s => s.km >= e.km0 - 1 && s.km <= e.km1 + 1));
-  for (const s of F.stopps) s.stau = s.art === 'halt' && !s.geladen && s.min < LADEN_MIN_S / 60 && liste.some(e => s.t0 >= e.t0 - 60 && s.t1 <= e.t1 + 60);
-
-  // Zähfließend (Schätzung, Christof 18.10.2026): langsamer als Stau-Grenze nicht, aber unter 72 km/h, wo frei ≥ 90 km/h
-  // gefahren wird. Verlust gegen 80 km/h gerechnet (viele Baustellen mit 80 → die zählen so nicht). Nicht neben Pausen,
-  // nicht in Staus; Stücke unter der Stau-Grenze, die kein Stau sind (Bergstraße, Ausfahrt), bleiben ganz draußen.
-  const inStau = s => liste.some(e => s.km0 >= e.km0 - 0.5 && s.km0 < e.km1 + 0.5);
-  // wie beim Stau nur zwischen zügigen Strecken (Christof 18.10.2026: „vor und in Werdohl … da kann man nicht schneller fahren")
-  const zaeh = stuecke.filter(s => !s.aus && s.frei >= ZAEH_FREI_MIN && s.v >= STAU_ANTEIL * s.frei && s.v < ZAEH_BIS_KMH &&
-    !inStau(s) && !pausen.some(x => Math.abs(x.km - s.km0) <= 1.5) &&
-    zuegig(s.km0 - STAU_RAND_KM, s.km0, s.frei) && zuegig(s.km0 + s.km, s.km0 + s.km + STAU_RAND_KM, s.frei));
-  for (const s of zaeh) s.zaehVerlust = Math.max(0, s.t - s.km / Math.min(s.frei, ZAEH_REFERENZ_KMH) * 3600);
-  const zaehAbschnitte = [];
-  for (const s of zaeh) {
-    const l = zaehAbschnitte[zaehAbschnitte.length - 1];
-    if (l && s.km0 - l.km1 <= STAU_LUECKE_KM) Object.assign(l, { j: s.j, km1: s.km0 + s.km });
-    else zaehAbschnitte.push({ i: s.i, j: s.j, km0: s.km0, km1: s.km0 + s.km });
-  }
-  return { liste, verlust: liste.reduce((s, e) => s + e.verlust, 0),
-    zaeh: zaehAbschnitte, zaehVerlust: zaeh.reduce((a, s) => a + s.zaehVerlust, 0) / 60, zaehKm: zaeh.reduce((a, s) => a + s.km, 0) };
+  const alle = stellen.map(e => ({ ...e, t0: p[e.i].t, t1: p[e.j].t, verlust: e.verlust / 60, vFrei: e.freiSumme / e.kmSumme,
+    v: (p[e.j].km - p[e.i].km) / Math.max(1 / 3600, (p[e.j].t - p[e.i].t) / 3600) }));
+  const liste = alle.filter(e => e.verlust >= STAU_STELLE_MIN);
+  for (const s of F.stopps) if (s.stau && !alle.some(e => s.t0 >= e.t0 - 60 && s.t1 <= e.t1 + 60)) s.stau = false;
+  return { liste, verlust: summe / 60, stopMin: stauSumme / 60, kleinMin: alle.filter(e => e.verlust < STAU_STELLE_MIN).reduce((a, e) => a + e.verlust, 0) };
 }
 
 /** Akkufelder eines Stopps (id je Stopp fest: „s" + Nummer). */
@@ -645,7 +650,7 @@ function zeigeKacheln() {
     ['Unterwegs', hm(F.dauerMin), uhr(F.t0) + ' – ' + uhr(F.t1)],
     ['Strecke', zahl(F.km) + ' km', 'laut Aufzeichnung'],
     ['Fahren', hm(F.fahrMin), 'Ø ' + Math.round(F.km / (F.fahrMin / 60)) + ' km/h inkl. Stau'],
-    ['Stau (Schätzung)', '+' + hm(stau.verlust + (stau.zaehVerlust || 0)), stau.liste.length + ' Stau(s) ' + Math.round(stau.verlust) + ' min, zäh ' + Math.round(stau.zaehVerlust || 0) + ' min'],
+    ['Zeitverlust Stau', '≈ ' + hm(stau.verlust), 'Schätzung, davon Stop-and-go ' + Math.round(stau.stopMin || 0) + ' min'],
     ['Laden', hm(laden.reduce((s, x) => s + x.min, 0)), laden.length + ' Stopp(s)'],
     ['Halte', hm(halte.reduce((s, x) => s + x.min, 0)), halte.length + ' Stopp(s)'],
   ]) {
@@ -697,9 +702,6 @@ function zeigeTempo() {
   const platz = Math.max(1, Math.floor((R - L) / 60));
   const schritt = [10, 20, 50, 100, 200, 250, 500].find(s => maxKm / s <= platz) || 500;
   for (let k = 0; k <= maxKm; k += schritt) sv('text', { x: Math.min(R - 20, x(k)), y: U + 18, 'text-anchor': k === 0 ? 'start' : 'middle' }, svg).textContent = k + ' km';
-  for (const e of (F.stau && F.stau.zaeh) || []) {
-    sv('rect', { x: x(e.km0), y: O, width: Math.max(2, x(e.km1) - x(e.km0)), height: U - O, fill: 'var(--stau)', opacity: .12 }, svg);
-  }
   for (const e of (F.stau && F.stau.liste) || []) {
     sv('rect', { x: x(e.km0), y: O, width: Math.max(3, x(e.km1) - x(e.km0)), height: U - O, fill: 'var(--stau)', opacity: .35 }, svg);
   }
@@ -792,12 +794,9 @@ async function zeigeSpur() {
   const spurVon = e => { const stueck = []; let letzt = null;
     for (let x = e.i; x <= e.j; x++) { const q = F.p[x]; if (!letzt || haversine(letzt.lat, letzt.lon, q.lat, q.lon) > 0.05) { stueck.push([q.lat, q.lon]); letzt = q; } }
     return stueck; };
-  for (const e of (F.stau && F.stau.zaeh) || []) {
-    L.polyline(spurVon(e), { color: farbeVon('--stau') || '#e34948', weight: 4, dashArray: '4 6' }).bindTooltip('zähfließend').addTo(kartenEbene);
-  }
   for (const e of (F.stau && F.stau.liste) || []) {
     L.polyline(spurVon(e), { color: farbeVon('--stau') || '#e34948', weight: 7 })
-      .bindTooltip('Stau ' + uhr(e.t0) + '–' + uhr(e.t1) + ' · +' + Math.round(e.verlust) + ' min').addTo(kartenEbene);
+      .bindTooltip('Stau/stockend ' + uhr(e.t0) + '–' + uhr(e.t1) + ' · ≈ +' + Math.round(e.verlust) + ' min').addTo(kartenEbene);
   }
   for (const st of F.stopps) {
     const farbe = farbeVon(st.geladen ? '--laden' : st.stau ? '--stau' : '--halt');
@@ -827,29 +826,31 @@ window.addEventListener('popstate', () => vollbild(false));
 
 function zeigeStau() {
   const s = F.stau, box = $('stau');
-  $('stau-erkl').textContent = 'Schätzung. Stau = mindestens 1 km Stop-and-go (unter der Hälfte des freien Tempos – dem Tempo, das du im Umkreis von 15 km ' +
-    'auf den meisten Kilometern gefahren bist), mit zügiger Fahrt in den 10 km davor und danach. Zähfließend = darüber, aber unter 72 km/h, wo sonst frei gefahren wird; ' +
-    'der Verlust ist gegen 80 km/h gerechnet, weil viele Baustellen 80 erlauben – Baustellen selbst zählen so nicht. ' +
-    'Ortsdurchfahrten, Ausfahrten und Bergstraßen bleiben draußen, Halte unter 10 min mitten im Stau zählen dazu.';
+  $('stau-erkl').textContent = 'Grobe Schätzung der verlorenen Zeit. Gezählt wird jeder Autobahn-Kilometer, auf dem du langsamer warst als normal: ' +
+    'unter der Hälfte des freien Tempos (Stop-and-go) gegen das freie Tempo – das, was du in der Umgebung auf den meisten Kilometern gefahren bist –, ' +
+    'sonst gegen 80 km/h, damit Baustellen mit 80 nicht zählen. Kurze Halte mitten im Stop-and-go zählen mit. ' +
+    'Nicht gezählt: Laden und Pausen samt je 5 km davor und danach (Zufahrt, Ort), Halte an Raststätten, Landstraße, Orte und Bergstraßen ' +
+    '(nur wo in den 25 km davor und danach normal gefahren wird). Die Liste zeigt ungefähr, wo es war – ab 2 min.';
   box.replaceChildren();
-  const gesamt = s.verlust + s.zaehVerlust;
-  if (!s.liste.length && s.zaehVerlust < 1) { box.append(el('p', 'leer', 'Kein Stau und kaum zähfließender Verkehr erkannt.')); return; }
+  if (s.verlust < 1) { box.append(el('p', 'leer', 'Kaum Zeit durch Stau verloren.')); return; }
   const kopf = el('p', 'summe');
-  kopf.textContent = 'Stau ≈ ' + hm(s.verlust) + ' · zähfließend ≈ ' + hm(s.zaehVerlust) + ' (' + zahl(s.zaehKm) + ' km) · ohne beides Ankunft ≈ ' +
-    uhr(F.t1 - gesamt * 60) + ' statt ' + uhr(F.t1);
+  kopf.textContent = 'Zeitverlust ≈ ' + hm(s.verlust) + ' (davon Stop-and-go ≈ ' + Math.round(s.stopMin) + ' min) · ohne ihn Ankunft ≈ ' +
+    uhr(F.t1 - s.verlust * 60) + ' statt ' + uhr(F.t1);
   box.append(kopf);
+  if (!s.liste.length) return;
   const klappe = el('details', 'staus');
-  klappe.append(el('summary', '', s.liste.length === 1 ? 'Den Stau anzeigen' : 'Alle ' + s.liste.length + ' Staus anzeigen'));
-  if (s.liste.length) box.append(klappe);
+  klappe.append(el('summary', '', 'Ungefähr wo (' + s.liste.length + (s.liste.length === 1 ? ' Stelle' : ' Stellen') + ')'));
+  box.append(klappe);
   for (const e of s.liste) {
     const z = el('div', 'liste-zeile');
     const links = el('div', '', uhr(e.t0) + '–' + uhr(e.t1));
-    links.append(el('small', '', 'km ' + Math.round(e.km0) + '–' + Math.round(e.km1) + ' · ' + zahl(e.km1 - e.km0) + ' km'));
-    const rechts = el('div', 'rechts', '+' + Math.round(e.verlust) + ' min');
-    rechts.append(el('small', '', 'Ø ' + Math.round(e.v) + ' statt ' + Math.round(e.vFrei) + ' km/h'));
+    links.append(el('small', '', 'km ' + Math.round(e.km0) + '–' + Math.round(e.km1)));
+    const rechts = el('div', 'rechts', '≈ +' + Math.round(e.verlust) + ' min');
+    rechts.append(el('small', '', 'Ø ' + Math.round(e.v) + ' statt ≈ ' + Math.round(e.vFrei) + ' km/h'));
     z.append(links, rechts);
     klappe.append(z);
   }
+  if (s.kleinMin >= 1) klappe.append(el('p', 'leer', 'dazu kleine Stockungen unter 2 min: zusammen ≈ ' + Math.round(s.kleinMin) + ' min'));
 }
 
 function zeigeSkizze() {
@@ -1001,7 +1002,8 @@ async function rechneAbschnitte() {
     km: Math.round(F.km * 10) / 10, unterwegs_min: Math.round(F.dauerMin), fahren_min: Math.round(F.fahrMin),
     laden_min: Math.round(F.stopps.filter(s => s.geladen).reduce((x, s) => x + s.min, 0)), ladestopps,
     pausen_min: Math.round(halte.reduce((x, s) => x + s.min, 0)),
-    stau_min: Math.round(F.stau ? F.stau.verlust : 0), zaeh_min: Math.round(F.stau ? F.stau.zaehVerlust : 0),
+    // Fahrtenbuch: „Stau min" = ganzer Zeitverlust, „zähfließend min" = der Teil über halbem Tempo (stockend)
+    stau_min: Math.round(F.stau ? F.stau.verlust : 0), zaeh_min: Math.round(F.stau ? F.stau.verlust - F.stau.stopMin : 0),
     verbrauch_kwh: summeKwh ? Math.round(summeKwh * 10) / 10 : null, verbrauch_km: summeKm ? Math.round(summeKm) : null,
     temp: temps.length ? Math.round(temps.reduce((x, y) => x + y, 0) / temps.length * 10) / 10 : null, datei: F.name || '',
   };
