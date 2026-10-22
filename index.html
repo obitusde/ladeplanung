@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.39.1 — Stationsdetails knapper (Christof 22.10.2026): „Rest bei Ankunft" groß hervorgehoben, Akkubedarf nur in %,
+                   Adresse ohne Land, Preis nur je kWh, Leistung und Ladepunkte in einer Zeile; ohne Betreiber (steht im
+                   Titel), Streckenkm und Höhenmeter.
   Version 0.39.0 — Belegung in den Stationsdetails (TomTom, nur beim Öffnen, höchstens alle 3 min je Station): „3 von 6 frei";
                    Zuordnung zur TomTom-Station einmal je Station gemerkt (nur gleiche Firma). Anschlüsse und kW von TomTom
                    bleiben gespeichert und erscheinen in Liste und Details, sonst wie bisher die eigenen Angaben.
@@ -361,7 +364,9 @@
       background: var(--grund); padding: calc(env(safe-area-inset-top) + 10px) 14px 24px;
     }
     #detail h2 { margin: 12px 0 4px; font-size: 26px; overflow-wrap: anywhere; }
-    #detail .gross { font-size: 22px; font-weight: 700; margin: 0 0 12px; }
+    #detail .gross { font-size: 19px; font-weight: 600; margin: 0 0 12px; color: var(--leise); }
+    #detail .akku-gross { font-size: 30px; font-weight: 800; line-height: 1.15; margin: 2px 0 4px; font-variant-numeric: tabular-nums; }
+    #detail .akku-gross small { display: block; font-size: 16px; font-weight: 600; }
     dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0 0 18px; }
     dt { color: var(--leise); }
     dd { margin: 0; overflow-wrap: anywhere; white-space: pre-line; }
@@ -422,6 +427,7 @@
   <section id="detail" hidden>
     <button id="zurueck" class="knopf" type="button">← Zurück</button>
     <h2 id="d-name"></h2>
+    <p id="d-akku" class="akku-gross"></p>
     <p id="d-gross" class="gross"></p>
     <p id="d-belegung" class="belegung" hidden></p>
     <dl id="d-felder"></dl>
@@ -700,7 +706,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.39.0';
+    const APP_VERSION = '0.39.1';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -1172,6 +1178,30 @@
       const minute = tarife.find(t => t.minute);
       return (von === bis ? geldZahl(von) : geldZahl(von) + '–' + geldZahl(bis)) + ' ' + waehrung(a.waehrung) + '/kWh' +
         (minute ? ' + ' + geldZahl(minute.minute) + '/min' : '');
+    }
+
+    /** Adresse ohne Land am Ende („…, 4665 Oftringen, Schweiz" → „…, 4665 Oftringen"). */
+    function ohneLand(adresse) {
+      return String(adresse || '').replace(/,\s*(Schweiz|Suisse|Svizzera|Switzerland|Deutschland|Germany|Italien|Italia|Italy|Österreich|Austria|Frankreich|France)\s*$/i, '');
+    }
+
+    /** Preis nur je kWh, eine Zeile: „S 0,56 · M 0,46 · L 0,39 €/kWh" bzw. „0,52–0,72 €/kWh" (Christof: ohne Erklärungen). */
+    function preisJeKwh(p) {
+      const a = preisEintrag(p);
+      if (!a) return '–';
+      const tarife = tarifeFuer(a, p).filter(x => x.kwh);
+      if (!tarife.length) return '–';
+      const wert = x => x.kwh_bis ? geldZahl(x.kwh) + '–' + geldZahl(x.kwh_bis) : geldZahl(x.kwh);
+      const mitNamen = tarife.length > 1 && tarife.every(x => x.name && x.name.length <= 3);
+      return tarife.map(x => (mitNamen ? x.name + ' ' : '') + wert(x)).join(' · ') + ' ' + waehrung(a.waehrung) + '/kWh';
+    }
+
+    /** Leistung und Ladepunkte in einer Zeile: TomTom (gemerkt), sonst die eigenen Angaben. */
+    function ladepunkteText(p) {
+      const tt = ttInfo(p);
+      if (tt && tt.alle && tt.maxKw) return tt.alle + ' × bis ' + tt.maxKw + ' kW (TomTom)';
+      if (p.kw) return (p.anzahl ? p.anzahl + ' × ' : '') + p.kw + ' kW';
+      return p.anzahl ? p.anzahl + ' Ladepunkte' : '–';
     }
 
     function tarifText(t, w) {
@@ -1755,32 +1785,32 @@
       detailPunkt = p;
       detailEintrag = e;
       $('d-name').textContent = (p.favorit ? '★ ' : '') + kurzname(p.name);
+      // Rest bei Ankunft groß (Christof 22.10.2026: „besser hervorheben"), darunter nur die Entfernung
+      const akkuZeile = $('d-akku');
+      akkuZeile.replaceChildren();
+      akkuZeile.hidden = !pg;
+      if (pg) {
+        akkuZeile.className = 'akku-gross' + (pg.unterReserve || pg.nichtErreichbar ? ' rot' : '');
+        if (pg.nichtErreichbar) akkuZeile.append('nicht erreichbar', el('small', '', pg.angenommen ? 'braucht ≈ ' + Math.round(pg.prozent) + ' % (voller Akku angenommen)' : 'es fehlen ≈ ' + Math.round(-pg.ankunft) + ' %'));
+        else if (pg.angenommen) akkuZeile.append('braucht ≈ ' + Math.round(pg.prozent) + ' %', el('small', '', 'ohne „Akku jetzt" – voller Akku angenommen'));
+        else akkuZeile.append('Rest bei Ankunft ≈ ' + Math.round(pg.ankunft) + ' %');
+      }
       $('d-gross').textContent = fmtKm(e.weg) + ' km ' + (modus === 'luftlinie' ? 'Luftlinie' : 'voraus') +
-        (e.weg > e.km ? ' (davon ' + fmtKm(e.weg - e.km) + ' km abseits)' : '') +
-        (e.hm === null ? '' : ' · + ' + e.hm + ' hm') + (pg ? ' · ' + akkuText(pg, true) : '');
-      $('d-gross').className = 'gross' + (pg && pg.unterReserve ? ' rot' : '');
+        (e.weg > e.km ? ' (davon ' + fmtKm(e.weg - e.km) + ' km abseits)' : '');
+      $('d-gross').className = 'gross';
 
       // Ohne Annahmen, Favorit, Koordinaten, id; Notiz gleich nach dem Akkubedarf (Christof, 14.10.2026)
       const felder = p.ziel ? [
-        ['Akkubedarf', pg ? '≈ ' + zahl(pg.kwh, 1) + ' kWh = ' + Math.round(pg.prozent) + ' %' : '–'],
-        ['Anstieg', e.hm === null ? '–' : '+ ' + e.hm + ' hm'],
+        ['Akkubedarf', pg ? '≈ ' + Math.round(pg.prozent) + ' %' : '–'],
         ['Verbrauch heute', (() => { const tag = tagesKorrektur(); return tag ? tagesText(tag) + ' gegenüber dem Modell (eingerechnet)' : '–'; })()],
       ] : [
         ['Lage', lageText(e.z) || '–'],
-        ['Akkubedarf', pg ? '≈ ' + zahl(pg.kwh, 1) + ' kWh = ' + Math.round(pg.prozent) + ' %' : '–'],
+        ['Akkubedarf', pg ? '≈ ' + Math.round(pg.prozent) + ' %' : '–'],
         ['Notiz', p.notiz || '–'],
-        ['Adresse', p.adresse || '–'],
-        ['Betreiber', p.betreiber || '–'],
-        ['Preis', (() => {
-          const a = preisEintrag(p);
-          if (!a) return '–';
-          const zeilen = tarifeFuer(a, p).map(t => t.name + ': ' + tarifText(t, a.waehrung));
-          return (zeilen.length ? zeilen.join('\n') : 'kein Preis hinterlegt') + (a.hinweis ? '\n' + a.hinweis : '') + '\nStand ' + datumText(preise.stand);
-        })()],
-        ['Leistung', (() => { const tt = ttInfo(p); return tt && tt.maxKw ? 'bis ' + tt.maxKw + ' kW (TomTom)' + (p.kw ? ' · deine Angabe ' + p.kw + ' kW' : '') : p.kw ? p.kw + ' kW' : '–'; })()],
-        ['Ladepunkte', (() => { const tt = ttInfo(p); return tt && tt.alle ? tt.alle + ' Anschlüsse (TomTom)' + (p.anzahl ? ' · deine Angabe ' + p.anzahl : '') : p.anzahl ? String(p.anzahl) : '–'; })()],
+        ['Adresse', ohneLand(p.adresse) || '–'],
+        ['Preis', preisJeKwh(p)],
+        ['Ladepunkte', ladepunkteText(p)],
         ['Richtung', { hin: 'nur Hinfahrt', rueck: 'nur Rückfahrt', beide: 'beide' }[p.richtung] || p.richtung],
-        ['Streckenkm', e.z ? zahl(e.z.km, 1) + ' km ab Start' : '–'],
       ];
       if (p.fremd) felder.push(['Quelle', (String(p.id).startsWith('bnetza') ? 'Ladesäulenregister der Bundesnetzagentur'
         : 'Bundesdaten (ich-tanke-strom.ch)') + ', Stand ' + datumText(fremde && fremde.stand) + ' – nicht in deiner Liste']);
