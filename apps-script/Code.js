@@ -1,6 +1,8 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.25.0 — Seite „Meine Fahrten" (?seite=fahrten, Christof 22.10.2026: „schnell sehen, wie lange so eine Fahrt dauert –
+ *                  Fahren + Laden + Pause + Stau"): je Ziel Ø Unterwegs mit Anteilen, darunter die einzelnen Fahrten (aufklappbar).
  * Version 0.24.0 — Nach der ersten Fahrt mit „Fahrt live" (Christof 22.10.2026): je Messwert Gegenwind und Regen (Open-Meteo,
  *                  Spalten „Gegenwind km/h", „Regen mm/h") – für später, ob Wind die Abweichungen erklärt. Fahrtenbuch: dieselbe
  *                  Fahrt = Zeiten überschneiden sich (vorher Start ± 10 min; die zu spät gestartete Uhr ergab zwei Zeilen),
@@ -68,7 +70,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.24.0';
+const VERSION = '0.25.0';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -239,6 +241,14 @@ function doGet(e) {
     seite.modellJson = JSON.stringify(modell).replace(/</g, '\\u003c');
     return seite.evaluate()
       .setTitle('Ladeplanung – Ladepreise')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  }
+  if (p.seite === 'fahrten') {
+    modell.gruppen = reisenGruppen_(reisenLesen_());
+    const seite = HtmlService.createTemplateFromFile('Fahrten');
+    seite.modellJson = JSON.stringify(modell).replace(/</g, '\\u003c');
+    return seite.evaluate()
+      .setTitle('Ladeplanung – Meine Fahrten')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
   }
   if (p.seite === 'wartung') {
@@ -1041,6 +1051,50 @@ function reiseZiel_(vorhanden, neu) {
     return { index: i, behalten: false };
   }
   return { index: -1, behalten: false };
+}
+
+/** Blatt „Reisen" als Liste (nach Spaltennamen); leer, wenn es das Blatt noch nicht gibt. */
+function reisenLesen_() {
+  const blatt = tabelle_().getSheetByName(BLATT_REISEN);
+  if (!blatt || blatt.getLastRow() < 2) return [];
+  const werte = blatt.getRange(1, 1, blatt.getLastRow(), blatt.getLastColumn()).getValues();
+  const kopf = werte[0].map(String);
+  return werte.slice(1).filter(function (z) { return z.some(function (x) { return x !== ''; }); }).map(function (z) {
+    const o = {};
+    kopf.forEach(function (k, i) { o[k] = z[i] instanceof Date ? z[i].toISOString() : z[i]; });
+    return o;
+  });
+}
+
+/**
+ * „Meine Fahrten" (rein rechnerisch): Fahrten je Ziel („nach"), neueste zuerst, mit Ø-Werten in Minuten. Fahren ohne Stau =
+ * Fahren − Stau; Sonstiges = Unterwegs − Fahren − Laden − Pausen (kurze Halte, Ein-/Ausparken), nicht negativ.
+ */
+function reisenGruppen_(reisen) {
+  const zahl = function (x) { const n = Number(String(x === undefined || x === null ? '' : x).replace(',', '.')); return isFinite(n) ? n : 0; };
+  const fahrten = reisen.map(function (r) {
+    const unterwegs = zahl(r['Unterwegs h']) * 60, fahren = zahl(r['Fahren h']) * 60, stau = Math.min(zahl(r['Stau min']), fahren);
+    const laden = zahl(r['Laden min']), pausen = zahl(r['Pausen min']);
+    return {
+      start: r.Start, ende: r.Ende, von: String(r.von || '?'), nach: String(r.nach || '?'), km: zahl(r.km),
+      unterwegs: unterwegs, fahren: fahren - stau, stau: stau, laden: laden, pausen: pausen,
+      sonst: Math.max(0, unterwegs - fahren - laden - pausen), ladestopps: zahl(r.Ladestopps), kwh: zahl(r['geladen kWh']),
+      kw: zahl(r['Ø kW Laden']), details: String(r['Laden Details'] || ''), verbrauch: zahl(r['Ø kWh/100 km']), temp: r['Temp Ø'],
+      routendienst: zahl(r['Routendienst h']) * 60, quelle: /\.gpx$/i.test(String(r.Datei || '')) ? 'GPX' : String(r.Datei || ''),
+      stauBekannt: String(r['Stau min']) !== '',
+    };
+  }).filter(function (f) { return f.unterwegs > 0; });
+  const gruppen = {};
+  fahrten.forEach(function (f) { (gruppen[f.nach] = gruppen[f.nach] || []).push(f); });
+  return Object.keys(gruppen).map(function (nach) {
+    const liste = gruppen[nach].sort(function (a, b) { return String(b.start).localeCompare(String(a.start)); });
+    const mittel = function (feld) { return liste.reduce(function (s, f) { return s + f[feld]; }, 0) / liste.length; };
+    const mitRd = liste.filter(function (f) { return f.routendienst > 0; });
+    return { nach: nach, anzahl: liste.length, unterwegs: mittel('unterwegs'), fahren: mittel('fahren'), stau: mittel('stau'),
+      laden: mittel('laden'), pausen: mittel('pausen'), sonst: mittel('sonst'), km: mittel('km'),
+      faktor: mitRd.length ? mitRd.reduce(function (s, f) { return s + (f.fahren + f.stau) / f.routendienst; }, 0) / mitRd.length : null,
+      fahrten: liste };
+  }).sort(function (a, b) { return String(b.fahrten[0].start).localeCompare(String(a.fahrten[0].start)); });
 }
 
 function pruefeFahrt_(d) {

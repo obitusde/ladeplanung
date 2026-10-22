@@ -57,7 +57,16 @@ const status = {
 
 // Auswahllisten wie auf dem Server: vergleichsRouten_ aus Code.js mit der echten routes.json
 const gsCode = fs.readFileSync(path.join(ordner, 'Code.js'), 'utf8');
-const { vergleichsRouten_ } = new Function(gsCode + '; return { vergleichsRouten_ };')();
+const { vergleichsRouten_, reisenGruppen_ } = new Function(gsCode + '; return { vergleichsRouten_, reisenGruppen_ };')();
+// „Meine Fahrten": die zwei echten Fahrten aus dem Blatt „Reisen" (Oktober 2026), Orte wie im Repo schon genannt
+const reisen = [
+  { Start: '2026-10-16T08:52:00Z', Ende: '2026-10-16T19:57:00Z', von: 'Ovronnaz', nach: 'Neuenrade', km: 797.2, 'Unterwegs h': 11.08, 'Fahren h': 9.47,
+    'Laden min': 76, Ladestopps: 2, 'geladen kWh': 72.5, 'Ø kW Laden': 56, 'Laden Details': 'Tesla Herbolzheim 52 min 20→91 % 41.2 kWh; EnBW Ladestation Hüttenberg 25 min 6→60 % 31.3 kWh',
+    'Pausen min': 13, 'Stau min': 73, 'zähfließend min': 7, 'Ø kWh/100 km': 15.3, 'Temp Ø': 17.4, 'Routendienst h': 7.07, Datei: 'activity_1.gpx' },
+  { Start: '2026-10-21T06:54:00Z', Ende: '2026-10-21T17:57:00Z', von: 'Neuenrade', nach: 'Morges', km: 742.8, 'Unterwegs h': 11.05, 'Fahren h': 8.32,
+    'Laden min': 153, Ladestopps: 5, 'geladen kWh': 123, 'Ø kW Laden': 49, 'Laden Details': 'EnBW Ladestation Ehringshausen 22 min 9→32 % 13.3 kWh; EnBW Ladestation Eschborn 46 min 8→88 % 46.4 kWh',
+    'Pausen min': 6, 'Stau min': 61, 'zähfließend min': 4, 'Ø kWh/100 km': 19.3, 'Temp Ø': 9.8, 'Routendienst h': 6.41, Datei: 'activity_2.gpx' },
+];
 const vergleichsRouten = vergleichsRouten_(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'routes.json'), 'utf8')));
 
 const seiten = {
@@ -73,6 +82,7 @@ const seiten = {
     route: 'neuenrade', route_name: 'Morges – Neuenrade', richtung: 'hin', start_zeit: '2026-09-15T08:05:00Z', ende_zeit: '2026-09-15T10:20:00Z',
     start_lat: 46.50432, start_lon: 6.49127, ende_lat: 47.59857, ende_lon: 7.60339, start_soc: 82, km: 205.3, hm_auf: 640, hm_ab: 590,
     erwartet: 31.4, geschwindigkeit: 120, zusatzgewicht: 0, quer_warnung: false } }, basis)],
+  'fahrten.html': ['Fahrten.html', Object.assign({ gruppen: reisenGruppen_(reisen) }, basis)],
   'messwerte.html': ['Messwerte.html', Object.assign({ stuecke: [
     { quelle: 'GPX', route: 'gpx', richtung: 'hin', titel: 'Tesla Herbolzheim → EnBW Hüttenberg', start_zeit: '2026-10-16T14:21:33Z', ende_zeit: '2026-10-16T17:52:46Z',
       start_lat: 48.22746, start_lon: 7.75638, ende_lat: 50.5222, ende_lon: 8.5927, km: 307.3, hm_auf: 300, hm_ab: 269, start_soc: 91, ende_soc: 6,

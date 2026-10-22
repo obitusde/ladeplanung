@@ -6,7 +6,7 @@ const path = require('path');
 
 const wurzel = path.join(__dirname, '..');
 const quelle = fs.readFileSync(path.join(wurzel, 'apps-script', 'Code.js'), 'utf8');
-const gs = new Function(quelle + '; return { energieAnteile_, energieKwh_, kalibriere_, kalibriereZeilen_, loese3_, pruefeFahrt_, normalisiereFahrt_, tempoFaktor_, verbrauchFaktor_, dublettenFinden_, reiseZiel_, gegenwind_, MODELL_STANDARD };')();
+const gs = new Function(quelle + '; return { energieAnteile_, energieKwh_, kalibriere_, kalibriereZeilen_, loese3_, pruefeFahrt_, normalisiereFahrt_, tempoFaktor_, verbrauchFaktor_, dublettenFinden_, reiseZiel_, gegenwind_, reisenGruppen_, MODELL_STANDARD };')();
 const M = gs.MODELL_STANDARD;
 
 let fehler = 0;
@@ -172,6 +172,16 @@ pruefe(gs.reiseZiel_(reisen, { start: d('2026-10-25T08:00'), ende: d('2026-10-25
 pruefe(Math.abs(gs.gegenwind_(50, 8, 47, 7.5, [{ wind: 15, richtung: 180 }]) - 15) < 1, 'Südwind von vorn bei Fahrt nach Süden');
 pruefe(gs.gegenwind_(50, 8, 47, 7.5, [{ wind: 15, richtung: 0 }]) < -14, 'Nordwind = Rückenwind');
 pruefe(gs.gegenwind_(50, 8, 47, 7.5, [null]) === null, 'ohne Wetter null');
+
+// Meine Fahrten (Script v0.25.0): je Ziel, Fahren ohne Stau, Rest = Halte
+const gr = gs.reisenGruppen_([
+  { Start: '2026-10-16T08:52:00Z', Ende: '2026-10-16T19:57:00Z', von: 'A', nach: 'Neuenrade', km: 797, 'Unterwegs h': 11, 'Fahren h': 9, 'Laden min': 76, 'Pausen min': 14, 'Stau min': 60, 'Routendienst h': 7, Datei: 'x.gpx' },
+  { Start: '2026-10-21T06:54:00Z', Ende: '2026-10-21T17:57:00Z', von: 'B', nach: 'Morges', km: 743, 'Unterwegs h': 11, 'Fahren h': 8, 'Laden min': 150, 'Pausen min': 10, 'Stau min': '', Datei: 'App (Fahrt live)' },
+]);
+pruefe(gr.length === 2 && gr[0].nach === 'Morges', 'Gruppen je Ziel, neueste zuerst');
+const neu = gr.find(g => g.nach === 'Neuenrade');
+pruefe(neu.fahren === 480 && neu.stau === 60 && neu.sonst === 660 - 540 - 76 - 14 && Math.abs(neu.faktor - 540 / 420) < 1e-9, 'Fahren ohne Stau, Sonstiges, Faktor: ' + JSON.stringify(neu));
+pruefe(gr[0].fahrten[0].stauBekannt === false && gr[0].fahrten[0].quelle === 'App (Fahrt live)' && neu.fahrten[0].quelle === 'GPX', 'Stau leer = unbekannt, Quelle');
 
 console.log(fehler === 0 ? 'Alle Prüfungen bestanden.' : fehler + ' Prüfungen fehlgeschlagen.');
 process.exit(fehler === 0 ? 0 : 1);

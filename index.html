@@ -1,6 +1,11 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.38.0 — TomTom (Christof 22.10.2026, eigener Schlüssel nur im Handy): Ankunft ≈ = Fahren (TomTom ohne Verkehr ×
+                   dein Tempo) + Stau voraus (TomTom, eine Abfrage höchstens alle 10 min, nur bei offener Fahrt-Ansicht) +
+                   nötiges Laden; Untermenü „Ankunft und Stau" mit Ursachen (Unfall, Baustelle, Sperrung); auf der Karte
+                   Verkehrsfarben (Knopf „Verkehr", aus bis du ihn antippst); Test „Belegung meiner Stationen"; Zähler und
+                   Monatsgrenzen weit unter dem Freikontingent. Menü → „Meine Fahrten" (Übersicht aus dem Blatt „Reisen").
   Version 0.37.0 — Akku an der Säule (Christof 22.10.2026: „ich bleibe nicht beim Auto … wenn ich losfahre, kommt wieder ein
                    Wert"): im Stand jede Minute, sofort beim Losfahren nach einem Halt und kurz nach dem Ankommen; Akkuwerte
                    der letzten 5 Fahrten bleiben im Handy (reisenAlt) – „Fahrt auswerten" übernimmt sie in die Felder.
@@ -293,6 +298,14 @@
     .reise-protokoll summary { cursor: pointer; font-weight: 700; color: #d0d0d0; min-height: 32px; }
     .reise-protokoll ol { margin: 4px 0; padding-left: 1.4em; font-variant-numeric: tabular-nums; }
     .eintrag.ziel { border-top: 3px solid var(--linie); }
+    .reise-kachel.tippbar { cursor: pointer; border-color: #4a4a4a; }
+    .reise-kachel.tippbar .name::after { content: ' ›'; color: #ffac4a; }
+    #reise-detail { position: fixed; inset: 0; z-index: 2; overflow-y: auto; background: #000;
+      padding: env(safe-area-inset-top) 0 calc(env(safe-area-inset-bottom) + 12px); }
+    .reise-zeile { display: flex; justify-content: space-between; gap: 10px; padding: 10px 2px; border-bottom: 1px solid #2c2c2c; font-size: 18px; }
+    .reise-zeile b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .reise-zeile small { display: block; color: #a8a8a8; font-size: 14px; }
+    .reise-detail-text { color: #bdbdbd; margin: 12px 2px; line-height: 1.4; }
     .leaflet-tooltip.schild.klein { font-size: 12px; padding: 1px 5px; }
     .leaflet-tooltip.schild.rot { color: #c00018; }
 
@@ -328,7 +341,12 @@
     #info-seite h3 { margin: 22px 0 6px; font-size: 20px; }
     #info-seite p, #info-seite li { margin: 0 0 8px; }
     #info-seite ol, #info-seite ul { padding-left: 22px; margin: 0 0 8px; }
-    #detail, #info-seite, #preise-seite {
+    #tt-seite h2 { margin: 10px 0 2px; font-size: 21px; }
+    .tt-zeile { border-bottom: 1px solid var(--linie); padding: 8px 0; }
+    .tt-zeile b { display: block; }
+    .tt-zeile .ok { color: var(--akzent); font-weight: 700; }
+    #karte-verkehr[aria-pressed="true"] { background: var(--akzent); color: var(--akzent-text); border-color: var(--akzent); }
+    #detail, #info-seite, #preise-seite, #tt-seite {
       position: fixed; inset: 0; z-index: 5; overflow-y: auto;
       background: var(--grund); padding: calc(env(safe-area-inset-top) + 10px) 14px 24px;
     }
@@ -437,7 +455,7 @@
         <b>Messwerte senden (n)</b> öffnet die Seite „Messwerte" mit allen gesammelten Stücken; dort einmal speichern.
         <b>✕</b> verwirft den Akkustand – z. B. nach einem Test oder einem Tippfehler; danach erscheint wieder „Akku jetzt".</li>
       <li><b>„Messwerte geöffnet … – gespeichert?":</b> Erinnerung, falls die Seite nicht gespeichert wurde. <b>Öffnen</b> zeigt sie nochmals, <b>✕</b> blendet die Erinnerung aus.</li>
-      <li><b>Fahrt:</b> eigener Bildschirm mit der laufenden Fahrt – Unterwegs, Fahren, Pausen, Ø km/h, gefahren/verbleibend, Ankunft ≈ und Akku. „▶ Fahrt starten" beginnt die Messung, am Ziel endet sie von selbst (oder „■ Beenden"). Gemessen wird, solange die App offen ist: beim Öffnen, alle 2 min und bei offener Fahrt-Ansicht jede Minute. Ist die App länger zu, füllt sie die Lücke beim nächsten Öffnen (ganz gefahren oder ganz gestanden). „Bildschirm anlassen" hält das Display an, solange die Ansicht offen ist – am besten in der Halterung am Ladekabel (dort misst sie alle 30 s, sonst jede Minute, im Stand alle 2 min). Der Knopf „Fahrt" ist grün, solange eine Fahrt läuft. <b>Während der Fahrt musst du nichts tippen.</b> <b>Laden</b> erkennt sie selbst: mindestens 10 min neben einer bekannten Station oder Akku danach höher. Mit Adapter liest sie den Akku ohne Tippen (wenn Chrome das zulässt – das Protokoll unten zeigt es) und vergleicht den echten Verbrauch mit dem Modell: <b>Verbrauch heute</b> (z. B. +15 % bei Regen und Gegenwind) steckt dann in allen Prognosen. Im Stand liest sie jede Minute, beim Losfahren sofort – so stehen „an“ und „ab“ der Ladestopps fest, auch wenn du beim Laden nicht beim Auto bist. Wertest du danach die Uhr-Aufzeichnung auf diesem Handy aus, übernimmt „Fahrt auswerten“ die Werte; fehlt einer, trägst du ihn dort ein. Vergisst du „Fahrt starten", startet sie nach 10 km auf der Strecke von selbst. Am Ziel: „Fahrt speichern" nur, wenn du keine Uhr-Aufzeichnung auswertest.</li>
+      <li><b>Fahrt:</b> eigener Bildschirm mit der laufenden Fahrt – Unterwegs, Fahren, Pausen, Ø km/h, gefahren/verbleibend, Ankunft ≈ und Akku. „▶ Fahrt starten" beginnt die Messung, am Ziel endet sie von selbst (oder „■ Beenden"). Gemessen wird, solange die App offen ist: beim Öffnen, alle 2 min und bei offener Fahrt-Ansicht jede Minute. Ist die App länger zu, füllt sie die Lücke beim nächsten Öffnen (ganz gefahren oder ganz gestanden). „Bildschirm anlassen" hält das Display an, solange die Ansicht offen ist – am besten in der Halterung am Ladekabel (dort misst sie alle 30 s, sonst jede Minute, im Stand alle 2 min). Der Knopf „Fahrt" ist grün, solange eine Fahrt läuft. <b>Während der Fahrt musst du nichts tippen.</b> <b>Laden</b> erkennt sie selbst: mindestens 10 min neben einer bekannten Station oder Akku danach höher. Mit Adapter liest sie den Akku ohne Tippen (wenn Chrome das zulässt – das Protokoll unten zeigt es) und vergleicht den echten Verbrauch mit dem Modell: <b>Verbrauch heute</b> (z. B. +15 % bei Regen und Gegenwind) steckt dann in allen Prognosen. Im Stand liest sie jede Minute, beim Losfahren sofort – so stehen „an“ und „ab“ der Ladestopps fest, auch wenn du beim Laden nicht beim Auto bist. Wertest du danach die Uhr-Aufzeichnung auf diesem Handy aus, übernimmt „Fahrt auswerten“ die Werte; fehlt einer, trägst du ihn dort ein. Vergisst du „Fahrt starten", startet sie nach 10 km auf der Strecke von selbst. <b>Ankunft ≈</b> = Fahren + Stau voraus + nötiges Laden; mit TomTom-Schlüssel (Einstellungen) kennt sie den aktuellen Stau – Kachel antippen zeigt, wo und warum (Unfall, Baustelle, Sperrung). Schon vor dem Start steht dort „Ankunft, wenn du jetzt losfährst". Am Ziel: „Fahrt speichern" nur, wenn du keine Uhr-Aufzeichnung auswertest.</li>
       <li><b>☰ → Fahrt auswerten (GPX):</b> eine aufgezeichnete Fahrt (z. B. von der Garmin-Uhr) auswerten – nur im Browser, die Datei verlässt das Gerät nicht. Mit den Akkuständen an den Ladestopps entstehen daraus Messwerte mit echtem Tempoverlauf.</li>
       <li><b>Karte:</b> ganze Strecke, dein Standort (blau) und der Weg bis zur nächsten Station. Eine andere Station antippen zeigt den Weg dorthin; <b>Ganze Strecke</b> zoomt heraus, <b>Details</b> öffnet die Station. In den Details jeder Station gibt es dafür auch <b>Auf Karte</b>.</li>
       <li><b>⇄</b> tauscht von und nach. Der letzte bekannte Akkustand gilt für jede Strecke, die du oben wählst – die Liste zeigt sofort, was damit erreichbar ist.</li>
@@ -529,6 +547,7 @@
     <div class="kopf">
       <button id="karte-zurueck" class="knopf" type="button">← Zurück</button>
       <button id="karte-ganz" class="knopf" type="button">Ganze Strecke</button>
+      <button id="karte-verkehr" class="knopf" type="button" hidden aria-pressed="false">Verkehr</button>
     </div>
     <div id="karte"></div>
     <div id="karte-info">
@@ -555,6 +574,20 @@
         <label class="reise-wach"><input type="checkbox" id="reise-wach"> Bildschirm anlassen</label>
       </div>
     </div>
+    <div id="reise-detail" hidden>
+      <div class="reise-kopf">
+        <button id="reise-detail-zurueck" class="knopf" type="button">← Zurück</button>
+        <span id="reise-detail-titel" class="reise-route"></span>
+      </div>
+      <div id="reise-detail-inhalt" class="reise-inhalt"></div>
+    </div>
+  </section>
+
+  <section id="tt-seite" hidden>
+    <button id="tt-zurueck" class="knopf" type="button">← Zurück</button>
+    <h2>Belegung bei TomTom</h2>
+    <p id="tt-stand" class="klein-hinweis"></p>
+    <div id="tt-inhalt"></div>
   </section>
 
   <section id="preise-seite" hidden>
@@ -576,6 +609,7 @@
       <button type="button" class="knopf" data-m="preise">€ Ladepreise</button>
       <a id="m-preise" class="knopf" href="#" target="_blank" rel="noopener">↻ Preise aktualisieren</a>
       <a class="knopf" href="auswertung.html">📈 Fahrt auswerten (GPX)</a>
+      <a id="m-fahrten" class="knopf" href="#" target="_blank" rel="noopener">🗂 Meine Fahrten</a>
       <a id="m-wartung" class="knopf" href="#" target="_blank" rel="noopener">🔧 Wartung &amp; Status</a>
       <button type="button" class="knopf" data-m="info">ⓘ So funktioniert die App</button>
       <button class="knopf haupt" value="zu">Schließen</button>
@@ -639,6 +673,11 @@
       <h3>Route ab hier</h3>
       <label>OpenRouteService-Schlüssel <input type="text" id="e-ors" autocomplete="off" spellcheck="false" placeholder="Schlüssel einfügen"></label>
       <p class="klein">Bleibt nur auf diesem Handy gespeichert, nicht im öffentlichen Repo.</p>
+      <h3>Verkehr (TomTom)</h3>
+      <label>TomTom-Schlüssel <input type="text" id="e-tomtom" autocomplete="off" spellcheck="false" placeholder="Schlüssel einfügen"></label>
+      <p class="klein">Für Ankunft mit Stau, Ursachen und Verkehr auf der Karte. Bleibt nur auf diesem Handy. Kostenlos, solange die Monatsgrenzen unten nicht erreicht sind – dann hört die App von selbst auf.</p>
+      <p class="klein" id="e-tomtom-zaehler"></p>
+      <button type="button" id="e-tomtom-test" class="knopf" style="width:100%">Belegung meiner Stationen testen</button>
       <p class="klein" id="e-tempo"></p>
       <p class="klein" id="version"></p>
       <button class="knopf haupt" value="ok" style="width:100%">Fertig</button>
@@ -650,7 +689,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.37.0';
+    const APP_VERSION = '0.38.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -681,6 +720,15 @@
     // Route ab hier (v0.25.0): OpenRouteService direkt aus dem Handy; Schlüssel nur in localStorage, nie im Repo
     const ORS_BASIS = 'https://api.openrouteservice.org';
     const ORS_SPEICHER = 'ladeplanung.ors';
+    // TomTom (v0.38.0): Schlüssel nur in localStorage, nie im Repo. Freikontingent laut docs.tomtom.com/pricing 20.000
+    // Routen/Monat (ohne Kreditkarte) – die App bleibt weit darunter und hört bei diesen Grenzen von selbst auf.
+    const TOMTOM_SPEICHER = 'ladeplanung.tomtom';
+    const TOMTOM_BASIS = 'https://api.tomtom.com';
+    const TOMTOM_GRENZE = { routing: 1500, suche: 500, kacheln: 3000 };   // je Monat
+    const VERKEHR_ABSTAND_MS = 10 * 60e3;   // Verkehr höchstens alle 10 min abfragen
+    const VERKEHR_GUELTIG_MS = 30 * 60e3;   // älter: nicht mehr für die Ankunft verwenden
+    const TEMPO_GEGEN_TOMTOM = 1.15;        // du brauchst ohne Stau ≈ 15 % länger als die Routendienste (16.10.: 1,19, 21.10.: 1,14)
+    const LADEN_KW_ANNAHME = 50, LADEN_BIS_PROZENT = 80, LADEN_STOPP_MIN = 5;   // Ø-Ladeleistung bisher 49–56 kW
     const ADHOC_SPEICHER = 'ladeplanung.adhoc';
     const ADHOC_ID = 'adhoc';
     const FREMD_DUBLETTE_M = 150;   // Station aus den Bundesdaten so nah an einer eigenen → ist dieselbe, nicht doppelt zeigen
@@ -1942,7 +1990,8 @@
     function planeReiseMessung() {
       clearTimeout(reiseMessTimer); reiseMessTimer = null;
       const r = zustand.reise;
-      if ($('reise-seite').hidden || !r || r.ende) return;
+      if ($('reise-seite').hidden) return;
+      if (!r || r.ende) { reiseMessTimer = setTimeout(() => { reiseMessTimer = null; pruefeVerkehr(); planeReiseMessung(); }, VERKEHR_ABSTAND_MS); return; }
       const steht = reiseStehtGerade(r);
       const ms = ladekabel ? REISE_GPS_LADEKABEL_MS : steht ? REISE_GPS_STEHEN_MS : REISE_GPS_MS;
       reiseMessTimer = setTimeout(() => {
@@ -1950,6 +1999,7 @@
         if (document.visibilityState === 'visible' && !zustand.sim.aktiv && !gpsLaeuft) holeStandort();
         const st = zustand.adapterStill;
         if (!st || Date.now() - st.zeit >= (steht ? ADAPTER_STILL_STEHEN_MS : ADAPTER_STILL_FAHREN_MS)) leseAdapterStill();
+        pruefeVerkehr();
         planeReiseMessung();
       }, ms);
     }
@@ -1966,6 +2016,7 @@
       clearInterval(reiseAnzeigeTimer); clearInterval(reiseSchiebeTimer);
       reiseAnzeigeTimer = setInterval(renderReise, REISE_ANZEIGE_MS);
       planeReiseMessung();
+      pruefeVerkehr();
       // gegen Einbrennen (OLED): Inhalt alle 2 min um ein paar Pixel verschieben
       reiseSchiebeTimer = setInterval(() => {
         const x = Math.round(Math.random() * 12 - 6), y = Math.round(Math.random() * 12 - 6);
@@ -1976,6 +2027,7 @@
 
     function schliesseReise() {
       $('reise-seite').hidden = true;
+      $('reise-detail').hidden = true;
       clearInterval(reiseAnzeigeTimer); clearInterval(reiseSchiebeTimer); clearTimeout(reiseMessTimer);
       reiseAnzeigeTimer = reiseMessTimer = reiseSchiebeTimer = null;
       if (reiseWachSperre) { reiseWachSperre.release().catch(() => {}); reiseWachSperre = null; }
@@ -2117,6 +2169,274 @@
       return stopps;
     }
 
+    // -----------------------------------------------------------------------
+    // TomTom (v0.38.0): Verkehr auf deiner Strecke, Ankunft, Belegung. Wenige Aufrufe, Zähler je Monat.
+    // -----------------------------------------------------------------------
+
+    function tomtomSchluessel() {
+      try { return (localStorage.getItem(TOMTOM_SPEICHER) || '').trim(); } catch (e) { return ''; }
+    }
+
+    /** Aufruf zählen; false, wenn die Monatsgrenze erreicht ist (dann wird nicht abgefragt). */
+    function tomtomZaehle(art, n) {
+      const monat = new Date().toISOString().slice(0, 7);
+      const z = zustand.tomtom && zustand.tomtom.monat === monat ? zustand.tomtom : (zustand.tomtom = { monat, routing: 0, suche: 0, kacheln: 0 });
+      if ((z[art] || 0) + (n || 1) > TOMTOM_GRENZE[art]) return false;
+      z[art] = (z[art] || 0) + (n || 1);
+      return true;
+    }
+    function tomtomStand(art) {
+      const z = zustand.tomtom, monat = new Date().toISOString().slice(0, 7);
+      return z && z.monat === monat ? z[art] || 0 : 0;
+    }
+
+    // Ursachen (TPEG-TEC-Hauptursache) und Kategorien der TomTom-Verkehrsabschnitte, auf Deutsch
+    const TEC_URSACHE = { 1: 'Stau', 2: 'Unfall', 3: 'Baustelle', 4: 'Fahrstreifen gesperrt', 5: 'nicht befahrbar', 6: 'Glätte',
+      8: 'Brand', 9: 'gefährliche Bedingungen', 10: 'Gegenstände auf der Fahrbahn', 11: 'Tiere auf der Fahrbahn', 12: 'Personen auf der Fahrbahn',
+      13: 'Pannenfahrzeug', 14: 'Falschfahrer', 15: 'Bergung', 16: 'Verkehrsregelung', 17: 'Unwetter', 18: 'schlechte Sicht', 19: 'Niederschlag',
+      23: 'Großveranstaltung', 26: 'langsames Fahrzeug', 27: 'Stauende', 30: 'Polizeikontrolle' };
+    const TT_KATEGORIE = { JAM: 'Stau', ROAD_WORK: 'Baustelle', ROAD_CLOSURE: 'Sperrung', OTHER: 'Behinderung' };
+
+    let verkehrLaeuft = false;
+    /**
+     * Verkehr auf der gewählten Strecke ab einem Linienpunkt bis zum Ziel: TomTom-Route mit Verkehr, entlang deiner
+     * Stammstrecke (Stützpunkte alle ≈ 4 km, sonst rechnet TomTom vielleicht über Frankreich). Eine Abfrage liefert die
+     * Fahrzeit ohne und mit Verkehr und die Abschnitte mit Stau samt Ursache. Ergebnis in zustand.verkehr.
+     */
+    async function holeVerkehr(route, richtung, von, erzwingen) {
+      const schluessel = tomtomSchluessel();
+      if (!schluessel || verkehrLaeuft || !route || !navigator.onLine) return;
+      const v = zustand.verkehr;
+      const gleich = v && v.route === route.id && v.richtung === richtung;
+      if (!erzwingen && gleich && Date.now() - v.zeit < VERKEHR_ABSTAND_MS) return;
+      if (!tomtomZaehle('routing')) { zustand.verkehr = { ...(v || {}), fehler: 'Monatsgrenze erreicht – keine Abfragen mehr bis zum Monatsende' }; return; }
+      verkehrLaeuft = true;
+      const hin = richtung === 'hin', l = route.linie, ende = hin ? l[l.length - 1] : l[0];
+      const start = punktBeiKm(route, von.km);
+      // Stützpunkte vom Start bis zum Ziel entlang der Linie
+      const reihe = hin ? l.filter(p => p[2] > von.km) : l.filter(p => p[2] < von.km).reverse();
+      const stuetz = [{ latitude: start.lat, longitude: start.lon }];
+      let letzt = von.km;
+      for (const p of reihe) if (Math.abs(p[2] - letzt) >= 4) { stuetz.push({ latitude: p[0], longitude: p[1] }); letzt = p[2]; }
+      stuetz.push({ latitude: ende[0], longitude: ende[1] });
+      const orte = start.lat.toFixed(5) + ',' + start.lon.toFixed(5) + ':' + ende[0].toFixed(5) + ',' + ende[1].toFixed(5);
+      const url = TOMTOM_BASIS + '/routing/1/calculateRoute/' + orte + '/json?traffic=true&sectionType=traffic&computeTravelTimeFor=all&routeType=fastest&key=' + encodeURIComponent(schluessel);
+      try {
+        let antwort = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ supportingPoints: stuetz }) });
+        let mitStuetz = true;
+        if (antwort.status === 400 && tomtomZaehle('routing')) { antwort = await fetch(url); mitStuetz = false; }   // Rückfall ohne Stützpunkte
+        if (!antwort.ok) throw new Error(antwort.status === 403 || antwort.status === 401 ? 'Schlüssel abgelehnt (' + antwort.status + ')' : 'HTTP ' + antwort.status);
+        const j = await antwort.json();
+        const r0 = j.routes && j.routes[0];
+        if (!r0) throw new Error('keine Route');
+        const punkte = (r0.legs || []).flatMap(g => g.points || []);
+        const lat0 = lat0Von(route);
+        const abschnitte = (r0.sections || []).filter(s => s.sectionType === 'TRAFFIC').map(s => {
+          const a = punkte[s.startPointIndex] || punkte[0], b = punkte[s.endPointIndex] || a;
+          const pa = projiziere(l, a.latitude, a.longitude, lat0), pb = projiziere(l, b.latitude, b.longitude, lat0);
+          const ursache = s.tec && s.tec.causes && s.tec.causes[0] ? TEC_URSACHE[s.tec.causes[0].mainCauseCode] : '';
+          return { km: pa.km, bis: pb.km, q: Math.max(pa.q, pb.q), art: TT_KATEGORIE[s.simpleCategory] || 'Behinderung', ursache: ursache || '',
+            verzugS: s.delayInSeconds || 0, tempo: s.effectiveSpeedInKmh || null, staerke: s.magnitudeOfDelay || 0 };
+        });
+        const sm = r0.summary || {};
+        zustand.verkehr = { zeit: Date.now(), route: route.id, richtung, vonKm: von.km, restKm: Math.abs(ende[2] - von.km),
+          ohneS: sm.noTrafficTravelTimeInSeconds || sm.travelTimeInSeconds - (sm.trafficDelayInSeconds || 0), mitS: sm.travelTimeInSeconds,
+          verzugS: sm.trafficDelayInSeconds || 0, laengeKm: (sm.lengthInMeters || 0) / 1000, mitStuetz, abschnitte, fehler: '' };
+      } catch (e) {
+        zustand.verkehr = { ...(gleich ? v : {}), route: route.id, richtung, fehlerZeit: Date.now(), fehler: 'TomTom: ' + (e && e.message || e) };
+      } finally {
+        verkehrLaeuft = false;
+        speichere();
+        renderReise();
+      }
+    }
+
+    /** Ø-Ladeleistung: aus den Ladestopps dieser Fahrt (mit Akku an/ab), sonst deine bisherigen ≈ 50 kW. */
+    function ladeLeistung(r) {
+      const st = r ? reiseStopps(r).filter(s => s.geladen && s.kwh && s.min >= 5) : [];
+      const kwh = st.reduce((a, s) => a + s.kwh, 0), h = st.reduce((a, s) => a + s.min / 60, 0);
+      return h > 0.15 ? Math.max(20, Math.min(150, kwh / h)) : LADEN_KW_ANNAHME;
+    }
+
+    /**
+     * Ankunft ≈ (Christof 22.10.2026: „Fahrweg + Staus + nötiges Laden"): Fahren ohne Stau (TomTom ohne Verkehr × 1,15 –
+     * so viel länger brauchst du laut deinen Fahrten; ohne TomTom dein Ø bzw. das Reisetempo) + Stau voraus (TomTom-Abschnitte
+     * vor dir) + Laden (fehlende % bis zur Reserve am Ziel, je Stopp bis 80 %, Ø-Ladeleistung, 5 min je Stopp).
+     */
+    function ankunftSchaetzung(route, richtung, lp, r, schnitt) {
+      const jetzt = Date.now(), l = route.linie, ende = richtung === 'hin' ? l[l.length - 1] : l[0];
+      const restKm = Math.abs(ende[2] - lp.km), hin = richtung === 'hin';
+      const v = zustand.verkehr;
+      const tt = v && !v.fehler && v.route === route.id && v.richtung === richtung && jetzt - v.zeit < VERKEHR_GUELTIG_MS && v.restKm > 0 ? v : null;
+      let fahrS, quelle, staus = [], stauS = 0;
+      if (tt) {
+        fahrS = tt.ohneS * Math.min(1, restKm / tt.restKm) * TEMPO_GEGEN_TOMTOM;
+        staus = tt.abschnitte.filter(a => (hin ? a.bis > lp.km + 0.5 : a.bis < lp.km - 0.5) && a.q <= 3)
+          .map(a => ({ ...a, entfernt: Math.max(0, hin ? a.km - lp.km : lp.km - a.km) })).sort((a, b) => a.entfernt - b.entfernt);
+        stauS = staus.reduce((a, s) => a + s.verzugS, 0);
+        quelle = 'TomTom ' + uhrzeit(tt.zeit);
+      } else {
+        const kmh = schnitt || tempo(route).wert;
+        fahrS = restKm / kmh * 3600;
+        quelle = schnitt ? 'dein Ø ' + Math.round(kmh) + ' km/h' : 'Reisetempo ' + Math.round(kmh) + ' km/h';
+      }
+      const akku = akkuJetzt(route.id, lp), startSoc = akku === null ? 100 : akku;
+      const amZiel = akkuProfil(route, richtung, lp, startSoc).bei({ km: ende[2] });
+      const reserve = Number(zustand.einst.reserve || 0);
+      const fehlt = Math.max(0, reserve - amZiel);
+      const stopps = fehlt > 0 ? Math.ceil(fehlt / Math.max(10, LADEN_BIS_PROZENT - reserve)) : 0;
+      const kwh = fehlt / 100 * modell.fahrzeug.kapazitaet_kwh, kw = ladeLeistung(r);
+      const ladeS = stopps ? kwh / kw * 3600 + stopps * LADEN_STOPP_MIN * 60 : 0;
+      return { restKm, fahrS, stauS, staus, ladeS, stopps, kwh, kw, akkuAngenommen: akku === null, ankunft: jetzt + (fahrS + stauS + ladeS) * 1000, quelle, tomtom: !!tt };
+    }
+
+    /** Kurzform für die Kachel: „Fahren 4 h 10 · Stau +25 min · Laden ≈ 45 min". */
+    function ankunftZusatz(a) {
+      return ['Fahren ' + dauerText(a.fahrS, true), a.stauS >= 60 ? 'Stau +' + Math.round(a.stauS / 60) + ' min' : a.tomtom ? 'kein Stau' : '',
+        a.ladeS ? 'Laden ≈ ' + Math.round(a.ladeS / 60) + ' min' : 'ohne Laden'].filter(Boolean).join(' · ');
+    }
+
+    /** Untermenü „Ankunft und Stau" in der Fahrt-Ansicht (Christof: wenig auf einer Seite, Details in Untermenüs). */
+    function zeigeAnkunftDetail(a) {
+      const box = $('reise-detail-inhalt');
+      box.replaceChildren();
+      $('reise-detail-titel').textContent = 'Ankunft und Stau';
+      const zeile = (links, rechts, klein) => {
+        const z = el('div', 'reise-zeile'), li = el('span', '', links);
+        if (klein) li.append(el('small', '', klein));
+        z.append(li, el('b', '', rechts));
+        box.append(z);
+      };
+      zeile('Ankunft ≈', uhrzeit(a.ankunft), fmtKm(a.restKm) + ' km bis zum Ziel');
+      zeile('Fahren', dauerText(a.fahrS, true), a.tomtom ? 'ohne Stau, TomTom × 1,15 (dein Tempo)' : a.quelle);
+      zeile('Stau voraus', a.tomtom ? '+' + Math.round(a.stauS / 60) + ' min' : '–', a.tomtom ? 'Stand ' + a.quelle.replace('TomTom ', '') : tomtomSchluessel() ? 'noch keine Abfrage' : 'ohne TomTom-Schlüssel unbekannt');
+      zeile('Laden', a.ladeS ? '≈ ' + Math.round(a.ladeS / 60) + ' min' : '–',
+        a.stopps ? a.stopps + ' Stopp' + (a.stopps > 1 ? 's' : '') + ', ≈ ' + Math.round(a.kwh) + ' kWh bei Ø ' + Math.round(a.kw) + ' kW' + (a.akkuAngenommen ? ' (voller Akku angenommen)' : '') : 'reicht bis zum Ziel mit Reserve');
+      if (a.staus.length) {
+        box.append(el('h3', 'reise-detail-text', 'Unterwegs gemeldet'));
+        for (const s of a.staus) zeile((s.ursache && s.ursache !== s.art ? s.art + ' · ' + s.ursache : s.art), s.verzugS >= 60 ? '+' + Math.round(s.verzugS / 60) + ' min' : s.art === 'Sperrung' ? 'gesperrt' : '–',
+          'in ' + fmtKm(s.entfernt) + ' km' + (s.tempo ? ' · ' + Math.round(s.tempo) + ' km/h' : ''));
+      } else if (a.tomtom) box.append(el('p', 'reise-detail-text', 'Auf dem Rest der Strecke meldet TomTom keinen Stau.'));
+      const v = zustand.verkehr;
+      if (v && v.fehler) box.append(el('p', 'reise-detail-text', v.fehler));
+      box.append(el('p', 'reise-detail-text', 'Stau gilt für jetzt – bis du dort bist, kann er weg oder neu sein. Neu abgefragt wird alle 10 min, solange die Fahrt-Ansicht offen ist. ' +
+        'TomTom diesen Monat: ' + tomtomStand('routing') + ' von ' + TOMTOM_GRENZE.routing + ' Abfragen.'));
+      if (tomtomSchluessel()) {
+        const k = el('button', 'knopf', 'Jetzt neu abfragen');
+        k.type = 'button';
+        k.addEventListener('click', async () => {
+          k.disabled = true;
+          await pruefeVerkehr(true);
+          const neu = aktuelleAnkunft();
+          if (neu) zeigeAnkunftDetail(neu);
+        });
+        box.append(k);
+      }
+      if ($('reise-detail').hidden) { $('reise-detail').hidden = false; history.pushState({ reiseDetail: true }, ''); }
+    }
+
+    /** Position für die Ankunft: laufende Fahrt (letzter Punkt), sonst Standort auf der Strecke, sonst Start der Richtung. */
+    function ankunftOrt() {
+      const r = zustand.reise && !zustand.reise.ende ? zustand.reise : null;
+      const route = r ? reiseRoute() : letzteAnsicht && letzteAnsicht.route;
+      if (!route) return null;
+      const richtung = r ? r.richtung : zustand.richtung;
+      if (r) {
+        const l = r.punkte[r.punkte.length - 1];
+        if (!l || l[4] > QUER_MAX_KM) return null;
+        return { route, richtung, r, lp: { km: l[3], ...punktWerte(route, l[3]) } };
+      }
+      const pos = aktuellePosition();
+      if (pos && !pos.planung) {
+        const pr = projiziere(route.linie, pos.lat, pos.lon, lat0Von(route));
+        const li0 = route.linie, endeKm = richtung === 'hin' ? li0[li0.length - 1][2] : li0[0][2];
+        if (pr.q <= 2 && Math.abs(endeKm - pr.km) > 5) return { route, richtung, r: null, lp: pr };
+      }
+      const li = route.linie, p0 = richtung === 'hin' ? li[0] : li[li.length - 1];
+      return { route, richtung, r: null, lp: { km: p0[2], hm_hin: p0[3], hm_rueck: p0[4] }, abStart: true };
+    }
+
+    function aktuelleAnkunft() {
+      const o = ankunftOrt();
+      if (!o) return null;
+      const s = o.r ? reiseStatistik(o.r, o.route, Date.now()) : null;
+      const schnitt = s && s.schnitt && s.fahrS >= 900 && s.schnitt >= 30 ? s.schnitt : null;
+      return ankunftSchaetzung(o.route, o.richtung, o.lp, o.r, schnitt);
+    }
+
+    /** Verkehr abfragen, wenn die Fahrt-Ansicht offen ist (laufende Fahrt oder „wenn du jetzt losfährst"). */
+    async function pruefeVerkehr(erzwingen) {
+      if ($('reise-seite').hidden || document.visibilityState !== 'visible' || zustand.sim.aktiv) return;
+      const o = ankunftOrt();
+      if (o) await holeVerkehr(o.route, o.richtung, o.lp, erzwingen);
+    }
+
+    // Verkehrsfarben auf der Karte (Christof: 3 ja) – nur nach Antippen, Kacheln werden gezählt
+    let verkehrEbene = null;
+    function schalteVerkehrKarte(an) {
+      const knopf = $('karte-verkehr');
+      if (!karte || !window.L) return;
+      if (verkehrEbene) { verkehrEbene.remove(); verkehrEbene = null; }
+      if (an && tomtomStand('kacheln') >= TOMTOM_GRENZE.kacheln) { toast('TomTom: Monatsgrenze für Kartenbilder erreicht'); an = false; }
+      if (an) {
+        verkehrEbene = L.tileLayer(TOMTOM_BASIS + '/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?tileSize=256&key=' + encodeURIComponent(tomtomSchluessel()),
+          { maxZoom: 18, opacity: 0.8, attribution: 'Verkehr © TomTom' }).addTo(karte);
+        verkehrEbene.on('tileload', () => {
+          if (!tomtomZaehle('kacheln')) { schalteVerkehrKarte(false); toast('TomTom: Monatsgrenze für Kartenbilder erreicht'); }
+        });
+      }
+      knopf.setAttribute('aria-pressed', an ? 'true' : 'false');
+      zustand.einst.verkehrKarte = !!an;
+      speichere();
+    }
+
+    /**
+     * Test „Belegung meiner Stationen" (Christof: 4 ausprobieren): je eigene Station die nächste TomTom-Ladestation
+     * (≤ 300 m) suchen und, wenn TomTom Belegungsdaten hat, die freien Ladepunkte zeigen. ≈ 2 Abfragen je Station, einmalig.
+     */
+    async function testeBelegung() {
+      if ($('dlg').open) $('dlg').close();   // speichert den eben eingetragenen Schlüssel
+      const schluessel = tomtomSchluessel();
+      if (!schluessel) { toast('Erst den TomTom-Schlüssel eintragen'); return; }
+      const box = $('tt-inhalt'), stand = $('tt-stand');
+      box.replaceChildren();
+      $('tt-seite').hidden = false; nachVorn('tt-seite'); $('tt-seite').scrollTop = 0;
+      history.pushState({ tt: true }, '');
+      const eigene = daten.punkte.filter(p => !p.fremd);
+      let mitDaten = 0, gefunden = 0, n = 0;
+      for (const p of eigene) {
+        if ($('tt-seite').hidden) return;
+        n++;
+        stand.textContent = 'Prüfe ' + n + ' von ' + eigene.length + ' … (TomTom-Suchen diesen Monat: ' + tomtomStand('suche') + ')';
+        const z = el('div', 'tt-zeile');
+        z.append(el('b', '', kurzname(p.name)));
+        box.append(z);
+        if (!tomtomZaehle('suche')) { z.append(el('span', '', 'Monatsgrenze erreicht')); break; }
+        try {
+          const u = TOMTOM_BASIS + '/search/2/nearbySearch/.json?lat=' + p.lat + '&lon=' + p.lon + '&radius=300&categorySet=7309&limit=5&key=' + encodeURIComponent(schluessel);
+          const a = await fetch(u);
+          if (!a.ok) throw new Error('HTTP ' + a.status);
+          const treffer = ((await a.json()).results || []).sort((x, y) => (x.dist || 0) - (y.dist || 0));
+          if (!treffer.length) { z.append(el('span', '', 'bei TomTom nicht gefunden')); continue; }
+          gefunden++;
+          const mit = treffer.find(x => x.dataSources && x.dataSources.chargingAvailability) || null;
+          const name = (mit || treffer[0]).poi ? (mit || treffer[0]).poi.name : '?';
+          if (!mit) { z.append(el('span', '', 'gefunden („' + name + '"), aber ohne Belegungsdaten')); continue; }
+          if (!tomtomZaehle('suche')) { z.append(el('span', '', 'Monatsgrenze erreicht')); break; }
+          const b = await fetch(TOMTOM_BASIS + '/search/2/chargingAvailability.json?chargingAvailability=' + encodeURIComponent(mit.dataSources.chargingAvailability.id) + '&key=' + encodeURIComponent(schluessel));
+          if (!b.ok) throw new Error('Belegung HTTP ' + b.status);
+          const verf = (await b.json()).connectors || [];
+          let frei = 0, alle = 0;
+          for (const c of verf) { const cur = c.availability && c.availability.current || {}; frei += cur.available || 0; alle += c.total || 0; }
+          mitDaten++;
+          z.append(el('span', 'ok', frei + ' von ' + alle + ' Ladepunkten frei'), el('div', 'klein', 'TomTom: „' + name + '"'));
+        } catch (e) { z.append(el('span', '', 'Fehler: ' + (e && e.message || e))); }
+      }
+      stand.textContent = 'Fertig: ' + gefunden + ' von ' + eigene.length + ' Stationen bei TomTom gefunden, ' + mitDaten + ' mit Belegung. ' +
+        'TomTom-Suchen diesen Monat: ' + tomtomStand('suche') + ' von ' + TOMTOM_GRENZE.suche + '.';
+      speichere();
+    }
+
     /** Hat zwischen zwei Akkuwerten ein Ladestopp stattgefunden? 3 min Spielraum: ein Wert kurz vor der Abfahrt oder kurz
         nach der Ankunft an der Säule zählt noch (sonst fiele fast jedes Stück weg); einer mitten im Laden nicht. */
     function ladenUeberlappt(laden, t0, t1) {
@@ -2128,11 +2448,16 @@
       const r = zustand.reise, route = r ? reiseRoute() : (letzteAnsicht && letzteAnsicht.route);
       const kacheln = $('reise-kacheln');
       kacheln.replaceChildren();
-      const kachel = (name, wert, farbe, zusatz, breit) => {
-        const k = el('div', 'reise-kachel' + (breit ? ' breit' : ''));
+      const kachel = (name, wert, farbe, zusatz, breit, tippen) => {
+        const k = el('div', 'reise-kachel' + (breit ? ' breit' : '') + (tippen ? ' tippbar' : ''));
         k.append(el('div', 'name', name), el('div', 'wert ' + (farbe || ''), wert));
         if (zusatz) k.append(el('div', 'zusatz', zusatz));
+        if (tippen) { k.setAttribute('role', 'button'); k.tabIndex = 0; k.addEventListener('click', tippen); }
         kacheln.append(k);
+      };
+      const ankunftKachel = (name) => {
+        const a = aktuelleAnkunft();
+        if (a) kachel(name, uhrzeit(a.ankunft), 'c-zeit', ankunftZusatz(a), true, () => zeigeAnkunftDetail(aktuelleAnkunft() || a));
       };
       const t = route ? routenTeile(route) : null;
       const richtung = r ? r.richtung : zustand.richtung;
@@ -2144,6 +2469,7 @@
       renderReiseProtokoll(r);
       if (!r) {
         kachel('Noch keine Fahrt', 'bereit', 'c-zeit', 'Mit „Fahrt starten" beginnt die Messung für die oben gewählte Strecke.', true);
+        if (route) ankunftKachel('Ankunft, wenn du jetzt losfährst ≈');
         $('reise-unten').textContent = 'Gemessen wird, solange die App offen ist – am genauesten in der Halterung mit offener Ansicht.';
         $('reise-laden').replaceChildren(); reiseLadenSchluessel = '';
         $('reise-speichern').hidden = true;
@@ -2167,11 +2493,8 @@
       kachel('Ø beim Fahren', s.schnitt ? Math.round(s.schnitt) + ' km/h' : '–', 'c-tempo');
       kachel('Gefahren', fmtKm(s.km) + ' km', 'c-tempo');
       kachel('Verbleibend', s.rest === null ? '–' : fmtKm(s.rest) + ' km', 'c-rest', s.rest === null ? 'neben der Route' : '');
-      // Ankunft: Rest mit deinem Ø (ab 15 min Fahrt), sonst mit dem Reisetempo der Route; ohne Laden
-      if (!r.ende && s.rest !== null) {
-        const v = s.schnitt && s.fahrS >= 900 && s.schnitt >= 30 ? s.schnitt : tempo(route).wert;
-        kachel('Ankunft ≈', uhrzeit(jetzt + s.rest / v * 3600e3), 'c-zeit', 'ohne Laden, mit ' + Math.round(v) + ' km/h');
-      }
+      // Ankunft: Fahren + Stau voraus (TomTom) + nötiges Laden; antippen → Untermenü mit den Staus
+      if (!r.ende && s.rest !== null) ankunftKachel('Ankunft ≈');
       // Akku: wie in der Liste („Akku jetzt" aus dem letzten Wert, am Ziel mit Deckel bei 100 %)
       const l = r.punkte[r.punkte.length - 1];
       if (l && l[4] <= QUER_MAX_KM && !r.ende) {
@@ -2192,8 +2515,7 @@
       if (!r.ende) {
         const tag = tagesKorrektur();
         kachel('Verbrauch heute', tag ? tagesText(tag) : 'noch offen', tag ? (tag.faktor > 1.05 ? 'c-pause' : 'c-fahren') : 'c-zeit',
-          tag ? 'gegenüber dem Modell, aus ' + fmtKm(tag.km) + ' km – in allen Prognosen eingerechnet'
-            : 'braucht Akkuwerte vom Adapter über etwa 30 km', true);
+          tag ? 'gegen Modell, aus ' + fmtKm(tag.km) + ' km' : 'braucht Adapterwerte');
       }
       // Akku an/ab erst nach der Fahrt (Christof 22.10.2026: „nicht während der Fahrt eintippen")
       if (r.ende) renderReiseLaden(r, stopps); else { $('reise-laden').replaceChildren(); reiseLadenSchluessel = ''; }
@@ -3045,6 +3367,8 @@
         karte.on('zoomend', ordneSchilder);
       }
       karte.invalidateSize();
+      $('karte-verkehr').hidden = !tomtomSchluessel();
+      if (tomtomSchluessel() && !!zustand.einst.verkehrKarte !== !!verkehrEbene) schalteVerkehrKarte(!!zustand.einst.verkehrKarte);
       const liste = (a.erg && a.erg.eintraege) || [];
       const wahl = e ? liste.find(x => x.punkt.id === e.punkt.id) || null : liste[0] || null;
       // aus den Details: dich und diese Station zeigen; Knopf „Karte“: dich und alle erreichbaren Stationen
@@ -3278,6 +3602,9 @@
         (ad.km_stand ? ', ' + ad.km_stand.toLocaleString('de-CH') + ' km' : '') + ')' : '';
       $('version').textContent = 'App v' + APP_VERSION + ' · Daten v' + (daten.version || '?');
       $('e-ors').value = orsSchluessel();
+      $('e-tomtom').value = tomtomSchluessel();
+      $('e-tomtom-zaehler').textContent = 'Diesen Monat: ' + tomtomStand('routing') + ' von ' + TOMTOM_GRENZE.routing + ' Routen, ' +
+        tomtomStand('suche') + ' von ' + TOMTOM_GRENZE.suche + ' Suchen, ' + tomtomStand('kacheln') + ' von ' + TOMTOM_GRENZE.kacheln + ' Kartenbildern.';
       einstellungenOffen = true;
       $('dlg').showModal();
     }
@@ -3297,6 +3624,8 @@
       try {
         const s = $('e-ors').value.trim();
         if (s) localStorage.setItem(ORS_SPEICHER, s); else localStorage.removeItem(ORS_SPEICHER);
+        const tt = $('e-tomtom').value.trim();
+        if (tt) localStorage.setItem(TOMTOM_SPEICHER, tt); else localStorage.removeItem(TOMTOM_SPEICHER);
       } catch (e) { toast('Schlüssel konnte nicht gespeichert werden'); }
       speichere();
       render();
@@ -3410,6 +3739,10 @@
       $('karte-knopf').addEventListener('click', () => zeigeKarte(null));
       $('reise-knopf').addEventListener('click', zeigeReise);
       $('reise-zurueck').addEventListener('click', () => history.back());
+      $('reise-detail-zurueck').addEventListener('click', () => history.back());
+      $('tt-zurueck').addEventListener('click', () => history.back());
+      $('e-tomtom-test').addEventListener('click', testeBelegung);
+      $('karte-verkehr').addEventListener('click', () => schalteVerkehrKarte($('karte-verkehr').getAttribute('aria-pressed') !== 'true'));
       $('reise-start').addEventListener('click', starteReise);
       $('reise-ende').addEventListener('click', () => { if (confirm('Fahrt beenden?')) beendeReise(); });
       $('reise-wach').addEventListener('change', () => { zustand.einst.reiseWach = $('reise-wach').checked; speichere(); wachHalten(); });
@@ -3440,7 +3773,8 @@
       $('zurueck').addEventListener('click', () => history.back());
       // Zurück schließt nur die oberste Seite (z. B. Details über der Karte → zurück zur Karte)
       window.addEventListener('popstate', () => {
-        const offen = ['detail', 'info-seite', 'preise-seite', 'karte-seite', 'reise-seite'].filter(id => !$(id).hidden);
+        if (!$('reise-seite').hidden && !$('reise-detail').hidden) { $('reise-detail').hidden = true; return; }
+        const offen = ['detail', 'info-seite', 'preise-seite', 'karte-seite', 'reise-seite', 'tt-seite'].filter(id => !$(id).hidden);
         if (!offen.length) return;
         offen.sort((x, y) => (Number($(y).style.zIndex) || 0) - (Number($(x).style.zIndex) || 0));
         if (offen[0] === 'detail') schliesseDetail(); else if (offen[0] === 'reise-seite') schliesseReise(); else $(offen[0]).hidden = true;
@@ -3518,6 +3852,7 @@
       $('m-route').href = FORMULAR_URL + '?seite=wartung&fokus=route';
       $('m-preise').href = $('preise-aktualisieren').href = FORMULAR_URL + '?seite=preise';
       $('m-wartung').href = $('info-wartung').href = FORMULAR_URL + '?seite=wartung';
+      $('m-fahrten').href = FORMULAR_URL + '?seite=fahrten';
       // offline: zuletzt geladene Seite und Daten aus dem Zwischenspeicher des Service Workers
       if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
       if (zustand.richtung !== 'hin' && zustand.richtung !== 'rueck') zustand.richtung = 'hin';
@@ -3544,7 +3879,7 @@
     window.ladeplanung = {
       berechneListe, projiziere, haversine, punktBeiKm, mapsUrl, abrpUrl, energieAnteile, energieKwh, streckenwerte, bedarf,
       routenTeile, routenZwischen, zieleVon, simPunkte, preisKurz, preisEintrag, landVon, prognose, tempo, leseAdapter,
-      kumuliere, duenneAus, fuegeAdhocEin, merkeReisePunkt, archiviereReise, reiseStatistik, reiseStopps, merkeReiseAkku, renderReise, zeigeReise, tagesKorrektur, modellProzent, pruefeAutoStart, reiseZusammenfassung, zustandNeuLesen, ladenZwischen, zielEintrag, leseAdapterStill, adapterStillZuruecksetzen: () => { adapterStillZuletzt = 0; }, merkeMesspunkt, verbrauchsTempo, sendeMesswerte, bekannteAbschnitte, akkuProfil, bedarf, akkuJetzt, adhocRichtung, uebernehmenUrl, zeigeKarte, durchMontBlanc, berechneAdhoc,
+      kumuliere, duenneAus, fuegeAdhocEin, merkeReisePunkt, archiviereReise, holeVerkehr, ankunftSchaetzung, aktuelleAnkunft, zeigeAnkunftDetail, tomtomZaehle, tomtomStand, testeBelegung, schalteVerkehrKarte, reiseStatistik, reiseStopps, merkeReiseAkku, renderReise, zeigeReise, tagesKorrektur, modellProzent, pruefeAutoStart, reiseZusammenfassung, zustandNeuLesen, ladenZwischen, zielEintrag, leseAdapterStill, adapterStillZuruecksetzen: () => { adapterStillZuletzt = 0; }, merkeMesspunkt, verbrauchsTempo, sendeMesswerte, bekannteAbschnitte, akkuProfil, bedarf, akkuJetzt, adhocRichtung, uebernehmenUrl, zeigeKarte, durchMontBlanc, berechneAdhoc,
       get adhocRoute() { return adhocRoute; }, set adhocRoute(r) { adhocRoute = r; },
       get fremde() { return fremde; },
       get preise() { return preise; },

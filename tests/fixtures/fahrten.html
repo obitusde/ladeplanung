@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<!--
+  Ladeplanung — Meine Fahrten. Wird von doGet() mit ?seite=fahrten ausgeliefert (nur Christofs Google-Konto).
+  Version 0.1.0 (22.10.2026, Christof: „schnell sehen in einer Übersicht, wie lange so eine Fahrt dauert – Fahren + Laden +
+  Pause + Stau", gut lesbar auf dem Handy): je Ziel Ø Unterwegs als große Zahl mit einem Balken aus den Anteilen, darunter
+  die einzelnen Fahrten aufklappbar. Daten aus dem Blatt „Reisen" (reisenGruppen_ in Code.js).
+-->
+<html lang="de">
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script>window.__status = {"modell":{"gespeichert":3,"kalibrierung":{"fahrten":3,"abweichung_prozent":2.4,"methode":"Gesamtfaktor aus 3 Fahrt(en)"}},"punkte":41,"ohneKoordinaten":1,"nichtAufloesbar":0,"ohneRoute":["p019 EnBW Ladestation Lörrach"],"letzterExport":"2026-09-15T09:35:21.521Z","routen":[{"id":"neuenrade","name":"Morges – Neuenrade","laenge":"716.4","stand":"15.09.2026 09:34","aktuell":false},{"id":"savona_simplon","name":"Morges – Savona (Simplon)","laenge":"478.2","stand":"Fehler: ORS HTTP 403: Quota exceeded","aktuell":false},{"id":"ingolstadt","name":"Morges – Ingolstadt","laenge":"620.7","stand":"15.09.2026 09:34","aktuell":true}]}; window.__preise = { "version": 1, "stand": "2026-10-16", "anbieter": [ { "app": { "name": "EnBW mobility+", "url": "https://play.google.com/store/apps/details?id=com.enbw.ev" }, "tarife": [ { "name": "S", "kwh": 0.56, "grund_monat": 0 }, { "grund_monat": 5.99, "kwh": 0.46, "name": "M" }, { "kwh": 0.39, "grund_monat": 11.99, "name": "L" } ], "suche": "https://www.enbw.com/elektromobilitaet/produkte/ladetarife", "betreiber": "EnBW", "hinweis": "an EnBW-Säulen, AC und DC gleich; bis 30.09.2026 Sommeraktion −5 ct/kWh", "waehrung": "EUR", "land": "DE" }, { "betreiber": "EWE Go", "waehrung": "EUR", "land": "DE", "app": { "name": "EWE Go", "url": "https://play.google.com/store/apps/details?id=de.ewe.go.app" }, "hinweis": "An EWE-Go-Ladestationen, AC und DC gleich, keine Blockiergebühr, kostenlose Ladekarte/App", "suche": "https://www.ewe-go.de/", "tarife": [ { "grund_monat": 0, "kwh": 0.52, "name": "EWE Go Ladetarif" } ] }, { "hinweis": "Mit AMAG-App oder -Ladekarte (bzw. autoSense chargeON) an Ladestationen der AMAG-Gruppe, AC und DC einheitlich", "tarife": [ { "grund_monat": 0, "name": "App / Ladekarte", "kwh": 0.28 } ], "betreiber": "AMAG", "suche": "https://www.amag-group.ch/de/neuer-ladetarif-der-amag-gruppe.html", "auch": [ "Porsche" ], "app": { "url": "https://play.google.com/store/apps/details?id=ch.amag.amagapp", "name": "AMAG" }, "land": "CH", "waehrung": "CHF" }, { "suche": "https://www.tesla.com/de_ch/support/charging/supercharger/fees", "waehrung": "CHF", "app": { "url": "https://play.google.com/store/apps/details?id=com.teslamotors.tesla", "name": "Tesla" }, "betreiber": "Tesla", "hinweis": "je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App", "land": "CH", "tarife": [ { "kwh": 0.4, "grund_monat": 0, "name": "Fremdfahrzeug", "kwh_bis": 0.73 } ] }, { "hinweis": "je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App", "waehrung": "EUR", "land": "DE", "tarife": [ { "name": "Fremdfahrzeug", "grund_monat": 0, "kwh_bis": 0.72, "kwh": 0.52 } ], "betreiber": "Tesla", "app": { "url": "https://play.google.com/store/apps/details?id=com.teslamotors.tesla", "name": "Tesla" }, "suche": "https://www.tesla.com/de_de/support/charging/supercharger/fees" }, { "suche": "https://www.tesla.com/it_it/support/charging/supercharger/fees", "land": "IT", "betreiber": "Tesla", "tarife": [ { "name": "Fremdfahrzeug", "grund_monat": 0, "kwh": 0.6 } ], "hinweis": "je Standort und Uhrzeit verschieden – genauer Preis in der Tesla-App", "app": { "name": "Tesla", "url": "https://play.google.com/store/apps/details?id=com.teslamotors.tesla" }, "waehrung": "EUR" }, { "betreiber": "Migrol", "land": "CH", "suche": "https://www.migrol.ch/de/blog/migrol-charge-preise/", "waehrung": "CHF", "tarife": [ { "grund_monat": 0, "kw_bis": 22, "name": "M-Charge < 22 kW", "kwh": 0.38 }, { "kw_bis": 64, "kwh": 0.48, "name": "M-Charge < 64 kW", "grund_monat": 0 }, { "kwh": 0.55, "grund_monat": 0, "name": "M-Charge < 200 kW", "kw_bis": 200 }, { "name": "M-Charge < 400 kW", "kwh": 0.59, "grund_monat": 0, "kw_bis": 400 } ], "hinweis": "Preise gelten an M-Charge Ladestationen; keine Blockiergebühr", "app": { "url": "https://play.google.com/store/apps/details?id=ch.migrol.mcharge", "name": "M-Charge" } } ] };</script>
+  <script>
+  window.__aufrufe = [];
+  const antwort = (r, wert) => setTimeout(() => r.ok(wert), 200);
+  window.google = { script: { get run() {
+    const r = { ok: null, fehler: null,
+      withSuccessHandler(f) { this.ok = f; return this; },
+      withFailureHandler(f) { this.fehler = f; return this; },
+      speicherePunkt(d) { __aufrufe.push(['speicherePunkt', d]); antwort(this, { ok: true, meldung: 'Gespeichert: Richtung, Notiz.', warnung: '',
+        punkt: { id: 'p023', name: 'EnBW Ladestation Lorsch', zuordnung: [{ route: 'Morges – Neuenrade', km: 468, quer_km: 4.2, strasse: 'A 5', raststaette: false }] } }); },
+      loeschePunkt(id) { __aufrufe.push(['loeschePunkt', id]); antwort(this, { ok: true, meldung: 'Gelöscht: p023 EnBW Ladestation Lorsch.\nDie Zeile liegt im Blatt „Gelöscht" und kann von dort zurückkopiert werden.', warnung: '' }); },
+      legePunktAn(d) { __aufrufe.push(['legePunktAn', d]);
+        if (d.trotzdem) return antwort(this, { ok: true, meldung: 'Angelegt als p048: EnBW Ladestation Appenweier.', warnung: '', punkt: { id: 'p048', name: 'EnBW Ladestation Appenweier', zuordnung: [{ route: 'Morges – Neuenrade', km: 330, quer_km: 0.1, strasse: 'A 5', raststaette: true }] } });
+        if (/doppelt/.test(d.link)) return antwort(this, { ok: false, dublette: { id: 'p010', name: 'EnBW Ladestation Haiger', abstand_m: 12 } });
+        antwort(this, { ok: false, naehe: { id: 'p011', name: 'EnBW Ladestation Appenweier', abstand_m: 240 } }); },
+      speichereFahrt(d) { __aufrufe.push(['speichereFahrt', d]); antwort(this, { ok: true, warnung: '',
+        meldung: 'Fahrt gespeichert: 212 km, Ø 12 °C, 118 km/h (Bordcomputer).\nErwartet waren 31 %, tatsächlich 27 % (-4).\n\nVerbrauchsmodell: Gesamtfaktor aus 1 Fahrt(en).\nKorrektur: gesamt 1.09, Fahrt 1, Höhe 1, Heizung 1\nØ Abweichung: 0 % Akku je Fahrt.' }); },
+      speichereVergleich(d) { __aufrufe.push(['speichereVergleich', d]); antwort(this, { ok: true, warnung: '',
+        meldung: d.quelle + ': 35 % Akku für 205 km.', kalibrierung: 'Verbrauchsmodell: Gesamtfaktor aus 1 Fahrt(en).\nABRP: 1 × Ø 0 % Abweichung (Modell im Schnitt +0 %)',
+        zeile: { von: d.von, nach: d.nach, km: 205, referenz: d.start_soc - d.ende_soc, modell: 38, quelle: d.quelle } }); },
+      preiseVorschlagen() { __aufrufe.push(['preiseVorschlagen']);
+        const alt = window.__preise.anbieter;
+        antwort(this, { ok: true, modell: 'google/gemini-3.8-flash', vorschlaege: alt.map((a, i) => i === 0
+          ? { alt: a, neu: { tarife: [{ name: 'S', kwh: 0.59, grund_monat: 0 }, { name: 'M', kwh: 0.49, grund_monat: 5.99 }, { name: 'L', kwh: 0.42, grund_monat: 11.99 }], hinweis: 'ab 1.10.2026', quelle: 'https://www.enbw.com', sicher: true } }
+          : i === 1 ? { alt: a, fehler: 'OpenRouter HTTP 429: Rate limit' }
+          : i === 3 ? { alt: a, neu: { tarife: [{ name: 'Fremdfahrzeug', kwh: 0.45, kwh_bis: 0.79, grund_monat: 0 }], hinweis: '', quelle: 'https://www.tesla.com', sicher: false, grund: 'Preis je Standort und Uhrzeit verschieden' } }
+          : { alt: a, neu: { tarife: a.tarife, hinweis: a.hinweis, quelle: 'https://example.org/preise', sicher: true } }), suche: 'Google-Suche des Modells' }); },
+      speichereMesswerte(liste, reise) { __aufrufe.push(['speichereMesswerte', liste, reise]);
+        antwort(this, { ok: true, warnung: '', meldung: liste.length + ' Messwert(e) gespeichert (446 km).\n\nVerbrauchsmodell: Gesamtfaktor aus 8 Wert(en).\nVerbrauchstempo: Faktor 1,18 auf das Ø-Tempo (aus 2 GPX-Abschnitt(en))' }); },
+      preiseSpeichern(anbieter) { __aufrufe.push(['preiseSpeichern', anbieter]); antwort(this, { ok: true, text: 'Gespeichert – in der App nach 1–2 Minuten sichtbar.', preise: { stand: '2026-10-16', anbieter } }); },
+      wartungAusfuehren(aktion) { __aufrufe.push(['wartungAusfuehren', aktion]);
+        const texte = { bereinigen_vorschau: 'Punkte bereinigen v0.12.0 — Vorschau, nichts geändert\nZusammenführen: p032 → p010 (EnBW Ladestation Haiger)', routen: 'Routen berechnen v0.12.0\nneuenrade: unverändert, übersprungen\n\nExport v0.12.0\nneuenrade: 26 Punkte, 716.36 km' };
+        antwort(this, { ok: true, text: texte[aktion] || 'Export v0.12.0\n41 Punkte exportiert', status: Object.assign({}, window.__status, { routen: window.__status.routen.map(x => Object.assign({}, x, { aktuell: true, stand: '15.09.2026 11:40' })) }) }); },
+    };
+    return r;
+  } } };
+</script>
+  <meta charset="utf-8">
+  <style>
+    :root {
+      --grund: #ffffff; --flaeche: #f2f2f2; --text: #000000; --leise: #3d3d3d; --linie: #c8c8c8;
+      --akzent: #9a4a00; --akzent-text: #ffffff;
+      --fahren: #1f7a3f; --stau: #b3261e; --laden: #b35c00; --pause: #8a6d00; --sonst: #8a8a8a;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --grund: #000000; --flaeche: #161616; --text: #ffffff; --leise: #c4c4c4; --linie: #3a3a3a;
+        --akzent: #ffac4a; --akzent-text: #000000;
+        --fahren: #5ee38b; --stau: #ff6b6b; --laden: #ffac4a; --pause: #ffd166; --sonst: #9a9a9a;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--grund); color: var(--text); font: 17px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 560px; margin: 0 auto; padding: 16px; }
+    h1 { font-size: 24px; margin: 4px 0 6px; }
+    .leise { color: var(--leise); margin: 0 0 12px; }
+    .gruppe { border: 1px solid var(--linie); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; background: var(--flaeche); }
+    .gruppe h2 { font-size: 19px; margin: 0; }
+    .gross { font-size: 40px; font-weight: 800; line-height: 1.1; margin: 4px 0 2px; font-variant-numeric: tabular-nums; }
+    .unter { color: var(--leise); font-size: 15px; }
+    .balken { display: flex; height: 16px; border-radius: 8px; overflow: hidden; margin: 10px 0 8px; background: var(--linie); }
+    .balken span { display: block; height: 100%; }
+    .anteile { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 8px; align-items: center; font-variant-numeric: tabular-nums; }
+    .anteile i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+    .anteile b { text-align: right; }
+    details { margin-top: 10px; }
+    summary { cursor: pointer; font-weight: 700; min-height: 40px; display: flex; align-items: center; }
+    .fahrt { border-top: 1px solid var(--linie); padding: 10px 0 4px; }
+    .fahrt .kopf { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; }
+    .fahrt .zeile { color: var(--leise); font-size: 15px; }
+    .fahrt details { margin-top: 4px; }
+    .fahrt summary { min-height: 32px; font-weight: 600; font-size: 15px; color: var(--leise); }
+    .knopf {
+      display: flex; align-items: center; justify-content: center; width: 100%; min-height: 54px; margin-top: 10px;
+      border-radius: 10px; border: 2px solid var(--linie); background: var(--flaeche); color: var(--text);
+      font: inherit; font-weight: 700; text-decoration: none; text-align: center; padding: 0 12px;
+    }
+  </style>
+  <script>
+    // Auf dem Handy erscheint die Seite teils in Desktop-Breite und damit winzig (03.10.2026) → auf Gerätebreite hochskalieren
+    (function () {
+      var breite = window.innerWidth, geraet = screen.width;
+      if (geraet && geraet < 600 && breite > geraet * 1.15) document.documentElement.style.zoom = String(Math.min(3, breite / geraet));
+    })();
+  </script>
+</head>
+<body>
+  <main>
+    <h1>Meine Fahrten</h1>
+    <p class="leise" id="einleitung"></p>
+    <div id="gruppen"></div>
+    <a id="zur-app" class="knopf" href="#">Zur App</a>
+    <p id="version" class="leise"></p>
+  </main>
+
+  <script>
+    'use strict';
+    const MODELL = {"gruppen":[{"nach":"Morges","anzahl":1,"unterwegs":663,"fahren":438.20000000000005,"stau":61,"laden":153,"pausen":6,"sonst":4.7999999999999545,"km":742.8,"faktor":1.2979719188767551,"fahrten":[{"start":"2026-10-21T06:54:00Z","ende":"2026-10-21T17:57:00Z","von":"Neuenrade","nach":"Morges","km":742.8,"unterwegs":663,"fahren":438.20000000000005,"stau":61,"laden":153,"pausen":6,"sonst":4.7999999999999545,"ladestopps":5,"kwh":123,"kw":49,"details":"EnBW Ladestation Ehringshausen 22 min 9→32 % 13.3 kWh; EnBW Ladestation Eschborn 46 min 8→88 % 46.4 kWh","verbrauch":19.3,"temp":9.8,"routendienst":384.6,"quelle":"GPX","stauBekannt":true}]},{"nach":"Neuenrade","anzahl":1,"unterwegs":664.8,"fahren":495.20000000000005,"stau":73,"laden":76,"pausen":13,"sonst":7.599999999999909,"km":797.2,"faktor":1.3394625176803394,"fahrten":[{"start":"2026-10-16T08:52:00Z","ende":"2026-10-16T19:57:00Z","von":"Ovronnaz","nach":"Neuenrade","km":797.2,"unterwegs":664.8,"fahren":495.20000000000005,"stau":73,"laden":76,"pausen":13,"sonst":7.599999999999909,"ladestopps":2,"kwh":72.5,"kw":56,"details":"Tesla Herbolzheim 52 min 20→91 % 41.2 kWh; EnBW Ladestation Hüttenberg 25 min 6→60 % 31.3 kWh","verbrauch":15.3,"temp":17.4,"routendienst":424.20000000000005,"quelle":"GPX","stauBekannt":true}]}],"appUrl":"https://obitusde.github.io/ladeplanung/","formularUrl":"https://script.google.com/macros/s/TEST/exec","version":"0.12.0"};
+    const $ = id => document.getElementById(id);
+    const el = (tag, klasse, text) => { const e = document.createElement(tag); if (klasse) e.className = klasse; if (text !== undefined) e.textContent = text; return e; };
+    const dauer = min => { const m = Math.max(0, Math.round(min)); return m >= 60 ? Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0') : m + ' min'; };
+    const datum = iso => new Date(iso).toLocaleDateString('de-CH', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' });
+    const uhr = iso => new Date(iso).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' });
+    const zahl = (x, n) => Number(x).toLocaleString('de-DE', { maximumFractionDigits: n || 0 });
+    $('zur-app').href = MODELL.appUrl;
+    $('version').textContent = 'Apps Script v' + MODELL.version;
+
+    const TEILE = [['fahren', 'Fahren', '--fahren'], ['stau', 'Stau', '--stau'], ['laden', 'Laden', '--laden'], ['pausen', 'Pausen', '--pause'], ['sonst', 'Halte, sonstiges', '--sonst']];
+
+    /** Balken und Liste der Anteile (Fahren ohne Stau, Stau, Laden, Pausen, Rest). */
+    function anteile(box, w) {
+      const summe = TEILE.reduce((s, t) => s + (w[t[0]] || 0), 0) || 1;
+      const balken = el('div', 'balken');
+      for (const [k, , farbe] of TEILE) if (w[k] >= 1) { const s = el('span'); s.style.width = (w[k] / summe * 100) + '%'; s.style.background = 'var(' + farbe + ')'; balken.append(s); }
+      const liste = el('div', 'anteile');
+      for (const [k, name, farbe] of TEILE) {
+        if (!(w[k] >= 1) && k === 'sonst') continue;
+        const i = el('i'); i.style.background = 'var(' + farbe + ')';
+        liste.append(i, el('span', '', name), el('b', '', dauer(w[k] || 0)));
+      }
+      box.append(balken, liste);
+    }
+
+    const gruppen = MODELL.gruppen || [];
+    const anzahl = gruppen.reduce((s, g) => s + g.anzahl, 0);
+    $('einleitung').textContent = anzahl
+      ? anzahl + (anzahl === 1 ? ' Fahrt' : ' Fahrten') + ' aus dem Blatt „Reisen" (gespeichert über „Fahrt auswerten" oder „Fahrt speichern"). Werte je Ziel im Durchschnitt.'
+      : 'Noch keine Fahrt gespeichert – nach einer Fahrt in der App „Fahrt auswerten" (GPX) oder „Fahrt speichern".';
+
+    for (const g of gruppen) {
+      const k = el('section', 'gruppe');
+      k.append(el('h2', '', 'nach ' + g.nach + ' · ' + g.anzahl + (g.anzahl === 1 ? ' Fahrt' : ' Fahrten')));
+      k.append(el('div', 'gross', dauer(g.unterwegs)));
+      k.append(el('div', 'unter', 'unterwegs im Schnitt · ' + zahl(g.km) + ' km' + (g.faktor ? ' · Fahren mit Stau ≈ Routendienst × ' + zahl(g.faktor, 2) : '')));
+      anteile(k, g);
+      const klappe = el('details');
+      klappe.append(el('summary', '', 'Einzelne Fahrten (' + g.anzahl + ')'));
+      for (const f of g.fahrten) {
+        const z = el('div', 'fahrt');
+        const kopf = el('div', 'kopf');
+        kopf.append(el('span', '', datum(f.start) + ' · ' + f.von + ' → ' + f.nach), el('span', '', dauer(f.unterwegs)));
+        z.append(kopf, el('div', 'zeile', uhr(f.start) + '–' + uhr(f.ende) + ' · ' + zahl(f.km) + ' km' + (f.quelle ? ' · ' + f.quelle : '')));
+        anteile(z, f);
+        const mehr = el('details');
+        mehr.append(el('summary', '', 'Laden und Verbrauch'));
+        const zeilen = [
+          f.ladestopps ? f.ladestopps + ' Ladestopp' + (f.ladestopps > 1 ? 's' : '') + (f.kwh ? ', ' + zahl(f.kwh) + ' kWh' + (f.kw ? ', Ø ' + zahl(f.kw) + ' kW' : '') : '') : 'ohne Laden',
+          f.details ? f.details.split('; ').join('\n') : '',
+          f.verbrauch ? 'Verbrauch ' + zahl(f.verbrauch, 1) + ' kWh/100 km' + (f.temp !== '' && f.temp !== undefined ? ' bei ' + zahl(f.temp) + ' °C' : '') : '',
+          f.stauBekannt ? '' : 'Stau unbekannt (Fahrt aus der App ohne Uhr-Aufzeichnung)',
+        ].filter(Boolean);
+        for (const t of zeilen) { const p = el('div', 'zeile', t); p.style.whiteSpace = 'pre-line'; mehr.append(p); }
+        z.append(mehr);
+        klappe.append(z);
+      }
+      k.append(klappe);
+      $('gruppen').append(k);
+    }
+  </script>
+</body>
+</html>
