@@ -49,6 +49,27 @@
    ]
   },
   {
+   "betreiber": "E.ON",
+   "auch": [
+    "EON"
+   ],
+   "land": "DE",
+   "waehrung": "EUR",
+   "suche": "https://www.ewe-go.de/",
+   "tarife": [
+    {
+     "name": "über EWE Go",
+     "kwh": 0.62,
+     "grund_monat": 0
+    }
+   ],
+   "hinweis": "E.ON-Säulen als EWE-Go-Partnerstation, mit EWE-Go-App/-Ladekarte (Christof, 22.10.2026)",
+   "app": {
+    "name": "EWE Go",
+    "url": "https://play.google.com/store/apps/details?id=de.ewe.go.app"
+   }
+  },
+  {
    "hinweis": "Mit AMAG-App oder -Ladekarte (bzw. autoSense chargeON) an Ladestationen der AMAG-Gruppe, AC und DC einheitlich",
    "tarife": [
     {

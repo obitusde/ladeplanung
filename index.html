@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.40.1 — Ladepreis E.ON (über EWE Go 0,62 €/kWh, preise.json); Preis-Zuordnung über den Stationsnamen, wenn das
+                   Betreiber-Feld zu keinem Anbieter passt (E.ON Schallstadt).
   Version 0.40.0 — Menü → „Alle Ladepunkte": Karte ohne Route mit allen eigenen Stationen (Schild = Betreiber), Ortssuche über
                    OpenStreetMap, Knopf „Andere Anbieter" (Bundesdaten), Zoom-Knöpfe und Standort; Start bei dir mit
                    ≈ 100 km Umkreis; antippen → Name, Ladepunkte, Notiz, Details, Navigieren, Bearbeiten.
@@ -766,7 +768,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.40.0';
+    const APP_VERSION = '0.40.1';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -1208,7 +1210,9 @@
       const titel = String(p.name || '').toLowerCase();
       // „auch": Betreiber mit gleichem Preis (Porsche Zentren gehören zur AMAG-Gruppe)
       const namen = a => [a.betreiber].concat(a.auch || []).map(x => x.toLowerCase());
-      return preise.anbieter.find(a => a.land === land && (namen(a).includes(name) || (!name && namen(a).some(n => titel.includes(n))))) || null;
+      return preise.anbieter.find(a => a.land === land && (namen(a).includes(name) || (!name && namen(a).some(n => titel.includes(n)))))
+        // Betreiber-Feld passt zu keinem (z. B. „Raststätte Breisgau Ost, A5" bei E.ON Schallstadt): Name beginnt mit dem Betreiber
+        || preise.anbieter.find(a => a.land === land && namen(a).some(n => titel.startsWith(n + ' '))) || null;
     }
 
     const geldZahl = x => zahl(x, 2);
