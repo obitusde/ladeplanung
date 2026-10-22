@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.40.0 — Menü → „Alle Ladepunkte": Karte ohne Route mit allen eigenen Stationen (Schild = Betreiber), Ortssuche über
+                   OpenStreetMap, Knopf „Andere Anbieter" (Bundesdaten), Zoom-Knöpfe und Standort; Start bei dir mit
+                   ≈ 100 km Umkreis; antippen → Name, Ladepunkte, Notiz, Details, Navigieren, Bearbeiten.
   Version 0.39.5 — Fußzeile unter der Liste entfernt (Ziel, Akku am Ziel, Verbrauch heute, Temperatur, GPS, Tempo) – das Ziel
                    steht als letzte Zeile in der Liste (Christof 22.10.2026).
   Version 0.39.4 — Fahrt-Ansicht: beendete Fahrt als „Letzte Fahrt (beendet)“ blass und kleiner unter dem Startknopf; oben
@@ -273,6 +276,27 @@
     #karte-info .text { flex: 1; font-weight: 600; font-variant-numeric: tabular-nums; }
     #karte-info .knopf { min-height: 44px; }
     .leaflet-tooltip.schild { font: 700 14px/1.2 system-ui, sans-serif; pointer-events: auto; cursor: pointer; }
+
+    /* Alle Ladepunkte (v0.40.0): Karte ohne Route, Ortssuche, große Zoom-Knöpfe */
+    #alle-seite { position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column; background: var(--grund); padding-top: env(safe-area-inset-top); }
+    #alle-seite .kopf { display: flex; gap: 6px; padding: 8px 10px 4px; }
+    #alle-seite .kopf .knopf { min-height: 44px; }
+    #alle-fremde { margin-left: auto; }
+    #alle-fremde[aria-pressed="true"] { background: var(--akzent); color: var(--akzent-text); border-color: var(--akzent); }
+    .alle-suche { display: flex; gap: 6px; padding: 4px 10px 8px; }
+    .alle-suche input { flex: 1; min-width: 0; min-height: 44px; font-size: 18px; padding: 0 10px; border: 2px solid var(--linie); border-radius: 10px; background: var(--flaeche); color: var(--text); }
+    .alle-suche .knopf { min-height: 44px; }
+    .alle-wrap { position: relative; flex: 1; min-height: 0; }
+    #alle-karte { position: absolute; inset: 0; background: var(--flaeche); }
+    .alle-zoom { position: absolute; right: 10px; top: 10px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; }
+    .alle-zoom .knopf { width: 52px; height: 52px; min-height: 0; padding: 0; font-size: 28px; font-weight: 700; box-shadow: 0 1px 4px rgba(0, 0, 0, .35); }
+    #alle-info { padding: 8px 12px calc(env(safe-area-inset-bottom) + 8px); border-top: 2px solid var(--linie); }
+    #alle-text { margin: 0; font-weight: 600; }
+    #alle-wahl:not([hidden]) { display: grid; gap: 2px; }
+    #alle-name { font-size: 19px; }
+    #alle-notiz { color: var(--leise); }
+    .alle-knoepfe { display: flex; gap: 6px; margin-top: 6px; }
+    .alle-knoepfe .knopf { flex: 1; min-height: 44px; font-size: 17px; }
 
     /* Fahrt live (v0.34.0): immer dunkel (OLED: Schwarz = Pixel aus), Werte farbig je Bedeutung, alle ≥ 7:1 auf Schwarz */
     header #reise-knopf { flex: none; padding: 0 12px; }
@@ -576,6 +600,38 @@
     </div>
   </section>
 
+  <section id="alle-seite" hidden>
+    <div class="kopf">
+      <button id="alle-zurueck" class="knopf" type="button">← Zurück</button>
+      <button id="alle-fremde" class="knopf" type="button" aria-pressed="false">Andere Anbieter</button>
+    </div>
+    <form id="alle-suche" class="alle-suche">
+      <input id="alle-ort" type="search" placeholder="Ort suchen, z. B. Basel" enterkeyhint="search" autocomplete="off" spellcheck="false">
+      <button class="knopf" type="submit">Suchen</button>
+    </form>
+    <div class="alle-wrap">
+      <div id="alle-karte"></div>
+      <div class="alle-zoom">
+        <button id="alle-plus" class="knopf" type="button" aria-label="Hineinzoomen">+</button>
+        <button id="alle-minus" class="knopf" type="button" aria-label="Herauszoomen">−</button>
+        <button id="alle-ich" class="knopf" type="button" aria-label="Zu meinem Standort">◎</button>
+      </div>
+    </div>
+    <div id="alle-info">
+      <p id="alle-text"></p>
+      <div id="alle-wahl" hidden>
+        <b id="alle-name"></b>
+        <span id="alle-zeile"></span>
+        <span id="alle-notiz"></span>
+        <div class="alle-knoepfe">
+          <button id="alle-details" class="knopf haupt" type="button">Details</button>
+          <a id="alle-maps" class="knopf" target="_blank" rel="noopener">Navigieren</a>
+          <a id="alle-bearbeiten" class="knopf" target="_blank" rel="noopener">Bearbeiten</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section id="reise-seite" hidden>
     <div class="reise-kopf">
       <button id="reise-zurueck" class="knopf" type="button">← Zurück</button>
@@ -621,6 +677,7 @@
   <dialog id="menue-dlg">
     <form method="dialog" class="menue">
       <h2>Menü</h2>
+      <button type="button" class="knopf" data-m="alle">🗺 Alle Ladepunkte</button>
       <button type="button" class="knopf" data-m="adhoc">↪ Route ab hier</button>
       <a id="m-neu" class="knopf" href="#" target="_blank" rel="noopener">＋ Ladepunkt hinzufügen</a>
       <a id="m-route" class="knopf" href="#" target="_blank" rel="noopener">＋ Route hinzufügen</a>
@@ -709,7 +766,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.39.5';
+    const APP_VERSION = '0.40.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -1758,7 +1815,8 @@
         else if (pg.angenommen) akkuZeile.append('braucht ≈ ' + Math.round(pg.prozent) + ' %', el('small', '', 'ohne „Akku jetzt" – voller Akku angenommen'));
         else akkuZeile.append('Ankunft ≈ ' + Math.round(pg.ankunft) + ' %');
       }
-      $('d-gross').textContent = fmtKm(e.weg) + ' km ' + (modus === 'luftlinie' ? 'Luftlinie' : 'voraus') +
+      $('d-gross').hidden = e.weg === null;
+      if (e.weg !== null) $('d-gross').textContent = fmtKm(e.weg) + ' km ' + (modus === 'luftlinie' ? 'Luftlinie' : 'voraus') +
         (e.weg > e.km ? ' (davon ' + fmtKm(e.weg - e.km) + ' km abseits)' : '');
       $('d-gross').className = 'gross';
 
@@ -1801,7 +1859,7 @@
       $('d-bearbeiten').hidden = !!p.fremd || !!p.ziel;
       $('d-vergleich').hidden = !!p.fremd || !!p.ziel || zustand.route === ADHOC_ID;
       if (p.ziel) $('d-app').hidden = true;
-      $('d-karte').hidden = !!p.ziel;
+      $('d-karte').hidden = !!p.ziel || !!e.ausAlle;
 
       $('detail').hidden = false;
       nachVorn('detail');
@@ -3640,6 +3698,158 @@
     }
 
     // -----------------------------------------------------------------------
+    // Alle Ladepunkte (v0.40.0, Christof 22.10.2026: „sehen, wo überall Ladepunkte eingetragen sind"): Karte ohne Route und
+    // ohne Entfernungen, Schild = Betreiber, Ortssuche über OpenStreetMap (Nominatim, ohne Schlüssel), fremde Stationen
+    // aus den Bundesdaten nur per Knopf; Start bei dir mit ≈ 100 km Umkreis.
+    // -----------------------------------------------------------------------
+
+    const ALLE_RADIUS_M = 100e3, ALLE_SCHILDER_MAX = 150;
+    let alleKarte = null, alleEbene = null, alleSuchMarke = null, alleWahl = null, alleMarken = [];
+
+    async function zeigeAlle() {
+      if ($('alle-seite').hidden) { $('alle-seite').hidden = false; history.pushState({ alle: true }, ''); }
+      nachVorn('alle-seite');
+      alleWahl = null;
+      $('alle-wahl').hidden = true;
+      $('alle-text').hidden = false;
+      $('alle-fremde').setAttribute('aria-pressed', String(!!zustand.einst.alleFremde));
+      $('alle-text').textContent = 'Karte wird geladen …';
+      try { await ladeLeaflet(); } catch (err) { $('alle-text').textContent = err.message; return; }
+      if (!alleKarte) {
+        alleKarte = L.map('alle-karte', { zoomControl: false, renderer: L.canvas({ tolerance: 12 }) });
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(alleKarte);
+        alleKarte.on('moveend', ordneAlleSchilder);
+      }
+      alleKarte.invalidateSize();
+      alleZuMir();      // erst den Ausschnitt setzen – die Schilder brauchen ihn
+      zeichneAlle();
+    }
+
+    /** Auf dich mit ≈ 100 km Umkreis; ohne Standort auf alle deine Stationen. */
+    function alleZuMir() {
+      if (!alleKarte) return;
+      const pos = aktuellePosition();
+      if (pos) alleKarte.fitBounds(L.latLng(pos.lat, pos.lon).toBounds(2 * ALLE_RADIUS_M));
+      else if (daten && daten.punkte.length) alleKarte.fitBounds(L.latLngBounds(daten.punkte.map(p => [p.lat, p.lon])), { padding: [30, 30] });
+      else alleKarte.setView([46.8, 8.2], 7);   // ohne Standort und Daten: Schweiz
+    }
+
+    /** Eigene Stationen, auf Wunsch dazu die fremden (ohne die, die ≤ 150 m neben einer eigenen liegen = dieselbe). */
+    function allePunkte() {
+      const eigene = ((daten && daten.punkte) || []).filter(p => isFinite(p.lat) && isFinite(p.lon));
+      if (!zustand.einst.alleFremde || !fremde || !fremde.punkte) return eigene;
+      const fremd = fremde.punkte
+        .filter(f => !eigene.some(p => Math.abs(p.lat - f.lat) < 0.01 && haversine(p.lat, p.lon, f.lat, f.lon) <= 0.15))
+        .map(f => ({ ...f, fremd: true }));
+      return eigene.concat(fremd);
+    }
+
+    function zeichneAlle() {
+      if (!alleKarte) return;
+      if (alleEbene) alleEbene.remove();
+      alleEbene = L.layerGroup().addTo(alleKarte);
+      const akzent = getComputedStyle(document.documentElement).getPropertyValue('--akzent').trim();
+      const punkte = allePunkte();
+      // unwichtige zuerst zeichnen, damit deine Stationen oben liegen
+      const reihe = punkte.slice().sort((x, y) => vorrang(y) - vorrang(x));
+      alleMarken = [];
+      for (const p of reihe) {
+        const gewaehlt = !!(alleWahl && alleWahl.id === p.id);
+        const m = L.circleMarker([p.lat, p.lon], {
+          radius: gewaehlt ? 11 : p.fremd ? 6 : 8, color: gewaehlt ? '#000000' : p.fremd ? '#666666' : akzent, weight: gewaehlt ? 3 : 2,
+          fillColor: p.fremd ? '#ffffff' : akzent, fillOpacity: 0.95, dashArray: p.fremd ? '4 3' : null,
+        }).addTo(alleEbene);
+        m.on('click', () => waehleAlle(p));
+        alleMarken.push({ m, p, text: (p.favorit ? '★ ' : '') + (firmaVon(p) || kurzname(p.name)), vorrang: vorrang(p), gewaehlt });
+      }
+      if (alleSuchMarke) alleSuchMarke.addTo(alleEbene);
+      // Überdecken sich Schilder, bleibt: gewählte, dann deine (★ zuerst), dann nach Firma
+      alleMarken.sort((x, y) => (y.gewaehlt - x.gewaehlt) || x.vorrang - y.vorrang);
+      const eigene = punkte.filter(p => !p.fremd).length;
+      $('alle-text').textContent = eigene + ' eigene Ladepunkte' + (punkte.length > eigene ? ' + ' + (punkte.length - eigene) + ' andere' : '') + ' – antippen';
+      ordneAlleSchilder();
+    }
+
+    /** Schilder nur im sichtbaren Ausschnitt, höchstens 150, überdeckte ausgeblendet; bei jedem Verschieben/Zoomen neu. */
+    function ordneAlleSchilder() {
+      if (!alleKarte || $('alle-seite').hidden) return;
+      const sicht = alleKarte.getBounds().pad(0.1), belegt = [];
+      let n = 0;
+      for (const s of alleMarken) {
+        let zeigen = false;
+        if (n < ALLE_SCHILDER_MAX && sicht.contains(s.m.getLatLng())) {
+          const p = alleKarte.latLngToContainerPoint(s.m.getLatLng());
+          const breite = s.text.length * 8 + 14, hoehe = 22;
+          const box = { x0: p.x - breite / 2, x1: p.x + breite / 2, y0: p.y - 12 - hoehe, y1: p.y - 8 };
+          zeigen = s.gewaehlt || !belegt.some(o => box.x0 < o.x1 && box.x1 > o.x0 && box.y0 < o.y1 && box.y1 > o.y0);
+          if (zeigen) { belegt.push(box); n++; }
+        }
+        if (zeigen) {
+          if (!s.m.getTooltip()) {
+            // Schild antippen wählt die Station (Handler vor dem Binden, ein festes Schild öffnet sofort)
+            s.m.on('tooltipopen', ev => {
+              const e = ev.tooltip.getElement();
+              if (e && !e.dataset.tipp) { e.dataset.tipp = '1'; L.DomEvent.on(e, 'click', x => { L.DomEvent.stop(x); waehleAlle(s.p); }); }
+            });
+            s.m.bindTooltip(s.text, { permanent: true, interactive: true, direction: 'top', offset: [0, s.gewaehlt ? -10 : -7],
+              className: 'schild' + (s.p.fremd ? ' klein' : '') });
+          }
+          if (!s.m.isTooltipOpen()) s.m.openTooltip();
+        } else if (s.m.getTooltip() && s.m.isTooltipOpen()) s.m.closeTooltip();
+      }
+    }
+
+    /** Station gewählt: Name, Ladepunkte, Notiz und Knöpfe unten. */
+    function waehleAlle(p) {
+      alleWahl = p;
+      zeichneAlle();
+      $('alle-text').hidden = true;
+      $('alle-wahl').hidden = false;
+      $('alle-name').textContent = (p.favorit ? '★ ' : '') + kurzname(p.name);
+      $('alle-zeile').textContent = ladepunkteText(p) + (p.fremd ? ' · nicht in deiner Liste' : '');
+      $('alle-notiz').textContent = p.notiz || '';
+      $('alle-notiz').hidden = !p.notiz;
+      $('alle-maps').href = mapsUrl(p);
+      $('alle-bearbeiten').hidden = !!p.fremd;
+      $('alle-bearbeiten').href = FORMULAR_URL + '?id=' + encodeURIComponent(p.id);
+    }
+
+    /** Details der gewählten Station: liegt sie in der Liste voraus, mit allen Werten, sonst mit Luftlinie ab dir. */
+    function alleDetails() {
+      const p = alleWahl;
+      if (!p) return;
+      const a = letzteAnsicht, e = a && a.erg && (a.erg.eintraege || []).find(x => x.punkt.id === p.id);
+      if (e) { zeigeDetail(e, a.erg.modus); return; }
+      const pos = aktuellePosition(), d = pos ? haversine(pos.lat, pos.lon, p.lat, p.lon) : null;
+      zeigeDetail({ punkt: p, prognose: null, weg: d, km: d, z: null, ausAlle: true }, 'luftlinie');
+    }
+
+    /** Ort suchen (OpenStreetMap/Nominatim, ohne Schlüssel) und dorthin springen. */
+    async function sucheAlleOrt(ev) {
+      ev.preventDefault();
+      const q = $('alle-ort').value.trim();
+      if (!q || !alleKarte) return;
+      $('alle-ort').blur();
+      try {
+        const antwort = await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=de&q=' + encodeURIComponent(q));
+        const treffer = antwort.ok ? (await antwort.json())[0] : null;
+        if (!treffer) { toast('„' + q + '" nicht gefunden'); return; }
+        const b = treffer.boundingbox && treffer.boundingbox.map(Number);
+        const mitte = L.latLng(Number(treffer.lat), Number(treffer.lon));
+        if (alleSuchMarke) alleSuchMarke.remove();
+        alleSuchMarke = L.circleMarker(mitte, { radius: 7, color: '#ffffff', weight: 3, fillColor: '#d93025', fillOpacity: 1 })
+          .bindTooltip(String(treffer.name || treffer.display_name || q).split(',')[0]);
+        alleSuchMarke.addTo(alleEbene);
+        // Ort ganz zeigen, aber mindestens ≈ 30 km breit, damit die Ladepunkte drumherum sichtbar sind
+        const bereich = b && b.length === 4 && b.every(isFinite)
+          ? L.latLngBounds([b[0], b[2]], [b[1], b[3]]).extend(mitte.toBounds(30e3)) : mitte.toBounds(30e3);
+        alleKarte.fitBounds(bereich, { maxZoom: 12 });
+      } catch (err) {
+        toast('Ortssuche nicht erreichbar – keine Verbindung?');
+      }
+    }
+
+    // -----------------------------------------------------------------------
     // Zwischenablage — synchron im Klick-Handler, Rückfall über textarea
     // -----------------------------------------------------------------------
 
@@ -3859,7 +4069,7 @@
       $('menue-dlg').querySelectorAll('a.knopf').forEach(a => a.addEventListener('click', () => $('menue-dlg').close()));
       $('menue-dlg').querySelectorAll('button[data-m]').forEach(k => k.addEventListener('click', () => {
         $('menue-dlg').close();
-        ({ adhoc: oeffneAdhoc, einstellungen: oeffneEinstellungen, simulation: oeffneSimulation, preise: zeigePreise, info: zeigeInfo })[k.dataset.m]();
+        ({ alle: zeigeAlle, adhoc: oeffneAdhoc, einstellungen: oeffneEinstellungen, simulation: oeffneSimulation, preise: zeigePreise, info: zeigeInfo })[k.dataset.m]();
       }));
       // Route ab hier
       $('adhoc-form').querySelectorAll('[data-start]').forEach(k => k.addEventListener('click', () => {
@@ -3909,6 +4119,18 @@
       });
       $('d-karte').addEventListener('click', () => { if (detailEintrag) zeigeKarte(detailEintrag); });
       $('karte-zurueck').addEventListener('click', () => history.back());
+      $('alle-zurueck').addEventListener('click', () => history.back());
+      $('alle-suche').addEventListener('submit', sucheAlleOrt);
+      $('alle-plus').addEventListener('click', () => alleKarte && alleKarte.zoomIn());
+      $('alle-minus').addEventListener('click', () => alleKarte && alleKarte.zoomOut());
+      $('alle-ich').addEventListener('click', alleZuMir);
+      $('alle-details').addEventListener('click', alleDetails);
+      $('alle-fremde').addEventListener('click', () => {
+        zustand.einst.alleFremde = !zustand.einst.alleFremde;
+        speichere();
+        $('alle-fremde').setAttribute('aria-pressed', String(zustand.einst.alleFremde));
+        zeichneAlle();
+      });
       $('karte-details').addEventListener('click', () => {
         if (karteWahl) zeigeDetail(karteWahl, letzteAnsicht && letzteAnsicht.erg ? letzteAnsicht.erg.modus : 'strecke');
       });
@@ -3925,7 +4147,7 @@
       // Zurück schließt nur die oberste Seite (z. B. Details über der Karte → zurück zur Karte)
       window.addEventListener('popstate', () => {
         if (!$('reise-seite').hidden && !$('reise-detail').hidden) { $('reise-detail').hidden = true; return; }
-        const offen = ['detail', 'info-seite', 'preise-seite', 'karte-seite', 'reise-seite', 'tt-seite'].filter(id => !$(id).hidden);
+        const offen = ['detail', 'info-seite', 'preise-seite', 'karte-seite', 'alle-seite', 'reise-seite', 'tt-seite'].filter(id => !$(id).hidden);
         if (!offen.length) return;
         offen.sort((x, y) => (Number($(y).style.zIndex) || 0) - (Number($(x).style.zIndex) || 0));
         if (offen[0] === 'detail') schliesseDetail(); else if (offen[0] === 'reise-seite') schliesseReise(); else $(offen[0]).hidden = true;
