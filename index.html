@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.39.4 — Fahrt-Ansicht: beendete Fahrt als „Letzte Fahrt (beendet)“ blass und kleiner unter dem Startknopf; oben
+                   und im Knopf die gewählte nächste Strecke („▶ Neue Fahrt nach Neuenrade starten“).
   Version 0.39.3 — Stationsdetails (Christof 22.10.2026): „Ankunft ≈ x %" statt „Rest bei Ankunft" (eine Zeile), Ladepunkte
                    ohne „(TomTom)", App-Knopf ohne „(Laden starten)", ohne Knopf „Belegung in Google Maps" und ohne
                    Hinweis „Handy entsperrt und hochkant lassen"; „Auf Karte" heißt „Auf interner Karte".
@@ -284,6 +286,10 @@
     .reise-kacheln { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
     .reise-kachel { background: #0d0d0d; border: 1px solid #2c2c2c; border-radius: 12px; padding: 8px 12px 10px; min-width: 0; }
     .reise-kachel.breit { grid-column: 1 / -1; }
+    .reise-alt-titel { grid-column: 1 / -1; color: #bdbdbd; font-size: 16px; font-weight: 700; margin: 6px 0 0; }
+    .reise-kacheln.alt .reise-kachel { opacity: 0.55; }
+    .reise-kacheln.alt .reise-kachel .wert { font-size: 24px; }
+    .reise-kacheln.alt .reise-kachel.breit .wert { font-size: 28px; }
     .reise-kachel .name { color: #bdbdbd; font-size: 15px; font-weight: 700; }
     .reise-kachel .wert { font-size: 32px; font-weight: 800; line-height: 1.15; font-variant-numeric: tabular-nums; }
     .reise-kachel.breit .wert { font-size: 40px; }
@@ -710,7 +716,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.39.3';
+    const APP_VERSION = '0.39.4';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -2636,14 +2642,22 @@
       };
       const t = route ? routenTeile(route) : null;
       const richtung = r ? r.richtung : zustand.richtung;
-      $('reise-route').textContent = t ? (richtung === 'hin' ? t.start + ' → ' + t.ziel : t.ziel + ' → ' + t.start) : '';
+      const strecke = (tt, ri) => ri === 'hin' ? tt.start + ' → ' + tt.ziel : tt.ziel + ' → ' + tt.start;
       // Andere Strecke oder Richtung oben gewählt als die laufende Fahrt → neue Fahrt startbar (beendet die alte)
       const gewaehlt = letzteAnsicht && letzteAnsicht.route;
       const andere = !!(r && !r.ende && gewaehlt && (gewaehlt.id !== r.route || zustand.richtung !== r.richtung));
+      // Beendete Fahrt: oben die gewählte Strecke (= nächste Fahrt), Startknopf vor den Werten der alten (Christof 22.10.2026)
+      const alt = !!(r && r.ende);
+      $('reise-route').textContent = alt && gewaehlt ? strecke(routenTeile(gewaehlt), zustand.richtung) : t ? strecke(t, richtung) : '';
       $('reise-start').hidden = !!(r && !r.ende) && !andere;
-      $('reise-start').textContent = andere ? '▶ Neue Fahrt nach ' + (zustand.richtung === 'hin' ? routenTeile(gewaehlt).ziel : routenTeile(gewaehlt).start) + ' starten'
-        : r && r.ende ? '▶ Neue Fahrt starten' : '▶ Fahrt starten';
+      $('reise-start').textContent = (andere || alt) && gewaehlt ? '▶ Neue Fahrt nach ' + (zustand.richtung === 'hin' ? routenTeile(gewaehlt).ziel : routenTeile(gewaehlt).start) + ' starten'
+        : alt ? '▶ Neue Fahrt starten' : '▶ Fahrt starten';
       $('reise-ende').hidden = !(r && !r.ende);
+      const knoepfe = document.querySelector('#reise-inhalt .reise-knoepfe');
+      if (alt) $('reise-hinweis').after(knoepfe); else $('reise-inhalt').append(knoepfe);
+      kacheln.classList.toggle('alt', alt);
+      if (alt) kacheln.append(el('div', 'reise-alt-titel', 'Letzte Fahrt (beendet) · ' + (t ? strecke(t, r.richtung) : '') + ' · ' +
+        new Date(r.start).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) + ' ' + uhrzeit(r.start) + '–' + uhrzeit(r.ende)));
       renderReiseHinweis(r);
       renderReiseProtokoll(r);
       if (!r) {
@@ -2671,7 +2685,7 @@
       kachel('Laden', laden.length + ' · ' + Math.round(ladeMin) + ' min', 'c-rest', ladeKwh ? zahl(ladeKwh, 0) + ' kWh' + (ladeMin ? ' · Ø ' + Math.round(ladeKwh / (laden.filter(x => x.kwh).reduce((a, x) => a + x.min, 0) / 60)) + ' kW' : '') : '');
       kachel('Ø beim Fahren', s.schnitt ? Math.round(s.schnitt) + ' km/h' : '–', 'c-tempo');
       kachel('Gefahren', fmtKm(s.km) + ' km', 'c-tempo');
-      kachel('Verbleibend', s.rest === null ? '–' : fmtKm(s.rest) + ' km', 'c-rest', s.rest === null ? 'neben der Route' : '');
+      if (!r.ende) kachel('Verbleibend', s.rest === null ? '–' : fmtKm(s.rest) + ' km', 'c-rest', s.rest === null ? 'neben der Route' : '');
       // Ankunft: Fahren + Stau voraus (TomTom) + nötiges Laden; antippen → Untermenü mit den Staus
       if (!r.ende && s.rest !== null) ankunftKachel('Ankunft ≈');
       // Akku: wie in der Liste („Akku jetzt" aus dem letzten Wert, am Ziel mit Deckel bei 100 %)
