@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.39.2 — Fahrt endet von selbst, wenn das Auto über 3 h an derselben Stelle steht (beim Ankommen dort), auch beim
+                   Öffnen der App; ist eine andere Strecke/Richtung gewählt, beendet „▶ Neue Fahrt starten" die laufende.
   Version 0.39.1 — Stationsdetails knapper (Christof 22.10.2026): „Rest bei Ankunft" groß hervorgehoben, Akkubedarf nur in %,
                    Adresse ohne Land, Preis nur je kWh, Leistung und Ladepunkte in einer Zeile; ohne Betreiber (steht im
                    Titel), Streckenkm und Höhenmeter.
@@ -706,7 +708,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.39.1';
+    const APP_VERSION = '0.39.2';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -728,6 +730,7 @@
     const TAG_MIN_PROZENT = 4, TAG_FAKTOR_MIN = 0.8, TAG_FAKTOR_MAX = 1.4;  // Tageskorrektur ab 4 % Modellverbrauch, begrenzt
     const TAG_STUECK_MAX_MS = 3 * 3600e3, MESS_LUECKE_MAX_MS = 15 * 60e3;   // nur kurze, lückenlos gemessene Stücke
     const REISE_VERGESSEN_MS = 6 * 3600e3;   // so lange kein Messpunkt → Fahrt gilt als beendet (beim letzten Punkt)
+    const REISE_STAND_ENDE_MS = 3 * 3600e3;  // so lange an derselben Stelle (zu Hause, Übernachtung) → beendet beim Ankommen dort
     const MESSSTUECK_MIN_ANTEIL = 0.6;     // Akku weniger als 60 % des Modells gesunken → unbemerkt geladen, kein Messstück
     const AUTO_START_KM = 10, AUTO_START_KMH = 60, AUTO_VERWERFEN_Q_KM = 3;  // Start von selbst, falls vergessen
     const UHR_HINWEIS_MS = 10 * 60e3, UHR_ENDE_HINWEIS_MS = 30 * 60e3;     // „⌚ Uhr gestartet?" / „⌚ Uhr stoppen"
@@ -1358,7 +1361,7 @@
       const r = zustand.reise;
       if (!r || r.ende || !daten || !modell) return null;
       const letzt = r.punkte[r.punkte.length - 1];
-      if (letzt && Date.now() - letzt[0] > REISE_VERGESSEN_MS) return null;   // alte, nie beendete Fahrt
+      if (letzt && reiseVergessenSeit(r, Date.now()) !== null) return null;   // alte, nie beendete Fahrt
       const route = reiseRoute();
       if (!route) return null;
       const akku = (r.akku || []).slice().sort((a, b) => a[0] - b[0]);
@@ -1536,6 +1539,7 @@
 
     function render() {
       if (!daten) return;
+      pruefeVergesseneReise();
       $('reise-knopf').classList.toggle('laeuft', !!(zustand.reise && !zustand.reise.ende));   // grün, solange eine Fahrt läuft
       const route = aktuelleRoute();
       zustand.route = route.id;
@@ -1966,14 +1970,41 @@
       return r && daten ? daten.routen.find(x => x.id === r.route) : null;
     }
 
+    /**
+     * Ist die laufende Fahrt längst vorbei? Steht das Auto seit über 3 h an derselben Stelle (≤ 300 m), endet sie beim
+     * Ankommen dort; kam 6 h gar kein Punkt, beim letzten. Gibt die Endzeit zurück oder null (21.10.: die Fahrt lief bis zum
+     * nächsten Tag, weil die App beim Öffnen zu Hause neue Punkte hineinschrieb).
+     */
+    function reiseVergessenSeit(r, jetzt) {
+      const p = r.punkte;
+      if (!p.length) return jetzt - r.start > REISE_VERGESSEN_MS ? r.start : null;
+      const l = p[p.length - 1];
+      let j = p.length - 1;
+      while (j > 0 && haversine(p[j - 1][1], p[j - 1][2], l[1], l[2]) <= 0.3) j--;
+      if (jetzt - p[j][0] > REISE_STAND_ENDE_MS) return p[j][0];
+      return jetzt - l[0] > REISE_VERGESSEN_MS ? l[0] : null;
+    }
+
+    /** Vergessene Fahrt beenden; true, wenn eine beendet wurde. */
+    function pruefeVergesseneReise() {
+      const r = zustand.reise;
+      if (!r || r.ende) return false;
+      const ende = reiseVergessenSeit(r, Date.now());
+      if (ende === null) return false;
+      r.ende = ende;
+      speichere();
+      return true;
+    }
+
     /** Messpunkt für die laufende Fahrt: [zeit, lat, lon, routenKm, querKm]; nicht bei Simulation, höchstens alle 20 s. */
     function merkeReisePunkt(pos, zeit) {
       const r = zustand.reise, route = reiseRoute();
       if (!r || r.ende || !route || !pos || pos.sim || pos.alt) return;
       const t = zeit || Date.now(), letzt = r.punkte[r.punkte.length - 1];
       if (letzt && t - letzt[0] < 20e3) return;
-      // 6 h kein Messpunkt: die Fahrt ist längst vorbei (21.10.: lief bis zum nächsten Tag weiter) → beim letzten Punkt beenden
-      if (letzt && t - letzt[0] > REISE_VERGESSEN_MS) { r.ende = letzt[0]; speichere(); render(); return; }
+      // längst vorbei (über 3 h am selben Ort oder 6 h kein Punkt) → beenden statt weiterschreiben
+      const vergessen = reiseVergessenSeit(r, t);
+      if (vergessen !== null) { r.ende = vergessen; speichere(); render(); return; }
       const pr = projiziere(route.linie, pos.lat, pos.lon, lat0Von(route));
       const runde5 = x => Math.round(x * 1e5) / 1e5;
       r.punkte.push([t, runde5(pos.lat), runde5(pos.lon), Math.round(pr.km * 100) / 100, Math.round(pr.q * 10) / 10]);
@@ -2125,6 +2156,8 @@
       const pos = aktuellePosition(), route = letzteAnsicht && letzteAnsicht.route;
       if (!route) { toast('Erst oben eine Strecke wählen'); return; }
       if (!pos || pos.alt) { toast('Standort wird gesucht – gleich nochmal tippen'); holeStandort(); return; }
+      const alt = zustand.reise;
+      if (alt && !alt.ende) { const l = alt.punkte[alt.punkte.length - 1]; alt.ende = l ? l[0] : Date.now(); }   // laufende beenden
       archiviereReise();
       zustand.reise = { route: route.id, route_name: route.name, richtung: zustand.richtung, start: Date.now(), ende: null, punkte: [], akku: [], laden: {}, uhr: Date.now() };
       zustand.autoStart = null;
@@ -2611,8 +2644,12 @@
       const t = route ? routenTeile(route) : null;
       const richtung = r ? r.richtung : zustand.richtung;
       $('reise-route').textContent = t ? (richtung === 'hin' ? t.start + ' → ' + t.ziel : t.ziel + ' → ' + t.start) : '';
-      $('reise-start').hidden = !!(r && !r.ende);
-      $('reise-start').textContent = r && r.ende ? '▶ Neue Fahrt starten' : '▶ Fahrt starten';
+      // Andere Strecke oder Richtung oben gewählt als die laufende Fahrt → neue Fahrt startbar (beendet die alte)
+      const gewaehlt = letzteAnsicht && letzteAnsicht.route;
+      const andere = !!(r && !r.ende && gewaehlt && (gewaehlt.id !== r.route || zustand.richtung !== r.richtung));
+      $('reise-start').hidden = !!(r && !r.ende) && !andere;
+      $('reise-start').textContent = andere ? '▶ Neue Fahrt nach ' + (zustand.richtung === 'hin' ? routenTeile(gewaehlt).ziel : routenTeile(gewaehlt).start) + ' starten'
+        : r && r.ende ? '▶ Neue Fahrt starten' : '▶ Fahrt starten';
       $('reise-ende').hidden = !(r && !r.ende);
       renderReiseHinweis(r);
       renderReiseProtokoll(r);
@@ -4029,7 +4066,7 @@
     window.ladeplanung = {
       berechneListe, projiziere, haversine, punktBeiKm, mapsUrl, abrpUrl, energieAnteile, energieKwh, streckenwerte, bedarf,
       routenTeile, routenZwischen, zieleVon, simPunkte, preisKurz, preisEintrag, landVon, prognose, tempo, leseAdapter,
-      kumuliere, duenneAus, fuegeAdhocEin, merkeReisePunkt, messLuecke, zeigeVerbrauchDetail, archiviereReise, holeVerkehr, ankunftSchaetzung, aktuelleAnkunft, zeigeAnkunftDetail, tomtomZaehle, tomtomStand, testeBelegung, holeBelegung, ttZuordnung, ttInfo, schalteVerkehrKarte, reiseStatistik, reiseStopps, merkeReiseAkku, renderReise, zeigeReise, tagesKorrektur, modellProzent, pruefeAutoStart, reiseZusammenfassung, zustandNeuLesen, ladenZwischen, zielEintrag, leseAdapterStill, adapterStillZuruecksetzen: () => { adapterStillZuletzt = 0; }, merkeMesspunkt, verbrauchsTempo, sendeMesswerte, bekannteAbschnitte, akkuProfil, bedarf, akkuJetzt, adhocRichtung, uebernehmenUrl, zeigeKarte, durchMontBlanc, berechneAdhoc,
+      kumuliere, duenneAus, fuegeAdhocEin, merkeReisePunkt, reiseVergessenSeit, pruefeVergesseneReise, starteReise, messLuecke, zeigeVerbrauchDetail, archiviereReise, holeVerkehr, ankunftSchaetzung, aktuelleAnkunft, zeigeAnkunftDetail, tomtomZaehle, tomtomStand, testeBelegung, holeBelegung, ttZuordnung, ttInfo, schalteVerkehrKarte, reiseStatistik, reiseStopps, merkeReiseAkku, renderReise, zeigeReise, tagesKorrektur, modellProzent, pruefeAutoStart, reiseZusammenfassung, zustandNeuLesen, ladenZwischen, zielEintrag, leseAdapterStill, adapterStillZuruecksetzen: () => { adapterStillZuletzt = 0; }, merkeMesspunkt, verbrauchsTempo, sendeMesswerte, bekannteAbschnitte, akkuProfil, bedarf, akkuJetzt, adhocRichtung, uebernehmenUrl, zeigeKarte, durchMontBlanc, berechneAdhoc,
       get adhocRoute() { return adhocRoute; }, set adhocRoute(r) { adhocRoute = r; },
       get fremde() { return fremde; },
       get preise() { return preise; },
