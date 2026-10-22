@@ -93,5 +93,11 @@ const namen = eindeutigeNamen([
 ]).map(p => p.name).join('|');
 pruefe(namen === 'EnBW Pfungstadt (Raststätte Ost)|EnBW Pfungstadt (Raststätte West)|EnBW Pfungstadt (Mainstr.)|Migrol Gossau SG', 'eindeutige Namen: ' + namen);
 
+// E.ON Drive und EWE Go (seit 1.4.0), aber nicht E.ON-Fremde wie „reon“ oder HanseWerk
+const { betreiberDE } = require('./hole-bundesdaten.js');
+const zuordnung = ['E.ON Drive Infrastructure GmbH', 'E.ON Drive Germany GmbH', 'EWE Go GmbH', 'EWE Go HOCHTIEF Ladepartner GmbH & Co. KG',
+  'reon Infrastruktur GmbH & Co. KG', 'HanseWerk AG', 'EnBW mobility+ AG und Co.KG'].map(betreiberDE).join('|');
+pruefe(zuordnung === 'E.ON|E.ON|EWE Go|EWE Go|||EnBW', 'Betreiber DE: ' + zuordnung);
+
 console.log(fehler === 0 ? 'Alle Prüfungen bestanden.' : fehler + ' Prüfungen fehlgeschlagen.');
 process.exit(fehler === 0 ? 0 : 1);

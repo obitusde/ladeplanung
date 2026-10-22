@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.40.2 — Andere Anbieter um E.ON und EWE Go (Deutschland, ab 100 kW) erweitert (fremde.json); Info-Text angepasst.
   Version 0.40.1 — Ladepreis E.ON (über EWE Go 0,62 €/kWh, preise.json); Preis-Zuordnung über den Stationsnamen, wenn das
                    Betreiber-Feld zu keinem Anbieter passt (E.ON Schallstadt).
   Version 0.40.0 — Menü → „Alle Ladepunkte": Karte ohne Route mit allen eigenen Stationen (Schild = Betreiber), Ortssuche über
@@ -530,7 +531,7 @@
       <li><b>Große Zahl:</b> ganzer Weg bis zur Station – entlang der Route und, wenn sie abseits liegt, der Abzweig dazu („3 km abseits"). Stationen, deren Abzweig länger ist als der Weg entlang der Route bis dorthin, blendet die App aus: Sie liegen neben oder hinter dir, nicht auf dem Weg.</li>
       <li><b>braucht ≈ 23 %</b>: so viel Akku kostet der Weg bis dorthin. <b>Rest bei Ankunft ≈ 34 %</b>: so viel ist dort noch übrig – wenn oben „Akku jetzt" eingetragen ist. Ohne Eintrag rechnet die App mit vollem Akku (100 %). <span class="rot"><b>Rot</b></span> = Rest unter deiner Reserve, <b>nicht erreichbar</b> = Akku reicht nicht bis dorthin.</li>
       <li><b>Grau</b>: nicht erreichbar mit dem Akkustand.</li>
-      <li><b>Gestrichelt, „nicht in deiner Liste"</b> (nur bei „Route ab hier"): Station aus amtlichen Registern, ab 100 kW, monatlich aktualisiert: Schweiz AMAG, Migrol, Tesla (ich-tanke-strom.ch), Deutschland EnBW und Tesla (Ladesäulenregister der Bundesnetzagentur); Tesla nur, wo auch andere Autos laden dürfen (supercharge.info). Sie erscheinen nur auf Abschnitten, die zu keiner deiner Stammstrecken gehören – wo du eine Strecke schon kennst und dort Stationen hast, zeigt die App nur deine. Hast du auf einem bekannten Abschnitt keine einzige Station (z. B. Rhonetal), erscheinen dort auch die fremden. In den Details <b>In meine Liste übernehmen</b> – das Formular ist schon ausgefüllt.</li>
+      <li><b>Gestrichelt, „nicht in deiner Liste"</b> (nur bei „Route ab hier"): Station aus amtlichen Registern, ab 100 kW, monatlich aktualisiert: Schweiz AMAG, Migrol, Tesla (ich-tanke-strom.ch), Deutschland EnBW, E.ON, EWE Go und Tesla (Ladesäulenregister der Bundesnetzagentur); auch auf der Karte „Alle Ladepunkte“ mit „Andere Anbieter“; Tesla nur, wo auch andere Autos laden dürfen (supercharge.info). Sie erscheinen nur auf Abschnitten, die zu keiner deiner Stammstrecken gehören – wo du eine Strecke schon kennst und dort Stationen hast, zeigt die App nur deine. Hast du auf einem bekannten Abschnitt keine einzige Station (z. B. Rhonetal), erscheinen dort auch die fremden. In den Details <b>In meine Liste übernehmen</b> – das Formular ist schon ausgefüllt.</li>
       <li><b>letzte vor Reserve</b>: die letzte Station, die du noch über deiner Reserve erreichst.</li>
       <li><b>danach 38 km bis zur nächsten</b>: Abstand zur nächsten Station voraus – so siehst du lange Lücken.</li>
       <li><b>4 × 150 kW:</b> Anzahl Ladepunkte × Leistung, sofern eingetragen.</li>
@@ -768,7 +769,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.40.1';
+    const APP_VERSION = '0.40.2';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;

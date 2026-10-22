@@ -1,4 +1,6 @@
 // Ladestationen aus amtlichen Registern → fremde.json
+// Version 1.4.0 (22.10.2026) — Deutschland zusätzlich E.ON Drive (Infrastructure, Germany) und EWE Go (auch HOCHTIEF-
+//                              Ladepartner), Christof: „E.ON und EWE Go ergänzen“.
 // Version 1.3.0 (17.10.2026) — gleiche Namen mit der Straße unterscheiden („EnBW Pfungstadt (Raststätte Ost)“).
 // Version 1.2.0 (15.10.2026) — Tesla nur, wo auch andere Autos laden dürfen (supercharge.info „otherEVs"); Anlass:
 //                              Martigny ist nur für Teslas (Christof).
@@ -68,7 +70,9 @@ function alsPunkte(standorte, praefix) {
       name: s.name, betreiber: s.betreiber, lat: Number(s.lat.toFixed(6)), lon: Number(s.lon.toFixed(6)),
       kw: Math.round(s.kw), anzahl: s.anzahl, adresse: s.adresse,
     }))
-    .sort((x, y) => x.betreiber.localeCompare(y.betreiber) || x.name.localeCompare(y.name, 'de'));
+    .sort((x, y) => x.betreiber.localeCompare(y.betreiber) || x.name.localeCompare(y.name, 'de'))
+    // zwei Betreiber an derselben Stelle (Tesla und EnBW München, Ludwig-Koch-Str.): id eindeutig machen
+    .map((p, i, alle) => alle.findIndex(x => x.id === p.id) < i ? { ...p, id: p.id + '-' + p.betreiber.toLowerCase().replace(/[^a-z]/g, '') } : p);
 }
 
 const sauber = t => String(t || '').replace(/\s+/g, ' ').trim();
@@ -112,13 +116,16 @@ function auswerten(bund) {
 
 // ---------------------------------------------------------------------------
 // Deutschland: Ladesäulenregister der Bundesnetzagentur (CSV, Semikolon, Kopfzeilen vor der Tabelle)
-// Nur EnBW mobility+ und Tesla Germany (Christof, 14.10.2026): ohne Tesla-Werk Grünheide und regionale EnBW-Töchter.
+// EnBW mobility+ und Tesla Germany (Christof, 14.10.2026): ohne Tesla-Werk Grünheide und regionale EnBW-Töchter;
+// seit 22.10.2026 auch E.ON Drive und EWE Go.
 // ---------------------------------------------------------------------------
 
 function betreiberDE(name) {
   const n = sauber(name);
   if (/^EnBW mobility\+/i.test(n)) return 'EnBW';
   if (/^Tesla Germany GmbH$/i.test(n)) return 'Tesla';
+  if (/^E\.ON Drive (Infrastructure|Germany) GmbH$/i.test(n)) return 'E.ON';
+  if (/^EWE Go (GmbH$|HOCHTIEF Ladepartner)/i.test(n)) return 'EWE Go';
   return null;
 }
 
@@ -148,6 +155,9 @@ function zerlegeCsv(text) {
   return zeilen;
 }
 
+/** Ist der Anzeigename nur der Firmenname (Rechtsform oder Anfang des Betreibers)? */
+const firmenName = (anzeige, betreiber) => !!anzeige && (/\b(GmbH|AG|KG)\b/.test(anzeige) || betreiber.toLowerCase().startsWith(anzeige.toLowerCase()));
+
 const zahlDE = s => { const t = String(s || '').trim(); return Number(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t); };
 
 function auswertenDE(text) {
@@ -170,7 +180,8 @@ function auswertenDE(text) {
     if (!(lat > 47 && lat < 55.2 && lon > 5.8 && lon < 15.1)) continue;
     const ort = sauber(f[i.ort]);
     s.hinzu(betreiber, lat, lon, zahlDE(f[i.kw]) || 0, zahlDE(f[i.anzahl]) || 1, () => ({
-      name: sauber(f[i.name]) || (betreiber === 'Tesla' ? 'Tesla Supercharger ' : 'EnBW ') + ort,
+      // Anzeigename nur, wenn er mehr ist als die Firma („E.ON Drive GmbH", „E.ON Drive Infrastructure") – sonst „E.ON Ort"
+      name: (!firmenName(sauber(f[i.name]), sauber(f[i.betreiber])) && sauber(f[i.name])) || (betreiber === 'Tesla' ? 'Tesla Supercharger ' : betreiber + ' ') + ort,
       adresse: adresse(sauber(f[i.strasse]) + (f[i.nr] ? ' ' + sauber(f[i.nr]) : ''), f[i.plz], ort, 'Deutschland'),
     }));
   }
@@ -246,7 +257,10 @@ async function main() {
   if (ch.length < 20) throw new Error('Schweiz: nur ' + ch.length + ' Standorte – Datenformat geändert? fremde.json bleibt unverändert');
 
   let deStand = '', deText;
-  if (deDatei) deText = fs.readFileSync(deDatei, 'utf8');
+  if (deDatei) {
+    deText = fs.readFileSync(deDatei, 'utf8');
+    deStand = (path.basename(deDatei).match(/\d{4}-\d{2}-\d{2}/) || [''])[0];   // Ladesaeulenregister_BNetzA_2026-09-01.csv
+  }
   else {
     const link = neuesterCsvLink((await lade(DE_SEITE)).toString('utf8'));
     if (!link) throw new Error('Deutschland: kein CSV-Link auf der Seite der Bundesnetzagentur – Seite geändert?');
