@@ -1,6 +1,10 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.38.1 — Tageskorrektur nur aus lückenlos gemessenen Stücken (≤ 3 h, Messpunkte höchstens 15 min auseinander, Akku
+                   mindestens 60 % des Modells gesunken), begrenzt auf 0,8–1,4; Kachel „Verbrauch heute" tippbar mit den
+                   Stücken. Fahrt endet von selbst, wenn 6 h kein Messpunkt kam (21.10. lief bis heute weiter → −30 %).
+                   Belegungstest: nur Stationen derselben Firma (vorher teils die Nachbarstation einer anderen Firma).
   Version 0.38.0 — TomTom (Christof 22.10.2026, eigener Schlüssel nur im Handy): Ankunft ≈ = Fahren (TomTom ohne Verkehr ×
                    dein Tempo) + Stau voraus (TomTom, eine Abfrage höchstens alle 10 min, nur bei offener Fahrt-Ansicht) +
                    nötiges Laden; Untermenü „Ankunft und Stau" mit Ursachen (Unfall, Baustelle, Sperrung); auf der Karte
@@ -689,7 +693,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.38.0';
+    const APP_VERSION = '0.38.1';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -708,7 +712,9 @@
     const REISE_AKKU_MAX = 600;            // Akkuwerte je Fahrt (an der Säule jede Minute)
     const REISEN_ALT_MAX = 5;              // so viele frühere Fahrten behalten ihre Akkuwerte (für „Fahrt auswerten")
     const ADAPTER_PROTOKOLL_MAX = 40;                                     // so viele Versuche „Adapter ohne Tippen" bleiben stehen
-    const TAG_MIN_PROZENT = 4, TAG_FAKTOR_MIN = 0.7, TAG_FAKTOR_MAX = 1.5;  // Tageskorrektur ab 4 % Modellverbrauch, begrenzt
+    const TAG_MIN_PROZENT = 4, TAG_FAKTOR_MIN = 0.8, TAG_FAKTOR_MAX = 1.4;  // Tageskorrektur ab 4 % Modellverbrauch, begrenzt
+    const TAG_STUECK_MAX_MS = 3 * 3600e3, MESS_LUECKE_MAX_MS = 15 * 60e3;   // nur kurze, lückenlos gemessene Stücke
+    const REISE_VERGESSEN_MS = 6 * 3600e3;   // so lange kein Messpunkt → Fahrt gilt als beendet (beim letzten Punkt)
     const MESSSTUECK_MIN_ANTEIL = 0.6;     // Akku weniger als 60 % des Modells gesunken → unbemerkt geladen, kein Messstück
     const AUTO_START_KM = 10, AUTO_START_KMH = 60, AUTO_VERWERFEN_Q_KM = 3;  // Start von selbst, falls vergessen
     const UHR_HINWEIS_MS = 10 * 60e3, UHR_ENDE_HINWEIS_MS = 30 * 60e3;     // „⌚ Uhr gestartet?" / „⌚ Uhr stoppen"
@@ -1309,10 +1315,12 @@
      * laufenden Fahrt gegen das Modell auf denselben Stücken, ohne Ladestopps. Ab 4 % Modellverbrauch (≈ 25–30 km),
      * begrenzt auf 0,7–1,5. Gilt nur, solange die Fahrt läuft.
      */
-    let tagesCache = { schluessel: '', wert: null };
+    let tagesCache = { schluessel: '', wert: null, stuecke: [] };
     function tagesKorrektur() {
       const r = zustand.reise;
       if (!r || r.ende || !daten || !modell) return null;
+      const letzt = r.punkte[r.punkte.length - 1];
+      if (letzt && Date.now() - letzt[0] > REISE_VERGESSEN_MS) return null;   // alte, nie beendete Fahrt
       const route = reiseRoute();
       if (!route) return null;
       const akku = (r.akku || []).slice().sort((a, b) => a[0] - b[0]);
@@ -1327,20 +1335,39 @@
         return { km: b[3], ...punktWerte(route, b[3]) };
       };
       let echt = 0, mod = 0, km = 0;
+      const stuecke = [];
       for (let i = 1; i < akku.length; i++) {
         const a = akku[i - 1], b = akku[i];
         if (b[1] > a[1] + 1) continue;                                          // geladen
-        if (ladenUeberlappt(laden, a[0], b[0])) continue;                        // Ladestopp dazwischen oder läuft noch
         const pa = ort(a[0]), pb = ort(b[0]);
-        if (!pa || !pb) continue;
-        const d = r.richtung === 'hin' ? pb.km - pa.km : pa.km - pb.km;
-        if (d < 1) continue;
-        echt += a[1] - b[1]; mod += modellProzent(route, r.richtung, pa, pb); km += d;
+        const d = pa && pb ? (r.richtung === 'hin' ? pb.km - pa.km : pa.km - pb.km) : 0;
+        if (d < 1) continue;                                                     // gestanden oder neben der Strecke
+        const m = modellProzent(route, r.richtung, pa, pb), e = a[1] - b[1];
+        const s = { t0: a[0], t1: b[0], von: a[1], bis: b[1], km: d, echt: e, modell: m, grund: '' };
+        if (b[0] - a[0] > TAG_STUECK_MAX_MS) s.grund = 'zu lang (über 3 h)';
+        else if (messLuecke(r, a[0], b[0])) s.grund = 'App zwischendurch zu';
+        else if (ladenUeberlappt(laden, a[0], b[0])) s.grund = 'Ladestopp dazwischen';
+        else if (m >= 2 && e < MESSSTUECK_MIN_ANTEIL * m) s.grund = 'zu wenig verbraucht – wohl geladen';
+        stuecke.push(s);
+        if (s.grund) continue;
+        echt += e; mod += m; km += d;
       }
       const wert = mod >= TAG_MIN_PROZENT && echt > 0
-        ? { faktor: Math.max(TAG_FAKTOR_MIN, Math.min(TAG_FAKTOR_MAX, echt / mod)), echt, modell: mod, km } : null;
-      tagesCache = { schluessel, wert };
+        ? { faktor: Math.max(TAG_FAKTOR_MIN, Math.min(TAG_FAKTOR_MAX, echt / mod)), echt, modell: mod, km, stuecke } : null;
+      tagesCache = { schluessel, wert, stuecke };
       return wert;
+    }
+
+    /** Gab es zwischen zwei Zeitpunkten eine Lücke ohne Messpunkt (App zu)? Dann kann dort unbemerkt geladen worden sein. */
+    function messLuecke(r, t0, t1) {
+      let letzt = t0;
+      for (const p of r.punkte) {
+        if (p[0] <= t0) continue;
+        if (p[0] > t1) break;
+        if (p[0] - letzt > MESS_LUECKE_MAX_MS) return true;
+        letzt = p[0];
+      }
+      return t1 - letzt > MESS_LUECKE_MAX_MS;
     }
 
     /** Text der Tageskorrektur: „+15 %" / „−5 %" / „wie erwartet". */
@@ -1905,6 +1932,8 @@
       if (!r || r.ende || !route || !pos || pos.sim || pos.alt) return;
       const t = zeit || Date.now(), letzt = r.punkte[r.punkte.length - 1];
       if (letzt && t - letzt[0] < 20e3) return;
+      // 6 h kein Messpunkt: die Fahrt ist längst vorbei (21.10.: lief bis zum nächsten Tag weiter) → beim letzten Punkt beenden
+      if (letzt && t - letzt[0] > REISE_VERGESSEN_MS) { r.ende = letzt[0]; speichere(); render(); return; }
       const pr = projiziere(route.linie, pos.lat, pos.lon, lat0Von(route));
       const runde5 = x => Math.round(x * 1e5) / 1e5;
       r.punkte.push([t, runde5(pos.lat), runde5(pos.lon), Math.round(pr.km * 100) / 100, Math.round(pr.q * 10) / 10]);
@@ -2290,6 +2319,23 @@
       return { restKm, fahrS, stauS, staus, ladeS, stopps, kwh, kw, akkuAngenommen: akku === null, ankunft: jetzt + (fahrS + stauS + ladeS) * 1000, quelle, tomtom: !!tt };
     }
 
+    /** Untermenü „Verbrauch heute": welche Stücke zählen und warum andere nicht. */
+    function zeigeVerbrauchDetail() {
+      const tag = tagesKorrektur(), box = $('reise-detail-inhalt');
+      box.replaceChildren();
+      $('reise-detail-titel').textContent = 'Verbrauch heute';
+      box.append(el('p', 'reise-detail-text', tag
+        ? 'Echter Verbrauch ' + Math.round(tag.echt) + ' % gegen Modell ' + Math.round(tag.modell) + ' % auf ' + fmtKm(tag.km) + ' km → ' + tagesText(tag) + ' (begrenzt auf −20 bis +40 %). Steckt in allen Akku-Prognosen.'
+        : 'Noch keine Korrektur – es braucht Akkuwerte vom Adapter über etwa 30 km am Stück.'));
+      for (const s of tagesCache.stuecke || []) {
+        const z = el('div', 'reise-zeile'), li = el('span', '', uhrzeit(s.t0) + '–' + uhrzeit(s.t1) + ' · ' + fmtKm(s.km) + ' km');
+        li.append(el('small', '', s.grund ? 'nicht gezählt: ' + s.grund : 'Modell ' + Math.round(s.modell) + ' %'));
+        z.append(li, el('b', '', s.von + ' → ' + s.bis + ' %'));
+        box.append(z);
+      }
+      if ($('reise-detail').hidden) { $('reise-detail').hidden = false; history.pushState({ reiseDetail: true }, ''); }
+    }
+
     /** Kurzform für die Kachel: „Fahren 4 h 10 · Stau +25 min · Laden ≈ 45 min". */
     function ankunftZusatz(a) {
       return ['Fahren ' + dauerText(a.fahrS, true), a.stauS >= 60 ? 'Stau +' + Math.round(a.stauS / 60) + ' min' : a.tomtom ? 'kein Stau' : '',
@@ -2419,8 +2465,17 @@
           const treffer = ((await a.json()).results || []).sort((x, y) => (x.dist || 0) - (y.dist || 0));
           if (!treffer.length) { z.append(el('span', '', 'bei TomTom nicht gefunden')); continue; }
           gefunden++;
-          const mit = treffer.find(x => x.dataSources && x.dataSources.chargingAvailability) || null;
-          const name = (mit || treffer[0]).poi ? (mit || treffer[0]).poi.name : '?';
+          // dieselbe Firma (Name oder Marke bei TomTom); sonst nur, was fast genau an derselben Stelle steht (≤ 60 m)
+          const firma = firmaVon(p).toLowerCase();
+          const gleich = x => {
+            const namen = [x.poi && x.poi.name].concat(((x.poi && x.poi.brands) || []).map(b => b.name)).filter(Boolean).join(' ').toLowerCase();
+            return firma && namen.includes(firma.split(' ')[0]);
+          };
+          const eigen = treffer.filter(gleich);
+          const kandidaten = eigen.length ? eigen : treffer.filter(x => (x.dist || 0) <= 60);
+          if (!kandidaten.length) { z.append(el('span', '', 'als ' + firmaVon(p) + ' bei TomTom nicht gefunden (daneben: „' + (treffer[0].poi ? treffer[0].poi.name : '?') + '")')); continue; }
+          const mit = kandidaten.find(x => x.dataSources && x.dataSources.chargingAvailability) || null;
+          const name = (mit || kandidaten[0]).poi ? (mit || kandidaten[0]).poi.name : '?';
           if (!mit) { z.append(el('span', '', 'gefunden („' + name + '"), aber ohne Belegungsdaten')); continue; }
           if (!tomtomZaehle('suche')) { z.append(el('span', '', 'Monatsgrenze erreicht')); break; }
           const b = await fetch(TOMTOM_BASIS + '/search/2/chargingAvailability.json?chargingAvailability=' + encodeURIComponent(mit.dataSources.chargingAvailability.id) + '&key=' + encodeURIComponent(schluessel));
@@ -2429,7 +2484,7 @@
           let frei = 0, alle = 0;
           for (const c of verf) { const cur = c.availability && c.availability.current || {}; frei += cur.available || 0; alle += c.total || 0; }
           mitDaten++;
-          z.append(el('span', 'ok', frei + ' von ' + alle + ' Ladepunkten frei'), el('div', 'klein', 'TomTom: „' + name + '"'));
+          z.append(el('span', 'ok', frei + ' von ' + alle + ' Ladepunkten frei'), el('div', 'klein', 'TomTom: „' + name + '"' + (eigen.length ? '' : ' – anderer Name, gleiche Stelle')));
         } catch (e) { z.append(el('span', '', 'Fehler: ' + (e && e.message || e))); }
       }
       stand.textContent = 'Fertig: ' + gefunden + ' von ' + eigene.length + ' Stationen bei TomTom gefunden, ' + mitDaten + ' mit Belegung. ' +
@@ -2515,7 +2570,7 @@
       if (!r.ende) {
         const tag = tagesKorrektur();
         kachel('Verbrauch heute', tag ? tagesText(tag) : 'noch offen', tag ? (tag.faktor > 1.05 ? 'c-pause' : 'c-fahren') : 'c-zeit',
-          tag ? 'gegen Modell, aus ' + fmtKm(tag.km) + ' km' : 'braucht Adapterwerte');
+          tag ? 'gegen Modell, aus ' + fmtKm(tag.km) + ' km' : 'braucht Adapterwerte', false, zeigeVerbrauchDetail);
       }
       // Akku an/ab erst nach der Fahrt (Christof 22.10.2026: „nicht während der Fahrt eintippen")
       if (r.ende) renderReiseLaden(r, stopps); else { $('reise-laden').replaceChildren(); reiseLadenSchluessel = ''; }
@@ -2659,7 +2714,7 @@
       let prozent = 0, km = 0;
       for (let i = 1; i < akku.length; i++) {
         const x = akku[i - 1], y = akku[i];
-        if (y[1] > x[1] + 1 || ladenUeberlappt(laden, x[0], y[0])) continue;
+        if (y[1] > x[1] + 1 || ladenUeberlappt(laden, x[0], y[0]) || y[0] - x[0] > TAG_STUECK_MAX_MS || messLuecke(r, x[0], y[0])) continue;
         const px = p.filter(q => Math.abs(q[0] - x[0]) <= 5 * 60e3).pop(), py = p.filter(q => Math.abs(q[0] - y[0]) <= 5 * 60e3).pop();
         if (!px || !py || px[4] > 2 || py[4] > 2) continue;
         prozent += x[1] - y[1]; km += Math.abs(py[3] - px[3]);
@@ -3879,7 +3934,7 @@
     window.ladeplanung = {
       berechneListe, projiziere, haversine, punktBeiKm, mapsUrl, abrpUrl, energieAnteile, energieKwh, streckenwerte, bedarf,
       routenTeile, routenZwischen, zieleVon, simPunkte, preisKurz, preisEintrag, landVon, prognose, tempo, leseAdapter,
-      kumuliere, duenneAus, fuegeAdhocEin, merkeReisePunkt, archiviereReise, holeVerkehr, ankunftSchaetzung, aktuelleAnkunft, zeigeAnkunftDetail, tomtomZaehle, tomtomStand, testeBelegung, schalteVerkehrKarte, reiseStatistik, reiseStopps, merkeReiseAkku, renderReise, zeigeReise, tagesKorrektur, modellProzent, pruefeAutoStart, reiseZusammenfassung, zustandNeuLesen, ladenZwischen, zielEintrag, leseAdapterStill, adapterStillZuruecksetzen: () => { adapterStillZuletzt = 0; }, merkeMesspunkt, verbrauchsTempo, sendeMesswerte, bekannteAbschnitte, akkuProfil, bedarf, akkuJetzt, adhocRichtung, uebernehmenUrl, zeigeKarte, durchMontBlanc, berechneAdhoc,
+      kumuliere, duenneAus, fuegeAdhocEin, merkeReisePunkt, messLuecke, zeigeVerbrauchDetail, archiviereReise, holeVerkehr, ankunftSchaetzung, aktuelleAnkunft, zeigeAnkunftDetail, tomtomZaehle, tomtomStand, testeBelegung, schalteVerkehrKarte, reiseStatistik, reiseStopps, merkeReiseAkku, renderReise, zeigeReise, tagesKorrektur, modellProzent, pruefeAutoStart, reiseZusammenfassung, zustandNeuLesen, ladenZwischen, zielEintrag, leseAdapterStill, adapterStillZuruecksetzen: () => { adapterStillZuletzt = 0; }, merkeMesspunkt, verbrauchsTempo, sendeMesswerte, bekannteAbschnitte, akkuProfil, bedarf, akkuJetzt, adhocRichtung, uebernehmenUrl, zeigeKarte, durchMontBlanc, berechneAdhoc,
       get adhocRoute() { return adhocRoute; }, set adhocRoute(r) { adhocRoute = r; },
       get fremde() { return fremde; },
       get preise() { return preise; },
