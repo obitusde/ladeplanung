@@ -1,6 +1,11 @@
 <!DOCTYPE html>
 <!--
-  Ladeplanung — Fahrt auswerten (GPX). Version 0.9.0 (22.10.2026): Stau als Zeitverlust insgesamt (Christof: „wichtiger die
+  Ladeplanung — Fahrt auswerten (GPX). Version 0.10.0 (22.10.2026): Akkustände aus „Fahrt live" der App übernehmen
+  (Christof: „wenn ich GPX von der Uhr hochlade, sollen die Infos ergänzt werden … Werte überschreiben, wenn nötig") – aus
+  localStorage 'ladeplanung.v1' (reise + reisenAlt, gleiche Herkunft, also nur auf dem Handy, auf dem die Fahrt lief), nach
+  Uhrzeit: Start = Wert am Losfahren, an = Wert bei der Ankunft, ab = höchster Wert um die Abfahrt, Ziel = Wert bei der Ankunft.
+  Nur leere Felder, orange umrandet; Pausen mit Anstieg werden so zu Ladestopps.
+  Version 0.9.0 (22.10.2026): Stau als Zeitverlust insgesamt (Christof: „wichtiger die
   totale Zeit verloren abzuschätzen als zu sagen, wo genau wie lange Stau war") – jeder Autobahn-km langsamer als normal zählt,
   ohne Nachweis einzelner Staus (der Stau Härkingen–Oensingen am 21.10. fiel vorher durch, weil eine 3-km-Lücke ihn in zwei
   „nicht eingebettete" Teile zerlegte: 25 statt ≈ 61 min). Grobe Liste „ungefähr wo" ab 2 min.
@@ -124,6 +129,8 @@
   .leaflet-container { font: inherit; }
   .akku .ort small { display: block; font-weight: 400; color: var(--text-secondary); }
   .akku label { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 14px; }
+  .akku input.aus-app { border: 2px solid var(--laden); }
+  #akku-app { margin: 0 0 10px; color: var(--text-secondary); }
   .leer { color: var(--text-muted); }
   .summe { font-weight: 700; margin: 0 0 6px; }
   label.geladen { display: inline-flex; gap: 6px; align-items: center; }
@@ -159,6 +166,7 @@
     <section>
       <h2>Akkustände</h2>
       <details class="hilfe"><summary>Erklärung</summary><p>Am Start, vor und nach jedem Ladestopp und am Ziel. Ladestopps erkennt die Seite selbst (mindestens 10 min neben einer bekannten Station). Bei anderen Pausen ab 10 min: hast du dort geladen, Akku an/ab eintragen – dann zählt sie als Ladestopp.</p></details>
+      <p id="akku-app" hidden></p>
       <div class="akku" id="akku"></div>
     </section>
 
@@ -363,6 +371,8 @@ $('datei').addEventListener('change', async ev => {
     const k = kuerzeAufFahrt(alle);
     F = werteAus(k.p);
     F.name = datei.name;
+    for (const id of Object.keys(akkuWerte)) delete akkuWerte[id];   // neue Datei: alte Eingaben weg
+    uebernimmAppAkku();
     zeigeAlles();
     const weg = [k.vorne >= 1 ? Math.round(k.vorne) + ' min vor dem Losfahren' : '', k.hinten >= 1 ? Math.round(k.hinten) + ' min nach dem Ankommen' : ''].filter(Boolean);
     status(datei.name + ': ' + zahl(k.p.length) + ' Punkte ausgewertet' + (weg.length ? ' (abgeschnitten: ' + weg.join(', ') + ')' : '') + '.');
@@ -540,6 +550,49 @@ function stauAnalyse() {
 
 /** Akkufelder eines Stopps (id je Stopp fest: „s" + Nummer). */
 const stoppId = s => 's' + F.stopps.indexOf(s);
+
+/** Akkuwerte der App (Fahrt live) auf diesem Gerät: [{ t (s), soc }] rund um die Fahrt. Gleiche Herkunft wie die App. */
+function appAkkuwerte(t0, t1) {
+  let z = null;
+  try { z = JSON.parse(localStorage.getItem('ladeplanung.v1') || 'null'); } catch (e) { z = null; }
+  if (!z) return null;
+  const werte = [];
+  for (const r of [z.reise].concat(Array.isArray(z.reisenAlt) ? z.reisenAlt : [])) {
+    if (!r || !Array.isArray(r.akku)) continue;
+    for (const a of r.akku) { const t = a[0] / 1000; if (t >= t0 - 3600 && t <= t1 + 3600 && a[1] >= 0 && a[1] <= 100) werte.push({ t, soc: a[1] }); }
+  }
+  return werte.sort((a, b) => a.t - b.t);
+}
+
+/**
+ * Akkustände aus der App in leere Felder (Christof 22.10.2026): Start = Wert am nächsten am Losfahren (30 min davor bis
+ * 10 min danach), je Halt an = Wert am nächsten an der Ankunft (10 min davor bis 5 min danach), ab = höchster Wert um die
+ * Abfahrt (± 10 min – an der Säule ist er nicht beim Auto, beim Losfahren liest die App wieder), Ziel = Wert an der Ankunft.
+ */
+function uebernimmAppAkku() {
+  F.appWerte = 0;
+  const w = appAkkuwerte(F.t0, F.t1);
+  F.appVorhanden = w !== null;
+  if (!w || !w.length) return;
+  const im = (von, bis) => w.filter(x => x.t >= von && x.t <= bis);
+  const naechster = (von, bis, ziel) => im(von, bis).reduce((b, x) => !b || Math.abs(x.t - ziel) < Math.abs(b.t - ziel) ? x : b, null);
+  const hoechster = (von, bis) => im(von, bis).reduce((b, x) => !b || x.soc > b.soc ? x : b, null);
+  const setze = (id, art, x) => {
+    if (!x) return;
+    const v = akkuWerte[id] || (akkuWerte[id] = {});
+    if (v[art] !== undefined) return;
+    v[art] = x.soc; (v.app = v.app || {})[art] = true; F.appWerte++;
+  };
+  const erster = F.stopps.find(s => s.art === 'start'), letzter = F.stopps.find(s => s.art === 'ankunft');
+  const tStart = F.p[erster ? erster.bis : 0].t, tZiel = F.p[letzter ? letzter.von : F.n - 1].t;
+  setze('start', 'ab', naechster(tStart - 1800, tStart + 600, tStart));
+  for (const s of F.stopps.filter(s => s.geladen || s.pause)) {
+    setze(stoppId(s), 'an', naechster(s.t0 - 600, s.t0 + 300, s.t0));
+    setze(stoppId(s), 'ab', hoechster(s.t1 - 600, s.t1 + 600));
+  }
+  setze('ziel', 'an', naechster(tZiel - 600, tZiel + 1800, tZiel));
+  for (const s of F.stopps) if (s.pause && !s.erkannt) s.geladen = ladeStatus(s);   // Pause mit Anstieg = Ladestopp
+}
 
 /** Ladestopp = erkannt (Station) oder Pause mit eingetragenem Akku an/ab (ab > an). */
 function ladeStatus(s) {
@@ -894,7 +947,13 @@ function feld(id, art, stopp) {
   const i = el('input'); i.type = 'number'; i.inputMode = 'numeric'; i.min = 0; i.max = 100; i.placeholder = '%';
   const w = akkuWerte[id] || (akkuWerte[id] = {});
   if (w[art] !== undefined) i.value = w[art];
-  i.addEventListener('input', () => { w[art] = i.value === '' ? undefined : Number(i.value); rechneAbschnitte(); });
+  if (w.app && w.app[art]) { i.classList.add('aus-app'); i.title = 'aus der App (Fahrt live) – überschreibbar'; }
+  i.addEventListener('input', () => {
+    w[art] = i.value === '' ? undefined : Number(i.value);
+    if (w.app) delete w.app[art];
+    i.classList.remove('aus-app');
+    rechneAbschnitte();
+  });
   // Pause ohne erkannte Station: mit Akku an/ab wird sie zum Ladestopp (beim Verlassen des Felds, damit der Fokus bleibt)
   if (stopp && !stopp.erkannt) i.addEventListener('change', () => {
     const neu = ladeStatus(stopp);
@@ -905,6 +964,12 @@ function feld(id, art, stopp) {
 
 function zeigeAkku() {
   const box = $('akku'); box.replaceChildren();
+  const hinweis = $('akku-app');
+  hinweis.hidden = false;
+  hinweis.textContent = F.appWerte
+    ? (F.appWerte === 1 ? 'Ein Akkustand' : F.appWerte + ' Akkustände') + ' aus „Fahrt live“ der App übernommen (orange umrandet) – bei Bedarf überschreiben, z. B. mit den Werten aus My CUPRA.'
+    : F.appVorhanden ? 'Keine passenden Akkustände aus der App gefunden – bitte eintragen.'
+      : 'Akkustände aus der App gibt es nur auf dem Handy, auf dem die Fahrt lief – hier bitte eintragen.';
   const erster = F.stopps.find(s => s.art === 'start'), letzter = F.stopps.find(s => s.art === 'ankunft');
   const zeile = (name, unter, an, ab) => {
     const ort = el('div', 'ort', name); ort.append(el('small', '', unter));
