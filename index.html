@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.43.0 — Streckenkarte: Staus/Baustellen/Sperrungen aus der TomTom-Abfrage dick auf der Strecke (rot/orange/schwarz,
+                   antippen → Art und Verzug), beim Einschalten von „Verkehr" geholt (höchstens alle 10 min) mit Meldung;
+                   Schild ohne „Rest" (nur unten); gewählte Station gelb statt größer; nicht erreichbare dunkelgrau.
   Version 0.42.0 — Streckenkarte: Verkehr liegt über der Strecke und zeigt nur Verzögerungen (TomTom relative-delay0, sonst
                    relative0), erreichbare Stationen dunkel mit weißem Rand (vorher gleiche Farbe wie der Weg), Text unten
                    kürzer („Rest ≈ 1 %") mit Notiz. Karte „Alle Ladepunkte": ◎ zoomt auf ≈ 5 km heran (Zoom 12); Maßstab zeigt, wie viele
@@ -377,6 +380,8 @@
     .reise-detail-text { color: #bdbdbd; margin: 12px 2px; line-height: 1.4; }
     .leaflet-tooltip.schild.klein { font-size: 12px; padding: 1px 5px; }
     .leaflet-tooltip.schild.rot { color: #c00018; }
+    .leaflet-tooltip.schild.gewaehlt { background: #ffd60a; border-color: #000; color: #000; }
+    .leaflet-tooltip-top.schild.gewaehlt::before { border-top-color: #000; }
 
     .vorschlaege { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
     .chip { min-height: 40px; padding: 0 12px; border-radius: 20px; border: 2px solid var(--linie); background: var(--flaeche); font-weight: 600; cursor: pointer; }
@@ -790,7 +795,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.42.0';
+    const APP_VERSION = '0.43.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -2557,6 +2562,7 @@
       zustand.einst.verkehrKarte = !!an;
       speichere();
       if (karteEbene && !$('karte-seite').hidden) zeichneKarte(karteWahl, false);
+      if (an && karteEbene && !$('karte-seite').hidden) ladeVerkehrFuerKarte();   // beim ersten Öffnen holt zeigeKarte ihn nach dem Zeichnen
     }
 
     /** Gemerkte TomTom-Daten einer Station: { id (Belegung) | null, name, anders, zeit, alle, maxKw, frei, belegungZeit }. */
@@ -3588,7 +3594,41 @@
       return leafletLaedt;
     }
 
-    const STATION_DUNKEL = '#4a2300';   // erreichbare Stationen auf der Streckenkarte
+    const STATION_DUNKEL = '#4a2300';          // erreichbare Stationen auf der Streckenkarte
+    const NICHT_ERREICHBAR_GRAU = '#5f5f5f', GEWAEHLT_GELB = '#ffd60a';
+
+    /** Verkehr der gewählten Strecke/Richtung, wenn ≤ 30 min alt. */
+    function verkehrFuerKarte(route, richtung) {
+      const v = zustand.verkehr;
+      return v && !v.fehler && v.route === route.id && v.richtung === richtung && v.abschnitte && Date.now() - v.zeit < VERKEHR_GUELTIG_MS ? v : null;
+    }
+
+    /** „Verkehr 14:32: 2 Behinderungen, +18 min" bzw. „frei". */
+    function verkehrKurz(v) {
+      const n = v.abschnitte.filter(s => s.q <= 3 && s.verzugS >= 60).length;
+      return 'Verkehr ' + uhrzeit(v.zeit) + ': ' + (n ? n + (n === 1 ? ' Behinderung' : ' Behinderungen') + ', +' + Math.round(v.verzugS / 60) + ' min' : 'frei auf der Strecke');
+    }
+
+    /** Verkehr für die Karte holen (eine TomTom-Abfrage, höchstens alle 10 min) und einzeichnen. */
+    let verkehrKarteLaeuft = false;
+    async function ladeVerkehrFuerKarte() {
+      const a = letzteAnsicht;
+      if (verkehrKarteLaeuft || !a || !a.route || !zustand.einst.verkehrKarte || !tomtomSchluessel()) return;
+      verkehrKarteLaeuft = true;
+      try { await ladeVerkehrFuerKarteJetzt(a); } finally { verkehrKarteLaeuft = false; }
+    }
+    async function ladeVerkehrFuerKarteJetzt(a) {
+      const route = a.route, richtung = zustand.richtung, l = route.linie;
+      let v = verkehrFuerKarte(route, richtung);
+      if (!v) {
+        const von = a.erg && a.erg.modus === 'strecke' && a.erg.pos ? a.erg.pos : { km: richtung === 'hin' ? l[0][2] : l[l.length - 1][2] };
+        await holeVerkehr(route, richtung, von, false);
+        v = verkehrFuerKarte(route, richtung);
+      }
+      if ($('karte-seite').hidden || !karte) return;
+      zeichneKarte(karteWahl, false);
+      toast(v ? verkehrKurz(v) : 'Verkehr: ' + ((zustand.verkehr && zustand.verkehr.fehler) || 'keine Daten'));
+    }
 
     function akkuKurz(pg) {
       if (pg.nichtErreichbar) return 'nicht erreichbar';
@@ -3614,6 +3654,7 @@
         karte.createPane('strecke').style.zIndex = 350;
         karte.createPane('verkehr').style.zIndex = 380;
         karte.getPane('verkehr').style.pointerEvents = 'none';
+        karte.createPane('stau').style.zIndex = 390;
         karte.on('zoomend', ordneSchilder);
       }
       karte.invalidateSize();
@@ -3623,6 +3664,7 @@
       const wahl = e ? liste.find(x => x.punkt.id === e.punkt.id) || null : liste[0] || null;
       // aus den Details: dich und diese Station zeigen; Knopf „Karte“: dich und alle erreichbaren Stationen
       zeichneKarte(wahl, e ? true : 'alle');
+      if (zustand.einst.verkehrKarte && tomtomSchluessel()) ladeVerkehrFuerKarte();
     }
 
     function zeichneKarte(wahl, zoomen) {
@@ -3638,6 +3680,20 @@
       // Route violett mit weißem Rand – grau sah aus wie Landesgrenzen, rot ist für „unter Reserve" vergeben (Christof, 14.10.2026)
       L.polyline(route.linie.map(p => [p[0], p[1]]), { pane: 'strecke', color: '#ffffff', weight: 8, opacity: 0.9 }).addTo(karteEbene);
       const strecke = L.polyline(route.linie.map(p => [p[0], p[1]]), { pane: 'strecke', color: '#6a2fd6', weight: 5, opacity: 0.9 }).addTo(karteEbene);
+      // Staus auf deiner Strecke dick über die Linie (Christof 24.10.2026: „Verkehr kann ich nicht erkennen" – die
+      // TomTom-Kartenbilder sind bei kleinem Zoom nur dünne Striche)
+      const vk = zustand.einst.verkehrKarte && tomtomSchluessel() ? verkehrFuerKarte(route, zustand.richtung) : null;
+      if (vk) for (const s of vk.abschnitte) {
+        const lo = Math.min(s.km, s.bis), hi = Math.max(s.km, s.bis);
+        if (s.q > 3 || hi - lo < 0.05) continue;
+        const stueck = [pkt(lo)].concat(route.linie.filter(p => p[2] > lo && p[2] < hi).map(p => [p[0], p[1]]), [pkt(hi)]);
+        const farbe = s.art === 'Sperrung' ? '#111111' : s.art === 'Stau' || s.staerke >= 3 ? '#d50000' : '#ff9100';
+        const min = Math.round(s.verzugS / 60);
+        L.polyline(stueck, { pane: 'stau', color: '#ffffff', weight: 13, opacity: 0.9, lineCap: 'butt' }).addTo(karteEbene);
+        L.polyline(stueck, { pane: 'stau', color: farbe, weight: 9, opacity: 1, lineCap: 'butt' })
+          .bindTooltip(s.art + (s.ursache ? ' (' + s.ursache + ')' : '') + (min ? ' · +' + min + ' min' : '') + ' · ' + fmtKm(hi - lo) + ' km', { sticky: true })
+          .addTo(karteEbene);
+      }
       const ich = a.pos ? [a.pos.lat, a.pos.lon] : null;
       const ab = erg && erg.pos ? erg.pos : null;              // Linienposition, ab der gerechnet wird
       const abStart = !!(a.planPos && a.planPos.planung);       // weit weg: geplant ab Startort der Route
@@ -3666,11 +3722,12 @@
         const pg = e.prognose, gewaehlt = e === wahl;
         const geht = !(pg && pg.nichtErreichbar);
         // erreichbar: dunkelbraun mit weißem Rand – in Akzentfarbe verschwanden sie auf dem gleichfarbigen Weg (Christof 24.10.2026)
-        const farbe = !geht ? '#9a9a9a' : pg && pg.unterReserve ? rot : STATION_DUNKEL;
-        const rand = gewaehlt ? '#000000' : !geht ? farbe : e.punkt.fremd ? STATION_DUNKEL : '#ffffff';
+        // gewählt: gelb, nicht größer; nicht erreichbar: dunkelgrau (hellgrau war kaum zu sehen) – Christof 24.10.2026
+        const farbe = gewaehlt ? GEWAEHLT_GELB : !geht ? NICHT_ERREICHBAR_GRAU : pg && pg.unterReserve ? rot : STATION_DUNKEL;
+        const rand = gewaehlt ? '#000000' : e.punkt.fremd ? (geht ? STATION_DUNKEL : NICHT_ERREICHBAR_GRAU) : '#ffffff';
         const m = L.circleMarker([e.punkt.lat, e.punkt.lon], {
-          radius: gewaehlt ? 11 : geht ? 8 : 5, color: rand, weight: gewaehlt ? 3 : geht ? 2.5 : 2,
-          fillColor: e.punkt.fremd ? '#ffffff' : farbe, fillOpacity: geht ? 1 : 0.5, dashArray: e.punkt.fremd ? '4 3' : null,
+          radius: geht ? 8 : 6, color: rand, weight: gewaehlt ? 3 : geht ? 2.5 : 1.5,
+          fillColor: e.punkt.fremd && !gewaehlt ? '#ffffff' : farbe, fillOpacity: 1, dashArray: e.punkt.fremd && !gewaehlt ? '4 3' : null,
         }).addTo(karteEbene);
         const waehle = () => zeichneKarte(e, false);
         m.on('click', waehle);
@@ -3680,10 +3737,11 @@
         if (!geht && !gewaehlt) continue;
         erreichbar.push([e.punkt.lat, e.punkt.lon]);
         const firma = firmaVon(e.punkt);
-        const text = (firma ? firma + ' · ' : '') + fmtKm(e.weg) + ' km' + (gewaehlt ? (pg ? ' · ' + akkuKurz(pg) : '')
-          : (pg && !pg.angenommen ? ' · ' + Math.round(pg.ankunft) + ' %' : ''));
-        m.bindTooltip(text, { permanent: true, interactive: true, direction: 'top', offset: [0, gewaehlt ? -10 : -7],
-          className: 'schild' + (gewaehlt ? '' : ' klein') + (pg && pg.unterReserve ? ' rot' : '') });
+        // Schild nur Firma · km · %; „Rest ≈" steht nur unten (Christof 24.10.2026)
+        const text = (firma ? firma + ' · ' : '') + fmtKm(e.weg) + ' km' +
+          (pg && pg.nichtErreichbar ? ' · nicht erreichbar' : pg && !pg.angenommen ? ' · ' + Math.round(pg.ankunft) + ' %' : '');
+        m.bindTooltip(text, { permanent: true, interactive: true, direction: 'top', offset: [0, -7],
+          className: 'schild klein' + (gewaehlt ? ' gewaehlt' : '') + (pg && pg.unterReserve ? ' rot' : '') });
         // Schild antippen wählt die Station ebenfalls (vorher ließ es den Tipp durch – nichts passierte)
         m.on('tooltipopen', ev => {
           const el = ev.tooltip.getElement();
