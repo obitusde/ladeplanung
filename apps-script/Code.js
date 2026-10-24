@@ -1,6 +1,11 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.27.0 — Richtung je Strecke: Die Richtung im Sheet gilt für die Strecke ab Morges; fährt eine andere Strecke an der
+ *                  Station entgegengesetzt (Neuenrade – Ingolstadt), bekommt die Zuordnung „richtung" getauscht (vorher
+ *                  erschienen Freudenberg, Ehringshausen, Siegen dort auf der falschen Fahrbahn). Umweg: an gekürzten
+ *                  Streckenenden keine Fahrtrichtung vorgeben (Schleife in der Stadt, Tesla Savona 31 min); unter 5 km vor
+ *                  Start oder Ziel kein Umweg (man ist dort ohnehin).
  * Version 0.26.0 — Umwege je Station und Fahrtrichtung (Christof 24.10.2026: „schnell entscheiden, zu welcher Ladestation ich
  *                  fahre"): ORS A → B gegen A → Station → B, A/B 30 km vor/nach der Station, Weg frei gewählt (Parallel-
  *                  Autobahn A 5/A 67 zählt so als sinnvolle Route). Gemerkt in den Skripteigenschaften, in routes.json je
@@ -74,7 +79,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.26.0';
+const VERSION = '0.27.0';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -2727,6 +2732,35 @@ function exportJson(optionen) {
   return { meldungen: meldungen, json: json, fehler: meldungen.some(function (m) { return m.indexOf('Fehler:') === 0; }) };
 }
 
+/** Fahrtrichtung der Linie bei km als Vektor [Ost, Nord] (für den Vergleich zweier Strecken). */
+function richtungsVektor_(linie, km) {
+  const a = umwegPunktBeiKm_(linie, km - 0.5), b = umwegPunktBeiKm_(linie, km + 0.5);
+  return [(b[0] - a[0]) * Math.cos(a[1] * Math.PI / 180), b[1] - a[1]];
+}
+
+/**
+ * Richtung im Sheet („hin" = nur auf der Fahrt ab Morges) gilt für die Strecke ab Morges, an der die Station am nächsten liegt.
+ * Fährt eine andere Strecke an der Station entgegengesetzt (Neuenrade – Ingolstadt auf der A 45), bekommt deren Zuordnung
+ * z.richtung = getauscht; die App nimmt z.richtung vor p.richtung. Ohne Strecke ab Morges bleibt alles wie im Sheet.
+ */
+function richtungJeStrecke_(p, zuordnung, vorbereitet) {
+  if (p.richtung !== 'hin' && p.richtung !== 'rueck') return;
+  const linieVon = {};
+  vorbereitet.forEach(function (v) { linieVon[v.r.id] = v.r.linie; });
+  const [mLat, mLon] = START_MORGES.split(',').map(Number);
+  const abMorges = zuordnung.filter(function (z) {
+    const l = linieVon[z.route];
+    return l && haversine_(l[0][0], l[0][1], mLat, mLon) <= 3;
+  }).sort(function (a, b) { return a.quer_km - b.quer_km; })[0];
+  if (!abMorges) return;
+  const bezug = richtungsVektor_(linieVon[abMorges.route], abMorges.km);
+  zuordnung.forEach(function (z) {
+    if (z === abMorges || !linieVon[z.route]) return;
+    const v = richtungsVektor_(linieVon[z.route], z.km);
+    if (bezug[0] * v[0] + bezug[1] * v[1] < 0) z.richtung = p.richtung === 'hin' ? 'rueck' : 'hin';
+  });
+}
+
 /**
  * Baut das routes.json-Objekt. Rein rechnerisch (testbar ohne Apps Script).
  * routen: [{ id, name, linie }], punkte: [{ id, name, …, lat, lon }] ohne zuordnung.
@@ -2765,6 +2799,7 @@ function baueExport_(routen, punkte, zeitstempel) {
         });
       }
     });
+    richtungJeStrecke_(p, zuordnung, vorbereitet);
     const kopie = {};
     Object.keys(p).forEach(function (k) { kopie[k] = p[k]; });
     kopie.lat = runde_(p.lat, 5);
@@ -2796,9 +2831,10 @@ function baueExport_(routen, punkte, zeitstempel) {
 // ---------------------------------------------------------------------------
 
 const UMWEG_FENSTER_KM = 30;
+const UMWEG_ZIEL_KM = 5;            // so nah an Start/Ziel der Strecke: kein Umweg (Tesla Savona, EnBW Lenting)
 const UMWEG_ZUSCHLAG = 1.2;          // ab 3 min: Ampeln, Kreisel, Suchen – der Routendienst rechnet ohne
 const UMWEG_ZUSCHLAG_AB_MIN = 3;
-const UMWEG_FORMAT = 'u1';           // erhöhen erzwingt Neuberechnung aller Umwege
+const UMWEG_FORMAT = 'u2';           // erhöhen erzwingt Neuberechnung aller Umwege
 const UMWEG_PRAEFIX = 'UMWEG_';
 const UMWEG_PAUSE_MS = 1600;         // ORS kostenlos: 40 Abfragen je Minute
 const UMWEG_ZEIT_MS = 4 * 60 * 1000; // danach aufhören (Apps Script bricht nach 6 min ab)
@@ -2838,18 +2874,21 @@ function umwegAufgaben_(json) {
       const r = routen[z.route];
       if (!r || !r.linie || r.linie.length < 2) return;
       const l = r.linie, anfang = l[0][2], ende = l[l.length - 1][2];
-      const richtungen = p.richtung === 'hin' ? ['hin'] : p.richtung === 'rueck' ? ['rueck'] : ['hin', 'rueck'];
+      if (Math.min(ende - z.km, z.km - anfang) < UMWEG_ZIEL_KM) return;   // an Start oder Ziel: kein Umweg
+      const soll = z.richtung || p.richtung;   // Richtung je Strecke (v0.27.0)
+      const richtungen = soll === 'hin' ? ['hin'] : soll === 'rueck' ? ['rueck'] : ['hin', 'rueck'];
       richtungen.forEach(function (ri) {
         const hin = ri === 'hin';
-        const kmA = Math.max(anfang, Math.min(ende, z.km + (hin ? -UMWEG_FENSTER_KM : UMWEG_FENSTER_KM)));
-        const kmB = Math.max(anfang, Math.min(ende, z.km + (hin ? UMWEG_FENSTER_KM : -UMWEG_FENSTER_KM)));
+        const rohA = z.km + (hin ? -UMWEG_FENSTER_KM : UMWEG_FENSTER_KM), rohB = z.km + (hin ? UMWEG_FENSTER_KM : -UMWEG_FENSTER_KM);
+        const kmA = Math.max(anfang, Math.min(ende, rohA)), kmB = Math.max(anfang, Math.min(ende, rohB));
         if (Math.abs(kmA - kmB) < 2) return;   // Strecke zu kurz
         aufgaben.push({
           schluessel: UMWEG_PRAEFIX + p.id + '_' + z.route + '_' + ri,
-          fp: [runde_(p.lat, 5), runde_(p.lon, 5), r.laenge_km, l.length, runde_(z.km, 1), UMWEG_FENSTER_KM, UMWEG_FORMAT].join(','),
+          fp: [runde_(p.lat, 5), runde_(p.lon, 5), r.laenge_km, l.length, runde_(z.km, 1), UMWEG_FENSTER_KM, UMWEG_FORMAT].join(','),   // u2: Enden ohne Kurs
           punkt: p.id, name: p.name, route: z.route, richtung: ri, quer_km: z.quer_km,
           a: umwegPunktBeiKm_(l, kmA), b: umwegPunktBeiKm_(l, kmB), s: [p.lon, p.lat],
-          kursA: umwegKurs_(l, kmA, hin), kursB: umwegKurs_(l, kmB, hin),
+          // am gekürzten Ende (Start/Ziel in der Stadt) keine Fahrtrichtung – sonst erzwungene Schleife
+          kursA: kmA === rohA ? umwegKurs_(l, kmA, hin) : null, kursB: kmB === rohB ? umwegKurs_(l, kmB, hin) : null,
         });
       });
     });

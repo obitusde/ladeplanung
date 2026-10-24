@@ -19,7 +19,7 @@ const UrlFetchApp = {
 };
 const Utilities = { sleep() {} };
 const gs = new Function('UrlFetchApp', 'Utilities', quelle +
-  '; return { umwegAufgaben_, umwegWert_, umwegAnhaengen_, berechneUmwege_, umwegKurs_ };')(UrlFetchApp, Utilities);
+  '; return { umwegAufgaben_, umwegWert_, umwegAnhaengen_, berechneUmwege_, umwegKurs_, baueExport_ };')(UrlFetchApp, Utilities);
 
 let fehler = 0;
 const pruefe = (bedingung, text) => { if (!bedingung) { fehler++; console.log('FEHLER ' + text); } };
@@ -43,6 +43,7 @@ const a1 = auf.find(a => a.punkt === 'p1');
 pruefe(a1 && a1.richtung === 'hin' && nah(a1.a[0], lon0 + 20 * proKm, 1e-6) && nah(a1.b[0], lon0 + 80 * proKm, 1e-6), 'p1: A bei km 20, B bei km 80: ' + JSON.stringify(a1 && [a1.a, a1.b]));
 pruefe(a1 && nah(a1.kursA, 90, 1) && nah(a1.kursB, 90, 1), 'Kurs nach Osten ≈ 90°: ' + (a1 && a1.kursA));
 const a2r = auf.find(a => a.punkt === 'p2' && a.richtung === 'rueck');
+pruefe(a2r && a2r.kursB === null, 'am gekürzten Streckenanfang keine Fahrtrichtung (v0.27.0): ' + (a2r && a2r.kursB));
 pruefe(a2r && nah(a2r.a[0], lon0 + 40 * proKm, 1e-6) && nah(a2r.b[0], lon0, 1e-6) && nah(a2r.kursA, 270, 1), 'p2 rück: A km 40, B am Anfang (gekürzt), Kurs 270°: ' + JSON.stringify(a2r && [a2r.a, a2r.b, a2r.kursA]));
 pruefe(auf.every(a => a.s.length === 2 && a.schluessel.startsWith('UMWEG_')), 'Station als [lon, lat], Schlüssel UMWEG_…');
 
@@ -77,6 +78,24 @@ pruefe(an2.fertig === 2 && !verschoben.punkte[0].zuordnung[0].umweg, 'verschoben
 // auffällig: +25 km bei 0,1 km Abstand
 const viel = { ...gemerkt, [a1.schluessel]: a1.fp + '|18|25' };
 pruefe(gs.umwegAnhaengen_(JSON.parse(JSON.stringify(json)), auf, viel).auffaellig.length === 1, 'großer Umweg auffällig');
+
+// nah an Start/Ziel der Strecke (unter 5 km): kein Umweg
+const amZiel = { routen: json.routen, punkte: [{ id: 'z', name: 'Ziel', lat: 47.001, lon: lon0 + 97 * proKm, richtung: 'beide', zuordnung: [{ route: 'r', km: 97, quer_km: 0.2 }] }] };
+const aufZ = gs.umwegAufgaben_(amZiel);
+pruefe(aufZ.length === 0, '3 km vor dem Streckenende: kein Umweg in beiden Richtungen: ' + JSON.stringify(aufZ.map(x => x.richtung)));
+
+// Richtung je Strecke (v0.27.0): Strecke ab Morges nach Osten, zweite Strecke in Gegenrichtung (wie Neuenrade – Ingolstadt)
+const morges = [46.5043239, 6.4912739], pk = 1 / (111.32 * Math.cos(46.5 * Math.PI / 180));
+const ost = [], west = [];
+for (let km = 0; km <= 60; km++) ost.push([morges[0], morges[1] + km * pk, km, 0, 0]);
+for (let km = 0; km <= 60; km++) west.push([morges[0], morges[1] + (60 - km) * pk, km, 0, 0]);
+const ex = gs.baueExport_([{ id: 'abMorges', name: 'M', linie: ost }, { id: 'gegen', name: 'G', linie: west }],
+  [{ id: 's', name: 'S', lat: morges[0] + 0.001, lon: morges[1] + 30 * pk, richtung: 'hin', strasse: '' }], 't');
+const zs = ex.punkte[0].zuordnung;
+pruefe(zs.length === 2 && !zs.find(z => z.route === 'abMorges').richtung && zs.find(z => z.route === 'gegen').richtung === 'rueck',
+  'Gegenrichtung → hin/rück getauscht: ' + JSON.stringify(zs.map(z => [z.route, z.richtung])));
+const auf2 = gs.umwegAufgaben_(ex);
+pruefe(auf2.length === 2 && auf2.find(a => a.route === 'gegen').richtung === 'rueck', 'Umweg nach Richtung je Strecke: ' + JSON.stringify(auf2.map(a => [a.route, a.richtung])));
 
 console.log(fehler === 0 ? 'Alle Prüfungen bestanden.' : fehler + ' Prüfungen fehlgeschlagen.');
 process.exit(fehler === 0 ? 0 : 1);

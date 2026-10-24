@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.45.0 — Station mit Umweg über 15 min (auf dieser Strecke und Richtung) grau wie „nicht erreichbar", auf der Karte
+                   klein ohne Schild; zählt nicht als „letzte vor Reserve" und nicht als nächste Station.
   Version 0.44.0 — Umweg je Station und Fahrtrichtung (routes.json, vom Script mit ORS gerechnet): Liste und Details zeigen
                    „+4 min · +2,0 km" statt „Raststätte" / „x km abseits"; Entfernung und Akku rechnen mit dem halben Umweg bis zur
                    Station statt mit dem Abstand zur Strecke. Ohne Umweg-Wert (fremde Stationen, Route ab hier) wie bisher.
@@ -798,7 +800,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.44.0';
+    const APP_VERSION = '0.45.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -1042,8 +1044,9 @@
         const hm = hin ? x.z.hm_hin - pr.hm_hin : pr.hm_rueck - x.z.hm_rueck;
         // Umweg dieser Fahrtrichtung [min, km] (Script v0.26.0); bis zur Station zählt die Hälfte der Mehr-km
         const umweg = (x.z.umweg && x.z.umweg[hin ? 'hin' : 'rueck']) || null;
+        const grossUmweg = !!(umweg && umweg[0] > UMWEG_GROSS_MIN);   // grau, bleibt als Notlösung sichtbar
         // km = entlang der Route (Reihenfolge, Lücken), weg = ganzer Weg zur Station (Anzeige)
-        eintraege.push({ punkt: x.punkt, z: x.z, km, weg: km + (umweg ? umweg[1] / 2 : abseits), hm: Math.max(0, Math.round(hm)), umweg });
+        eintraege.push({ punkt: x.punkt, z: x.z, km, weg: km + (umweg ? umweg[1] / 2 : abseits), hm: Math.max(0, Math.round(hm)), umweg, grossUmweg });
       }
       eintraege.sort((a, b) => a.weg - b.weg || a.km - b.km);   // nach angezeigtem Weg, damit die Zahlen aufsteigen
       return { modus: 'strecke', q: pr.q, s: pr.km, pos: pr, rest: hin ? route.laenge_km - pr.km : pr.km, eintraege };
@@ -1586,6 +1589,8 @@
       return kurz || name;
     }
 
+    const UMWEG_GROSS_MIN = 15;   // mehr Umweg → Station grau wie „nicht erreichbar" (Christof 24.10.2026, Variante b)
+
     /** Umweg kurz: „+4 min · +2,0 km" (Christof 24.10.2026: immer so angeben). */
     function umwegText(u) {
       return '+' + Math.round(u[0]) + ' min · +' + (u[1] < 10 ? zahl(u[1], 1) : Math.round(u[1])) + ' km';
@@ -1703,13 +1708,13 @@
       for (const e of erg.eintraege) e.prognose = prognose(e, profil);
       let letzteVorReserve = null;
       if (erg.eintraege.some(e => e.prognose && e.prognose.unterReserve)) {
-        for (const e of erg.eintraege) if (e.prognose && !e.prognose.unterReserve) letzteVorReserve = e;
+        for (const e of erg.eintraege) if (e.prognose && !e.prognose.unterReserve && !e.grossUmweg) letzteVorReserve = e;
       }
       letzteAnsicht = { route, erg, pos, planPos: planung.pos };
       erg.eintraege.forEach((e, i) => {
         const pg = e.prognose;
         const zeile = el('button', 'eintrag' + (e.punkt.favorit ? ' favorit' : '') + (e.punkt.fremd ? ' fremd' : '') +
-          (pg && pg.nichtErreichbar ? ' grau' : ''));
+          ((pg && pg.nichtErreichbar) || e.grossUmweg ? ' grau' : ''));
         zeile.type = 'button';
         // rot = unter der Reserve, aber erreichbar; nicht erreichbar ist grau (ganze Zeile)
         const rot = pg && pg.unterReserve && !pg.nichtErreichbar ? ' rot' : '';
@@ -2788,7 +2793,7 @@
       if (l && !r.ende && l[4] <= QUER_MAX_KM) {
         try {
           const erg = berechneListe(daten, route.id, r.richtung, l[1], l[2]);
-          const e = erg.eintraege && erg.eintraege[0];
+          const e = erg.eintraege && (erg.eintraege.find(x => !x.grossUmweg) || erg.eintraege[0]);
           if (e) teile.push('nächste Station ' + kurzname(e.punkt.name) + ' in ' + fmtKm(e.weg) + ' km');
         } catch (e) { /* ohne Liste */ }
       }
@@ -3674,7 +3679,7 @@
       $('karte-verkehr').hidden = !tomtomSchluessel();
       if (tomtomSchluessel() && !!zustand.einst.verkehrKarte !== !!verkehrEbene) schalteVerkehrKarte(!!zustand.einst.verkehrKarte);
       const liste = (a.erg && a.erg.eintraege) || [];
-      const wahl = e ? liste.find(x => x.punkt.id === e.punkt.id) || null : liste[0] || null;
+      const wahl = e ? liste.find(x => x.punkt.id === e.punkt.id) || null : liste.find(x => !x.grossUmweg) || liste[0] || null;
       // aus den Details: dich und diese Station zeigen; Knopf „Karte“: dich und alle erreichbaren Stationen
       zeichneKarte(wahl, e ? true : 'alle');
       if (zustand.einst.verkehrKarte && tomtomSchluessel()) ladeVerkehrFuerKarte();
@@ -3727,13 +3732,13 @@
       // (Christof, 14.10.2026). Zeichenreihenfolge: grau, erreichbar, gewählt – die gewählte liegt oben.
       // Innerhalb der erreichbaren nach Vorrang: unwichtige zuerst zeichnen, damit die wichtigen oben liegen.
       const eintraege = ((erg && erg.eintraege) || []).slice();
-      const rang = e => e === wahl ? 2 : e.prognose && e.prognose.nichtErreichbar ? 0 : 1;
+      const rang = e => e === wahl ? 2 : (e.prognose && e.prognose.nichtErreichbar) || e.grossUmweg ? 0 : 1;
       eintraege.sort((x, y) => rang(x) - rang(y) || vorrang(y.punkt) - vorrang(x.punkt));
       const erreichbar = [];
       karteSchilder = [];
       for (const e of eintraege) {
         const pg = e.prognose, gewaehlt = e === wahl;
-        const geht = !(pg && pg.nichtErreichbar);
+        const geht = !(pg && pg.nichtErreichbar) && !e.grossUmweg;   // großer Umweg: grau wie nicht erreichbar
         // erreichbar: dunkelbraun mit weißem Rand – in Akzentfarbe verschwanden sie auf dem gleichfarbigen Weg (Christof 24.10.2026)
         // gewählt: gelb, nicht größer; nicht erreichbar: dunkelgrau (hellgrau war kaum zu sehen) – Christof 24.10.2026
         const farbe = gewaehlt ? GEWAEHLT_GELB : !geht ? NICHT_ERREICHBAR_GRAU : pg && pg.unterReserve ? rot : STATION_DUNKEL;
