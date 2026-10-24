@@ -1,6 +1,10 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.42.0 — Streckenkarte: Verkehr liegt über der Strecke und zeigt nur Verzögerungen (TomTom relative-delay0, sonst
+                   relative0), erreichbare Stationen dunkel mit weißem Rand (vorher gleiche Farbe wie der Weg), Text unten
+                   kürzer („Rest ≈ 1 %") mit Notiz. Karte „Alle Ladepunkte": ◎ zoomt auf ≈ 5 km heran (Zoom 12); Maßstab zeigt, wie viele
+                   km die halbe Breite und die halbe Höhe sind.
   Version 0.41.1 — Karte „Alle Ladepunkte“: Kopf passt auch bei großer Schrift (Zurück nur „←“, Schalter teilen sich die Breite,
                    notfalls zweizeilig); Migros-Parkhäuser (M-Charge) als Migrol in fremde(-langsam).json.
   Version 0.41.0 — Karte „Alle Ladepunkte": Schalter „ab 11 kW" (sichtbar mit „Andere Anbieter") zeigt auch langsamere
@@ -281,7 +285,8 @@
     #karte-seite .kopf .knopf { min-height: 44px; }
     #karte { flex: 1; min-height: 0; background: var(--flaeche); }
     #karte-info { display: flex; gap: 10px; align-items: center; padding: 8px 12px calc(env(safe-area-inset-bottom) + 8px); border-top: 2px solid var(--linie); }
-    #karte-info .text { flex: 1; font-weight: 600; font-variant-numeric: tabular-nums; }
+    #karte-info .text { flex: 1; min-width: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+    #karte-info .text small { display: block; font-weight: 400; color: var(--leise); }
     #karte-info .knopf { min-height: 44px; }
     .leaflet-tooltip.schild { font: 700 14px/1.2 system-ui, sans-serif; pointer-events: auto; cursor: pointer; }
 
@@ -299,6 +304,14 @@
     #alle-karte { position: absolute; inset: 0; background: var(--flaeche); }
     .alle-zoom { position: absolute; right: 10px; top: 10px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; }
     .alle-zoom .knopf { width: 52px; height: 52px; min-height: 0; padding: 0; font-size: 28px; font-weight: 700; box-shadow: 0 1px 4px rgba(0, 0, 0, .35); }
+    /* Maßstab: halbe Breite (waagrecht) und halbe Höhe (senkrecht) ab der Ecke unten links */
+    #alle-massstab { position: absolute; inset: 0; z-index: 900; pointer-events: none; }
+    #alle-massstab .h, #alle-massstab .v { position: absolute; left: 10px; bottom: 26px; background: #222; box-shadow: 0 0 0 1.5px #fff; }
+    #alle-massstab .h { width: 50%; height: 3px; }      /* genau halbe Breite */
+    #alle-massstab .v { width: 3px; height: 50%; }      /* genau halbe Höhe */
+    #alle-massstab b { position: absolute; font: 700 14px/1.2 system-ui, sans-serif; color: #111; background: rgba(255, 255, 255, .88); padding: 1px 5px; border-radius: 5px; white-space: nowrap; }
+    #alle-massstab .h b { left: 50%; bottom: 6px; transform: translateX(-50%); }
+    #alle-massstab .v b { left: 8px; top: 50%; transform: translateY(-50%); }
     #alle-info { padding: 8px 12px calc(env(safe-area-inset-bottom) + 8px); border-top: 2px solid var(--linie); }
     #alle-text { margin: 0; font-weight: 600; }
     #alle-wahl:not([hidden]) { display: grid; gap: 2px; }
@@ -621,6 +634,7 @@
     </form>
     <div class="alle-wrap">
       <div id="alle-karte"></div>
+      <div id="alle-massstab" aria-hidden="true"><div class="h"><b></b></div><div class="v"><b></b></div></div>
       <div class="alle-zoom">
         <button id="alle-plus" class="knopf" type="button" aria-label="Hineinzoomen">+</button>
         <button id="alle-minus" class="knopf" type="button" aria-label="Herauszoomen">−</button>
@@ -776,7 +790,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.41.1';
+    const APP_VERSION = '0.42.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -2518,22 +2532,31 @@
     }
 
     // Verkehrsfarben auf der Karte (Christof: 3 ja) – nur nach Antippen, Kacheln werden gezählt
-    let verkehrEbene = null;
+    let verkehrEbene = null, verkehrStil = 'relative-delay0';
     function schalteVerkehrKarte(an) {
       const knopf = $('karte-verkehr');
       if (!karte || !window.L) return;
       if (verkehrEbene) { verkehrEbene.remove(); verkehrEbene = null; }
       if (an && tomtomStand('kacheln') >= TOMTOM_GRENZE.kacheln) { toast('TomTom: Monatsgrenze für Kartenbilder erreicht'); an = false; }
       if (an) {
-        verkehrEbene = L.tileLayer(TOMTOM_BASIS + '/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?tileSize=256&key=' + encodeURIComponent(tomtomSchluessel()),
-          { maxZoom: 18, opacity: 0.8, attribution: 'Verkehr © TomTom' }).addTo(karte);
+        // nur langsamer als frei (relative-delay0) – „relative0" färbt auch freie Straßen grün, die Strecke ging darin unter;
+        // klappt der Stil nicht (Fehler bei den ersten Kacheln), einmal auf relative0 zurück
+        const stil = verkehrStil;
+        verkehrEbene = L.tileLayer(TOMTOM_BASIS + '/traffic/map/4/tile/flow/' + stil + '/{z}/{x}/{y}.png?tileSize=256&key=' + encodeURIComponent(tomtomSchluessel()),
+          { maxZoom: 18, opacity: 1, pane: 'verkehr', attribution: 'Verkehr © TomTom' }).addTo(karte);
+        let geladen = 0, fehler = 0;
         verkehrEbene.on('tileload', () => {
+          geladen++;
           if (!tomtomZaehle('kacheln')) { schalteVerkehrKarte(false); toast('TomTom: Monatsgrenze für Kartenbilder erreicht'); }
+        });
+        verkehrEbene.on('tileerror', () => {
+          if (++fehler >= 3 && !geladen && stil !== 'relative0') { verkehrStil = 'relative0'; schalteVerkehrKarte(true); }
         });
       }
       knopf.setAttribute('aria-pressed', an ? 'true' : 'false');
       zustand.einst.verkehrKarte = !!an;
       speichere();
+      if (karteEbene && !$('karte-seite').hidden) zeichneKarte(karteWahl, false);
     }
 
     /** Gemerkte TomTom-Daten einer Station: { id (Belegung) | null, name, anders, zeit, alle, maxKw, frei, belegungZeit }. */
@@ -3565,6 +3588,8 @@
       return leafletLaedt;
     }
 
+    const STATION_DUNKEL = '#4a2300';   // erreichbare Stationen auf der Streckenkarte
+
     function akkuKurz(pg) {
       if (pg.nichtErreichbar) return 'nicht erreichbar';
       return pg.angenommen ? 'braucht ≈ ' + Math.round(pg.prozent) + ' %' : 'Rest ≈ ' + Math.round(pg.ankunft) + ' %';
@@ -3585,6 +3610,10 @@
       if (!karte) {
         karte = L.map('karte');
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(karte);
+        // Reihenfolge: Karte · Strecke · Verkehr · Stationen – sonst deckt die dicke Strecke den Verkehr zu (Christof 24.10.2026)
+        karte.createPane('strecke').style.zIndex = 350;
+        karte.createPane('verkehr').style.zIndex = 380;
+        karte.getPane('verkehr').style.pointerEvents = 'none';
         karte.on('zoomend', ordneSchilder);
       }
       karte.invalidateSize();
@@ -3607,8 +3636,8 @@
       const akzent = css('--akzent'), rot = css('--rot');
       const pkt = km => { const p = punktBeiKm(route, km); return [p.lat, p.lon]; };
       // Route violett mit weißem Rand – grau sah aus wie Landesgrenzen, rot ist für „unter Reserve" vergeben (Christof, 14.10.2026)
-      L.polyline(route.linie.map(p => [p[0], p[1]]), { color: '#ffffff', weight: 8, opacity: 0.9 }).addTo(karteEbene);
-      const strecke = L.polyline(route.linie.map(p => [p[0], p[1]]), { color: '#6a2fd6', weight: 5, opacity: 0.9 }).addTo(karteEbene);
+      L.polyline(route.linie.map(p => [p[0], p[1]]), { pane: 'strecke', color: '#ffffff', weight: 8, opacity: 0.9 }).addTo(karteEbene);
+      const strecke = L.polyline(route.linie.map(p => [p[0], p[1]]), { pane: 'strecke', color: '#6a2fd6', weight: 5, opacity: 0.9 }).addTo(karteEbene);
       const ich = a.pos ? [a.pos.lat, a.pos.lon] : null;
       const ab = erg && erg.pos ? erg.pos : null;              // Linienposition, ab der gerechnet wird
       const abStart = !!(a.planPos && a.planPos.planung);       // weit weg: geplant ab Startort der Route
@@ -3617,10 +3646,10 @@
       if (wahl && wahl.z && ab) {
         const lo = Math.min(ab.km, wahl.z.km), hi = Math.max(ab.km, wahl.z.km);
         const weg = [pkt(lo)].concat(route.linie.filter(p => p[2] > lo && p[2] < hi).map(p => [p[0], p[1]]), [pkt(hi)]);
-        L.polyline(weg, { color: akzent, weight: 7, opacity: 0.95 }).addTo(karteEbene);
-        if (wahl.z.quer_km > 0.2) L.polyline([pkt(wahl.z.km), [wahl.punkt.lat, wahl.punkt.lon]], { color: akzent, weight: 4, dashArray: '6 6' }).addTo(karteEbene);
+        L.polyline(weg, { pane: 'strecke', color: akzent, weight: 7, opacity: verkehrEbene ? 0.55 : 0.95 }).addTo(karteEbene);
+        if (wahl.z.quer_km > 0.2) L.polyline([pkt(wahl.z.km), [wahl.punkt.lat, wahl.punkt.lon]], { pane: 'strecke', color: akzent, weight: 4, dashArray: '6 6' }).addTo(karteEbene);
       } else if (wahl && ich) {
-        L.polyline([ich, [wahl.punkt.lat, wahl.punkt.lon]], { color: akzent, weight: 3, dashArray: '6 6' }).addTo(karteEbene);   // Luftlinie
+        L.polyline([ich, [wahl.punkt.lat, wahl.punkt.lon]], { pane: 'strecke', color: akzent, weight: 3, dashArray: '6 6' }).addTo(karteEbene);   // Luftlinie
       }
       if (abStart && ab) L.circleMarker(pkt(ab.km), { radius: 7, color: '#ffffff', weight: 2, fillColor: '#444444', fillOpacity: 1 })
         .bindTooltip('Geplant ab hier').addTo(karteEbene);
@@ -3636,10 +3665,12 @@
       for (const e of eintraege) {
         const pg = e.prognose, gewaehlt = e === wahl;
         const geht = !(pg && pg.nichtErreichbar);
-        const farbe = !geht ? '#9a9a9a' : pg && pg.unterReserve ? rot : akzent;
+        // erreichbar: dunkelbraun mit weißem Rand – in Akzentfarbe verschwanden sie auf dem gleichfarbigen Weg (Christof 24.10.2026)
+        const farbe = !geht ? '#9a9a9a' : pg && pg.unterReserve ? rot : STATION_DUNKEL;
+        const rand = gewaehlt ? '#000000' : !geht ? farbe : e.punkt.fremd ? STATION_DUNKEL : '#ffffff';
         const m = L.circleMarker([e.punkt.lat, e.punkt.lon], {
-          radius: gewaehlt ? 11 : geht ? 8 : 5, color: gewaehlt ? '#000000' : farbe, weight: gewaehlt ? 3 : 2,
-          fillColor: e.punkt.fremd ? '#ffffff' : farbe, fillOpacity: geht ? 0.95 : 0.5, dashArray: e.punkt.fremd ? '4 3' : null,
+          radius: gewaehlt ? 11 : geht ? 8 : 5, color: rand, weight: gewaehlt ? 3 : geht ? 2.5 : 2,
+          fillColor: e.punkt.fremd ? '#ffffff' : farbe, fillOpacity: geht ? 1 : 0.5, dashArray: e.punkt.fremd ? '4 3' : null,
         }).addTo(karteEbene);
         const waehle = () => zeichneKarte(e, false);
         m.on('click', waehle);
@@ -3665,9 +3696,14 @@
       if (ich) L.circleMarker(ich, { radius: 8, color: '#ffffff', weight: 3, fillColor: '#1a73e8', fillOpacity: 1 }).bindTooltip('Du').addTo(karteEbene);
 
       const anzahl = erreichbar.length - (wahl && wahl.prognose && wahl.prognose.nichtErreichbar ? 1 : 0);
-      $('karte-text').textContent = wahl
-        ? kurzname(wahl.punkt.name) + ' · ' + fmtKm(wahl.weg) + ' km' + (wahl.prognose ? ' · ' + akkuText(wahl.prognose) : '') + (wahl.punkt.fremd ? ' · nicht in deiner Liste' : '')
-        : (erg && erg.eintraege.length ? anzahl + ' Stationen erreichbar – antippen' : 'Keine Ladepunkte voraus');
+      // kurz (Christof 24.10.2026): Name · km · Rest, darunter die Notiz (was dort ist, z. B. McDo)
+      const kt = $('karte-text');
+      kt.replaceChildren(wahl
+        ? kurzname(wahl.punkt.name) + ' · ' + fmtKm(wahl.weg) + ' km' + (wahl.prognose ? ' · ' + akkuKurz(wahl.prognose) : '')
+        : (erg && erg.eintraege.length ? anzahl + ' Stationen erreichbar – antippen' : 'Keine Ladepunkte voraus'));
+      const unten = wahl ? [wahl.punkt.notiz, wahl.punkt.fremd ? 'nicht in deiner Liste' : ''].filter(Boolean).join(' · ') : '';
+      if (unten) kt.append(el('small', '', unten));
+      karte.invalidateSize({ pan: false });   // Text unten ein- oder zweizeilig → Kartenhöhe ändert sich
       $('karte-details').hidden = !wahl;
       if (zoomen === 'alle' && erreichbar.length) {
         karte.fitBounds(L.latLngBounds(erreichbar.concat(bezug ? [bezug] : [])), { padding: [50, 50], maxZoom: 13 });
@@ -3716,7 +3752,7 @@
     // aus den Bundesdaten nur per Knopf; Start bei dir mit ≈ 100 km Umkreis.
     // -----------------------------------------------------------------------
 
-    const ALLE_RADIUS_M = 100e3, ALLE_SCHILDER_MAX = 150;
+    const ALLE_RADIUS_M = 100e3, ALLE_SCHILDER_MAX = 150, ALLE_HIER_ZOOM = 12;
     let alleKarte = null, alleEbene = null, alleSuchMarke = null, alleWahl = null, alleMarken = [];
     let fremdeLangsam = null;   // fremde-langsam.json (11–99 kW), erst beim Einschalten von „ab 11 kW" geladen
     const ALLE_LANGSAM_SCHILD_ZOOM = 12;   // langsame bekommen erst ab hier ein Schild (sonst verdecken sie die schnellen)
@@ -3755,10 +3791,14 @@
         alleKarte = L.map('alle-karte', { zoomControl: false, renderer: L.canvas({ tolerance: 12 }) });
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(alleKarte);
         alleKarte.on('moveend', ordneAlleSchilder);
+        alleKarte.on('move zoom resize', zeigeAlleMassstab);
+        // Leiste unten ändert ihre Höhe (gewählte Station, Notiz) → Leaflet muss die neue Kartengröße kennen
+        if (window.ResizeObserver) new ResizeObserver(() => { alleKarte.invalidateSize(); zeigeAlleMassstab(); }).observe($('alle-karte'));
       }
       alleKarte.invalidateSize();
       alleZuMir();      // erst den Ausschnitt setzen – die Schilder brauchen ihn
       zeichneAlle();
+      zeigeAlleMassstab();
     }
 
     /** Auf dich mit ≈ 100 km Umkreis; ohne Standort auf alle deine Stationen. */
@@ -3768,6 +3808,27 @@
       if (pos) alleKarte.fitBounds(L.latLng(pos.lat, pos.lon).toBounds(2 * ALLE_RADIUS_M));
       else if (daten && daten.punkte.length) alleKarte.fitBounds(L.latLngBounds(daten.punkte.map(p => [p.lat, p.lon])), { padding: [30, 30] });
       else alleKarte.setView([46.8, 8.2], 7);   // ohne Standort und Daten: Schweiz
+    }
+
+    /** Knopf ◎: zu dir und nah heran (≈ 5 km bis zum Rand), damit auch die Schilder der langsamen erscheinen. */
+    function alleHier() {
+      const pos = aktuellePosition();
+      if (!alleKarte) return;
+      if (!pos) { toast('Standort unbekannt – oben „Standort" tippen'); return; }
+      alleKarte.setView([pos.lat, pos.lon], ALLE_HIER_ZOOM);
+    }
+
+    /** Maßstab: wie viele km die halbe Breite und die halbe Höhe der Karte sind (Christof 24.10.2026). */
+    function zeigeAlleMassstab() {
+      if (!alleKarte) return;
+      const g = alleKarte.getSize();
+      if (!g.x || !g.y) return;
+      // genau entlang der Balken (Ecke 10 px vom linken, 26 px vom unteren Rand) – der Maßstab ändert sich mit der Breite
+      const x0 = 10, y0 = g.y - 26;
+      const km = (a, b) => alleKarte.distance(alleKarte.containerPointToLatLng(a), alleKarte.containerPointToLatLng(b)) / 1000;
+      const text = x => (x < 10 ? zahl(x, 1) : String(Math.round(x))) + ' km';
+      $('alle-massstab').querySelector('.h b').textContent = text(km([x0, y0], [x0 + g.x / 2, y0]));
+      $('alle-massstab').querySelector('.v b').textContent = text(km([x0, y0], [x0, y0 - g.y / 2]));
     }
 
     /** Eigene Stationen, auf Wunsch dazu die fremden (ohne die, die ≤ 150 m neben einer eigenen liegen = dieselbe). */
@@ -3807,6 +3868,7 @@
       const eigene = punkte.filter(p => !p.fremd).length, langsam = punkte.filter(p => p.langsam).length;
       $('alle-text').textContent = eigene + ' eigene Ladepunkte' + (punkte.length > eigene ? ' + ' + (punkte.length - eigene - langsam) + ' andere' : '') +
         (langsam ? ' + ' + langsam + ' langsamere (grau)' : '') + ' – antippen';
+      alleGroesse();
       ordneAlleSchilder();
     }
 
@@ -3852,6 +3914,14 @@
       $('alle-maps').href = mapsUrl(p);
       $('alle-bearbeiten').hidden = !!p.fremd;
       $('alle-bearbeiten').href = FORMULAR_URL + '?id=' + encodeURIComponent(p.id);
+      alleGroesse();
+    }
+
+    /** Leiste unten hat ihre Höhe geändert → Leaflet die neue Kartengröße mitteilen (sonst stimmen Maßstab und Mitte nicht). */
+    function alleGroesse() {
+      if (!alleKarte) return;
+      alleKarte.invalidateSize({ pan: false });
+      zeigeAlleMassstab();
     }
 
     /** Details der gewählten Station: liegt sie in der Liste voraus, mit allen Werten, sonst mit Luftlinie ab dir. */
@@ -4163,7 +4233,7 @@
       $('alle-suche').addEventListener('submit', sucheAlleOrt);
       $('alle-plus').addEventListener('click', () => alleKarte && alleKarte.zoomIn());
       $('alle-minus').addEventListener('click', () => alleKarte && alleKarte.zoomOut());
-      $('alle-ich').addEventListener('click', alleZuMir);
+      $('alle-ich').addEventListener('click', alleHier);
       $('alle-details').addEventListener('click', alleDetails);
       $('alle-fremde').addEventListener('click', () => {
         zustand.einst.alleFremde = !zustand.einst.alleFremde;
