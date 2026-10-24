@@ -1,6 +1,8 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.27.1 — Umwege schneller: 1,1 s Pause je Abfrage (Abfrage selbst ≈ 0,5 s → unter 40/min), 4,5 min je Lauf
+ *                  (erster echter Lauf 24.10.2026: 66 von 219 in einem Lauf).
  * Version 0.27.0 — Richtung je Strecke: Die Richtung im Sheet gilt für die Strecke ab Morges; fährt eine andere Strecke an der
  *                  Station entgegengesetzt (Neuenrade – Ingolstadt), bekommt die Zuordnung „richtung" getauscht (vorher
  *                  erschienen Freudenberg, Ehringshausen, Siegen dort auf der falschen Fahrbahn). Umweg: an gekürzten
@@ -79,7 +81,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.27.0';
+const VERSION = '0.27.1';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -2836,8 +2838,8 @@ const UMWEG_ZUSCHLAG = 1.2;          // ab 3 min: Ampeln, Kreisel, Suchen – de
 const UMWEG_ZUSCHLAG_AB_MIN = 3;
 const UMWEG_FORMAT = 'u2';           // erhöhen erzwingt Neuberechnung aller Umwege
 const UMWEG_PRAEFIX = 'UMWEG_';
-const UMWEG_PAUSE_MS = 1600;         // ORS kostenlos: 40 Abfragen je Minute
-const UMWEG_ZEIT_MS = 4 * 60 * 1000; // danach aufhören (Apps Script bricht nach 6 min ab)
+const UMWEG_PAUSE_MS = 1100;         // ORS kostenlos: 40 Abfragen je Minute (Abfrage ≈ 0,5 s + Pause)
+const UMWEG_ZEIT_MS = 4.5 * 60 * 1000; // danach aufhören (Apps Script bricht nach 6 min ab, Export braucht ≈ 30 s)
 const ORS_URL_SUMME = 'https://api.openrouteservice.org/v2/directions/driving-car';
 
 function umwegPunktBeiKm_(linie, km) {
