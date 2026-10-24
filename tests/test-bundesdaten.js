@@ -16,7 +16,7 @@ const bund = { EVSEData: [
   { OperatorName: 'M-Charge', EVSEDataRecord: [
     evse('Migrol | Sion 1', 46.23111, 7.36222, 320, 'Sion'),
     evse('Migrol | Sion 2', 46.23113, 7.36225, 320, 'Sion'),          // gleicher Standort
-    evse('Migros | Sion-Metropole 4', 46.2300, 7.3600, 150, 'Sion'),   // Migros, nicht Migrol
+    evse('Migros | Sion-Metropole 4', 46.2300, 7.3600, 150, 'Sion'),   // Migros (M-Charge) seit 1.6.0 dabei
     evse('Migrol | Kleinort 1', 46.5, 7.0, 50, 'Kleinort'),            // unter 100 kW
   ] },
   { OperatorName: 'Tesla', EVSEDataRecord: [
@@ -31,8 +31,10 @@ const alleCh = auswerten(bund);
 const amag = alleCh.find(p => p.betreiber === 'AMAG');
 pruefe(amag && amag.name === 'AMAG Charging Station Cham' && amag.kw === 400, 'AMAG aus den Bundesdaten: ' + JSON.stringify(amag));
 const erg = alleCh.filter(p => p.betreiber !== 'AMAG');
-pruefe(erg.length === 2, 'zwei Standorte erwartet, waren ' + erg.length + ': ' + erg.map(p => p.name).join(', '));
-const sion = erg.find(p => p.betreiber === 'Migrol');
+pruefe(erg.length === 3, 'drei Standorte erwartet, waren ' + erg.length + ': ' + erg.map(p => p.name).join(', '));
+const sion = erg.find(p => p.name === 'Migrol Sion');
+const migros = erg.find(p => p.name === 'Migros Sion-Metropole');
+pruefe(migros && migros.betreiber === 'Migrol' && migros.kw === 150, 'Migros (M-Charge) als Migrol: ' + JSON.stringify(migros));
 pruefe(sion && sion.name === 'Migrol Sion' && sion.anzahl === 2 && sion.kw === 320, 'Migrol Sion zusammengefasst: ' + JSON.stringify(sion));
 pruefe(sion && sion.adresse === 'Route 1, 1950 Sion, Schweiz', 'Adresse endet auf „Schweiz" (für die Preise): ' + (sion && sion.adresse));
 const steg = erg.find(p => p.betreiber === 'Tesla');

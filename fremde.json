@@ -1,4 +1,4 @@
-{"version":2,"stand":"2026-10-22","min_kw":100,"quellen":{"CH":"BFE, ich-tanke-strom.ch","DE":"Bundesnetzagentur, Ladesäulenregister vom 2026-09-01","Tesla":"supercharge.info (nur offen für andere Autos)"},"punkte":[
+{"version":2,"stand":"2026-10-24","min_kw":100,"quellen":{"CH":"BFE, ich-tanke-strom.ch","DE":"Bundesnetzagentur, Ladesäulenregister vom 2026-09-01","Tesla":"supercharge.info (nur offen für andere Autos)"},"punkte":[
 {"id":"bfe-47.1869-8.4738","name":"AMAG Charging Station Cham","betreiber":"AMAG","lat":47.186928,"lon":8.473792,"kw":400,"anzahl":6,"adresse":"Alte Steinhauserstrasse, 6330 Cham, Schweiz"},
 {"id":"bfe-46.8506-9.5051","name":"AMAG Charging Station Chur","betreiber":"AMAG","lat":46.850562,"lon":9.505093,"kw":150,"anzahl":4,"adresse":"Rossbodenstrasse, 7000 Chur, Schweiz"},
 {"id":"bfe-47.3789-8.6801","name":"AMAG Charging Station Volketswil","betreiber":"AMAG","lat":47.378919,"lon":8.68013,"kw":400,"anzahl":4,"adresse":"Hölzliwiesenstrasse, 8604 Volketswil, Schweiz"},
@@ -47,6 +47,11 @@
 {"id":"bfe-46.9779-7.4606","name":"Migrol Worblaufen","betreiber":"Migrol","lat":46.977932,"lon":7.460593,"kw":300,"anzahl":4,"adresse":"Worblaufenstrasse, 3048 Ittigen, Schweiz"},
 {"id":"bfe-47.5209-8.2426","name":"Migrol Würenlingen","betreiber":"Migrol","lat":47.520928,"lon":8.242608,"kw":320,"anzahl":4,"adresse":"Döttingerstrasse, 5303 Würenlingen, Schweiz"},
 {"id":"bfe-47.4685-9.1089","name":"Migrol Zuzwil","betreiber":"Migrol","lat":47.468482,"lon":9.108886,"kw":300,"anzahl":4,"adresse":"St. Gallerstrasse, 9524 Zuzwil, Schweiz"},
+{"id":"bfe-47.3855-8.5312","name":"Migros Limmatplatz","betreiber":"Migrol","lat":47.385527,"lon":8.531174,"kw":150,"anzahl":13,"adresse":"Limmatplatz, 8005 Zürich, Schweiz"},
+{"id":"bfe-47.0150-8.6455","name":"Migros Mythen-Center","betreiber":"Migrol","lat":47.01496,"lon":8.645535,"kw":200,"anzahl":8,"adresse":"Mythen-Centerstrasse, 6438 Ibach, Schweiz"},
+{"id":"bfe-46.0793-7.1452","name":"Migros Sembrancher","betreiber":"Migrol","lat":46.079267,"lon":7.145236,"kw":200,"anzahl":4,"adresse":"Rte de la Chapalette, 1933 Sembrancher, Schweiz"},
+{"id":"bfe-46.2315-7.3847","name":"Migros Sion Tourbillon Centre","betreiber":"Migrol","lat":46.231549,"lon":7.384675,"kw":200,"anzahl":4,"adresse":"Av. du Grand-Champsec, 1950 Sion, Schweiz"},
+{"id":"bfe-47.1918-8.7215","name":"Migros Wollerau","betreiber":"Migrol","lat":47.191767,"lon":8.721521,"kw":200,"anzahl":6,"adresse":"Roosstrasse, 8832 Wollerau, Schweiz"},
 {"id":"bfe-47.2711-8.4397","name":"Tesla Supercharger AffolternamAlbis","betreiber":"Tesla","lat":47.271119,"lon":8.439705,"kw":250,"anzahl":12,"adresse":"Moosbachstrasse, 8910 AffolternamAlbis, Schweiz"},
 {"id":"bfe-46.2327-9.0400","name":"Tesla Supercharger Arbedo-Castione","betreiber":"Tesla","lat":46.232692,"lon":9.040013,"kw":250,"anzahl":7,"adresse":"ViaS.Gottardo, 6532 Arbedo-Castione, Schweiz"},
 {"id":"bfe-46.9711-8.4592","name":"Tesla Supercharger Beckenried","betreiber":"Tesla","lat":46.971079,"lon":8.459159,"kw":150,"anzahl":6,"adresse":"Buochserstrasse, 6375 Beckenried, Schweiz"},

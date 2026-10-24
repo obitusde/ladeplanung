@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.41.1 — Karte „Alle Ladepunkte“: Kopf passt auch bei großer Schrift (Zurück nur „←“, Schalter teilen sich die Breite,
+                   notfalls zweizeilig); Migros-Parkhäuser (M-Charge) als Migrol in fremde(-langsam).json.
   Version 0.41.0 — Karte „Alle Ladepunkte": Schalter „ab 11 kW" (sichtbar mit „Andere Anbieter") zeigt auch langsamere
                    Säulen von EnBW, E.ON und EWE Go (fremde-langsam.json, ≈ 2100, erst beim Einschalten geladen); klein und
                    grau, Schild erst beim Hineinzoomen. Standard bleibt schnell (ab 100 kW).
@@ -286,8 +288,9 @@
     /* Alle Ladepunkte (v0.40.0): Karte ohne Route, Ortssuche, große Zoom-Knöpfe */
     #alle-seite { position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column; background: var(--grund); padding-top: env(safe-area-inset-top); }
     #alle-seite .kopf { display: flex; gap: 6px; padding: 8px 10px 4px; }
-    #alle-seite .kopf .knopf { min-height: 44px; padding: 0 10px; font-size: 16px; white-space: nowrap; }
-    #alle-fremde { margin-left: auto; }
+    #alle-seite .kopf .knopf { min-height: 44px; padding: 2px 8px; font-size: 16px; line-height: 1.15; }
+    #alle-seite .kopf #alle-zurueck { flex: none; width: 52px; padding: 0; font-size: 22px; }
+    #alle-fremde, #alle-langsam { flex: 1 1 0; min-width: 0; }   /* teilen sich die Breite, notfalls zweizeilig (große Schrift am Pixel) */
     #alle-fremde[aria-pressed="true"], #alle-langsam[aria-pressed="true"] { background: var(--akzent); color: var(--akzent-text); border-color: var(--akzent); }
     .alle-suche { display: flex; gap: 6px; padding: 4px 10px 8px; }
     .alle-suche input { flex: 1; min-width: 0; min-height: 44px; font-size: 18px; padding: 0 10px; border: 2px solid var(--linie); border-radius: 10px; background: var(--flaeche); color: var(--text); }
@@ -608,7 +611,7 @@
 
   <section id="alle-seite" hidden>
     <div class="kopf">
-      <button id="alle-zurueck" class="knopf" type="button">← Zurück</button>
+      <button id="alle-zurueck" class="knopf" type="button" aria-label="Zurück">←</button>
       <button id="alle-fremde" class="knopf" type="button" aria-pressed="false">Andere Anbieter</button>
       <button id="alle-langsam" class="knopf" type="button" aria-pressed="false" hidden>ab 11 kW</button>
     </div>
@@ -773,7 +776,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.41.0';
+    const APP_VERSION = '0.41.1';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;

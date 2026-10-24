@@ -1,4 +1,6 @@
 // Ladestationen aus amtlichen Registern → fremde.json
+// Version 1.6.0 (24.10.2026) — Schweiz: ganzes M-Charge-Netz (auch Migros-Parkhäuser und Partner), als Betreiber „Migrol“
+//                              (gleiche M-Charge-Tarife); Christof: Migros-Tiefgarage Morges fehlte.
 // Version 1.5.0 (24.10.2026) — zusätzlich fremde-langsam.json: Standorte mit 11–99 kW (ohne Tesla = Destination Charger,
 //                              meist nur für Teslas), für den Schalter „ab 11 kW“ auf der Karte „Alle Ladepunkte“.
 // Version 1.4.0 (22.10.2026) — Deutschland zusätzlich E.ON Drive (Infrastructure, Germany) und EWE Go (auch HOCHTIEF-
@@ -86,9 +88,9 @@ const adresse = (strasse, plz, ort, land) => [sauber(strasse), sauber([plz, ort]
 // Schweiz: BFE (OICP-JSON)
 // ---------------------------------------------------------------------------
 
-/** Betreiber für die App oder null: Migrol (beim Bund unter „M-Charge"), AMAG (Name), Tesla (Betreiber). */
+/** Betreiber für die App oder null: Migrol = ganzes M-Charge-Netz (Migrol, Migros, Partner), AMAG (Name), Tesla (Betreiber). */
 function betreiberVon(operatorName, name) {
-  if (/migrol/i.test(name)) return 'Migrol';
+  if (/migrol/i.test(name) || /^m-charge$/i.test(String(operatorName || '').trim())) return 'Migrol';
   if (/\bamag\b/i.test(name)) return 'AMAG';
   if (/^tesla$/i.test(String(operatorName || '').trim())) return 'Tesla';
   return null;
