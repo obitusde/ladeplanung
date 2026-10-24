@@ -2,6 +2,7 @@
 <!--
   Ladeplanung — Seite „Wartung & Status": zeigt den Zustand und stößt Rechenschritte samt Folgeschritten an.
   Wird von doGet() in Code.js ausgeliefert (…/exec?seite=wartung).
+  Version 0.20.0 — „Umwege berechnen" (je Station Umweg in min und km, Script v0.26.0) und Stand im Status.
   Version 0.19.1 — Text „Fahrt beenden" statt „Angekommen".
   Version 0.19.0 — Auf dem Handy nicht mehr winzig: hochskalieren, wenn die Seite in Desktop-Breite erscheint.
   Version 0.18.0 — Aus dem App-Menü direkt zu „Route hinzufügen" (?fokus=route).
@@ -86,6 +87,13 @@
     </div>
 
     <div class="karte">
+      <h3>Umwege berechnen</h3>
+      <p><b>Wann:</b> nach neuen Stationen, geänderten Koordinaten oder Richtungen und nach „Routen berechnen" – wenn oben „Umwege: x von y" steht.</p>
+      <p class="leise">Rechnet je Station und Fahrtrichtung, wie viel länger der Halt dauert (+ min · + km). Beim ersten Mal 2–3× tippen (Zeitlimit), danach nur noch Neues.</p>
+      <button class="knopf" data-aktion="umwege">Umwege berechnen und veröffentlichen</button>
+    </div>
+
+    <div class="karte">
       <h3>Änderungen aus dem Sheet veröffentlichen</h3>
       <p><b>Wann:</b> nachdem du etwas <b>direkt im Sheet</b> geändert hast, z. B. Notiz, kW, Richtung oder Favorit.</p>
       <button class="knopf" data-aktion="export">Veröffentlichen</button>
@@ -164,6 +172,7 @@
       zeile(s.punkte + ' Stationen' + (probleme.length ? ' – ' + probleme.join(', ') : ''), probleme.length ? 'warn' : 'ok');
       if (s.ohneRoute && s.ohneRoute.length) zeile('Keiner Route zugeordnet (> 10 km): ' + s.ohneRoute.join(', '), 'info');
       zeile('Zuletzt veröffentlicht: ' + datum(s.letzterExport), s.letzterExport ? 'ok' : 'warn');
+      if (s.umwege) zeile('Umwege: ' + s.umwege.fertig + ' von ' + s.umwege.alle + ' berechnet' + (s.umwege.fertig < s.umwege.alle ? ' – „Umwege berechnen" tippen' : ''), s.umwege.fertig < s.umwege.alle ? 'warn' : 'ok');
       if (s.modell) {
         const k = s.modell.kalibrierung;
         zeile('Verbrauchsmodell: ' + (k && k.fahrten ? k.methode + ', Ø Abweichung ' + String(k.abweichung_prozent).replace('.', ',') + ' % Akku' : 'Physik-Startwerte, noch keine Fahrt kalibriert') +

@@ -1,6 +1,10 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.26.0 — Umwege je Station und Fahrtrichtung (Christof 24.10.2026: „schnell entscheiden, zu welcher Ladestation ich
+ *                  fahre"): ORS A → B gegen A → Station → B, A/B 30 km vor/nach der Station, Weg frei gewählt (Parallel-
+ *                  Autobahn A 5/A 67 zählt so als sinnvolle Route). Gemerkt in den Skripteigenschaften, in routes.json je
+ *                  Zuordnung „umweg": { hin: [min, km], rueck: [min, km] }. Wartung → „Umwege berechnen".
  * Version 0.25.0 — Seite „Meine Fahrten" (?seite=fahrten, Christof 22.10.2026: „schnell sehen, wie lange so eine Fahrt dauert –
  *                  Fahren + Laden + Pause + Stau"): je Ziel Ø Unterwegs mit Anteilen, darunter die einzelnen Fahrten (aufklappbar).
  * Version 0.24.0 — Nach der ersten Fahrt mit „Fahrt live" (Christof 22.10.2026): je Messwert Gegenwind und Regen (Open-Meteo,
@@ -70,7 +74,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.25.0';
+const VERSION = '0.26.0';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -426,6 +430,7 @@ function wartungAusfuehren(aktion, wert) {
   const ablaeufe = {
     route_link: [function () { legeRouteAusLinkAn_(wert); }, berechneRouten, exportJson],
     export: [exportJson],
+    umwege: [function () { exportJson({ umwegeRechnen: true }); }],
     links: [aufloeseLinks, exportJson],
     routen: [routenVorgabenUebernehmen, berechneRouten, exportJson],
     routen_neu: [routenVorgabenUebernehmen, berechneRoutenNeu, exportJson],
@@ -490,7 +495,12 @@ function wartungStatus_() {
 
   try {
     const text = githubLies_('routes.json');
-    if (text) status.letzterExport = JSON.parse(text).erzeugt || '';
+    if (text) {
+      const json = JSON.parse(text);
+      status.letzterExport = json.erzeugt || '';
+      const aufgaben = umwegAufgaben_(json);
+      status.umwege = { alle: aufgaben.length, fertig: umwegAnhaengen_(json, aufgaben, props.getProperties()).fertig };
+    }
   } catch (e) {
     status.letzterExport = '';
   }
@@ -2614,7 +2624,7 @@ const RASTSTAETTE_MAX_KM = 0.5;
 const RASTSTAETTE_MUSTER = /rastst[äa]tte|rasthof|rastanlage|rastplatz|autobahn|autogrill|aire de service|area di servizio/i;
 
 /** Gibt { meldungen, json, fehler } zurück — das Formular zeigt daraus die Zuordnung an. */
-function exportJson() {
+function exportJson(optionen) {
   const ui = meldungsUi_();
   let json = null;
   const ss = tabelle_();
@@ -2677,6 +2687,17 @@ function exportJson() {
     }
 
     json = baueExport_(routen, punkte, new Date().toISOString());
+    // Umwege: gemerkte anhängen; über Wartung → „Umwege berechnen" fehlende mit ORS rechnen (Zeitlimit beachtet)
+    const props = PropertiesService.getScriptProperties();
+    const aufgaben = umwegAufgaben_(json);
+    if (optionen && optionen.umwegeRechnen) {
+      const erg = berechneUmwege_(aufgaben, props.getProperties(), props.getProperty('ORS_API_KEY'), function (k, v) { props.setProperty(k, v); });
+      meldungen.push('Umwege: ' + erg.neu + ' neu berechnet' + (erg.fehler.length ? ', Fehler: ' + erg.fehler.slice(0, 5).join('; ') : ''));
+    }
+    const umwege = umwegAnhaengen_(json, aufgaben, props.getProperties());
+    meldungen.push('Umwege: ' + umwege.fertig + ' von ' + aufgaben.length + ' fertig' +
+      (umwege.fertig < aufgaben.length ? ' – Wartung → „Umwege berechnen" (bei „Zeitlimit" nochmal tippen)' : ''));
+    if (umwege.auffaellig.length) meldungen.push('Umweg auffällig (Richtung/Koordinaten prüfen): ' + umwege.auffaellig.join(', '));
     githubSchreibe_('routes.json', JSON.stringify(json), 'routes.json exportiert (Apps Script v' + VERSION + ')');
 
     // Status-Spalte: nicht zugeordnete Punkte kennzeichnen, erledigte Kennzeichnung entfernen.
@@ -2753,7 +2774,7 @@ function baueExport_(routen, punkte, zeitstempel) {
   });
 
   return {
-    version: '1.2', // 1.1: zuordnung um quer_km, strasse, raststaette; 1.2: routen um dauer_s, hoechster; punkte um strasse
+    version: '1.2', // 1.1: zuordnung um quer_km, strasse, raststaette; 1.2: routen um dauer_s, hoechster; punkte um strasse; zuordnung.umweg optional
     erzeugt: zeitstempel,
     routen: routen.map(function (r) {
       const letzter = r.linie[r.linie.length - 1];
@@ -2765,6 +2786,150 @@ function baueExport_(routen, punkte, zeitstempel) {
     }),
     punkte: punkteMitZuordnung,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Umwege (Script v0.26.0, Christof 24.10.2026). Je Station, Zuordnung und erlaubter Fahrtrichtung zwei ORS-Abfragen:
+// A → B und A → Station → B, A/B 30 km vor/nach der Station auf der Stammstrecke (an den Enden gekürzt). Der Routendienst
+// wählt den Weg frei – liegt die Station an einer Parallel-Autobahn (A 67 neben A 5), fährt er ab der Gabelung dort.
+// Probelauf mit OSRM: echte Raststätten 1–3 min, EnBW Karlsruhe (0,2 km neben der A 5) ≈ 7 min, Lorsch West 3,7 min.
+// ---------------------------------------------------------------------------
+
+const UMWEG_FENSTER_KM = 30;
+const UMWEG_ZUSCHLAG = 1.2;          // ab 3 min: Ampeln, Kreisel, Suchen – der Routendienst rechnet ohne
+const UMWEG_ZUSCHLAG_AB_MIN = 3;
+const UMWEG_FORMAT = 'u1';           // erhöhen erzwingt Neuberechnung aller Umwege
+const UMWEG_PRAEFIX = 'UMWEG_';
+const UMWEG_PAUSE_MS = 1600;         // ORS kostenlos: 40 Abfragen je Minute
+const UMWEG_ZEIT_MS = 4 * 60 * 1000; // danach aufhören (Apps Script bricht nach 6 min ab)
+const ORS_URL_SUMME = 'https://api.openrouteservice.org/v2/directions/driving-car';
+
+function umwegPunktBeiKm_(linie, km) {
+  km = Math.max(linie[0][2], Math.min(linie[linie.length - 1][2], km));
+  for (let i = 1; i < linie.length; i++) {
+    if (linie[i][2] >= km) {
+      const a = linie[i - 1], b = linie[i], f = b[2] > a[2] ? (km - a[2]) / (b[2] - a[2]) : 0;
+      return [a[1] + f * (b[1] - a[1]), a[0] + f * (b[0] - a[0])];   // [lon, lat] für ORS
+    }
+  }
+  const z = linie[linie.length - 1];
+  return [z[1], z[0]];
+}
+
+/** Fahrtrichtung in Grad (0 = Nord) bei km, damit A/B auf der richtigen Fahrbahn liegen. */
+function umwegKurs_(linie, km, hin) {
+  const a = umwegPunktBeiKm_(linie, km - 0.3), b = umwegPunktBeiKm_(linie, km + 0.3);
+  const p = hin ? a : b, q = hin ? b : a, rad = Math.PI / 180;
+  const y = Math.sin((q[0] - p[0]) * rad) * Math.cos(q[1] * rad);
+  const x = Math.cos(p[1] * rad) * Math.sin(q[1] * rad) - Math.sin(p[1] * rad) * Math.cos(q[1] * rad) * Math.cos((q[0] - p[0]) * rad);
+  return Math.round((Math.atan2(y, x) / rad + 360) % 360);
+}
+
+/**
+ * Aufgaben aus routes.json: je Punkt, Zuordnung und erlaubter Richtung { schluessel, fp, punkt, route, richtung, a, b, s, kursA, kursB }.
+ * fp (Fingerabdruck) = Station + Linie + Fenster – ändert sich etwas davon, wird neu gerechnet. Rein rechnerisch.
+ */
+function umwegAufgaben_(json) {
+  const routen = {};
+  (json.routen || []).forEach(function (r) { routen[r.id] = r; });
+  const aufgaben = [];
+  (json.punkte || []).forEach(function (p) {
+    (p.zuordnung || []).forEach(function (z) {
+      const r = routen[z.route];
+      if (!r || !r.linie || r.linie.length < 2) return;
+      const l = r.linie, anfang = l[0][2], ende = l[l.length - 1][2];
+      const richtungen = p.richtung === 'hin' ? ['hin'] : p.richtung === 'rueck' ? ['rueck'] : ['hin', 'rueck'];
+      richtungen.forEach(function (ri) {
+        const hin = ri === 'hin';
+        const kmA = Math.max(anfang, Math.min(ende, z.km + (hin ? -UMWEG_FENSTER_KM : UMWEG_FENSTER_KM)));
+        const kmB = Math.max(anfang, Math.min(ende, z.km + (hin ? UMWEG_FENSTER_KM : -UMWEG_FENSTER_KM)));
+        if (Math.abs(kmA - kmB) < 2) return;   // Strecke zu kurz
+        aufgaben.push({
+          schluessel: UMWEG_PRAEFIX + p.id + '_' + z.route + '_' + ri,
+          fp: [runde_(p.lat, 5), runde_(p.lon, 5), r.laenge_km, l.length, runde_(z.km, 1), UMWEG_FENSTER_KM, UMWEG_FORMAT].join(','),
+          punkt: p.id, name: p.name, route: z.route, richtung: ri, quer_km: z.quer_km,
+          a: umwegPunktBeiKm_(l, kmA), b: umwegPunktBeiKm_(l, kmB), s: [p.lon, p.lat],
+          kursA: umwegKurs_(l, kmA, hin), kursB: umwegKurs_(l, kmB, hin),
+        });
+      });
+    });
+  });
+  return aufgaben;
+}
+
+/** Umweg aus den zwei Fahrten: [min, km], ab 3 min mit Zuschlag; nie negativ (Fangpunkt-Ungenauigkeit). */
+function umwegWert_(direktS, direktM, mitS, mitM) {
+  let min = Math.max(0, (mitS - direktS) / 60);
+  if (min >= UMWEG_ZUSCHLAG_AB_MIN) min *= UMWEG_ZUSCHLAG;
+  return [runde_(min, 1), runde_(Math.max(0, (mitM - direktM) / 1000), 1)];
+}
+
+/**
+ * Gemerkte Umwege an die Zuordnungen hängen: z.umweg = { hin: [min, km], rueck: [min, km] }. Gibt { fertig, auffaellig } zurück;
+ * auffällig = Umweg viel größer als der Abstand zur Strecke (falsche Richtung, Gegenseite, Koordinate). Rein rechnerisch.
+ */
+function umwegAnhaengen_(json, aufgaben, gemerkt) {
+  const punkte = {};
+  (json.punkte || []).forEach(function (p) { punkte[p.id] = p; });
+  let fertig = 0;
+  const auffaellig = [];
+  aufgaben.forEach(function (a) {
+    const wert = String(gemerkt[a.schluessel] || '').split('|');
+    if (wert[0] !== a.fp || wert.length < 3) return;
+    const min = Number(wert[1]), km = Number(wert[2]);
+    if (!isFinite(min) || !isFinite(km)) return;
+    const z = (punkte[a.punkt].zuordnung || []).filter(function (x) { return x.route === a.route; })[0];
+    if (!z) return;
+    z.umweg = z.umweg || {};
+    z.umweg[a.richtung] = [min, km];
+    fertig++;
+    if (km > 2 * (a.quer_km || 0) + 8 || min > 20) auffaellig.push(a.punkt + ' ' + a.richtung + ' +' + Math.round(min) + ' min/+' + Math.round(km) + ' km');
+  });
+  return { fertig: fertig, auffaellig: auffaellig };
+}
+
+/** Fehlende Umwege mit ORS rechnen, bis das Zeitbudget aufgebraucht ist. merke(schluessel, wert) speichert. */
+function berechneUmwege_(aufgaben, gemerkt, schluessel, merke) {
+  const start = Date.now();
+  const erg = { neu: 0, fehler: [], abgebrochen: false };
+  if (!schluessel) { erg.fehler.push('ORS_API_KEY fehlt'); return erg; }
+  for (let i = 0; i < aufgaben.length; i++) {
+    const a = aufgaben[i];
+    if (String(gemerkt[a.schluessel] || '').split('|')[0] === a.fp) continue;
+    if (Date.now() - start > UMWEG_ZEIT_MS) { erg.abgebrochen = true; break; }
+    try {
+      const direkt = orsSumme_([a.a, a.b], [a.kursA, a.kursB], schluessel);
+      Utilities.sleep(UMWEG_PAUSE_MS);
+      const mit = orsSumme_([a.a, a.s, a.b], [a.kursA, null, a.kursB], schluessel);
+      Utilities.sleep(UMWEG_PAUSE_MS);
+      const w = umwegWert_(direkt.s, direkt.m, mit.s, mit.m);
+      merke(a.schluessel, a.fp + '|' + w[0] + '|' + w[1]);
+      erg.neu++;
+    } catch (e) {
+      erg.fehler.push(a.punkt + ' ' + a.richtung + ': ' + e.message);
+      if (/HTTP (401|403|429)/.test(e.message)) break;   // Schlüssel/Kontingent: weitere Versuche sinnlos
+    }
+  }
+  return erg;
+}
+
+/** ORS-Fahrt (nur Summe): { s, m }. Mit Fahrtrichtung an A/B; lehnt ORS die Richtung ab, einmal ohne. */
+function orsSumme_(koordinaten, kurse, schluessel) {
+  const anfrage = function (mitKurs) {
+    const nutzlast = { coordinates: koordinaten, radiuses: koordinaten.map(function (k, i) { return i === 0 || i === koordinaten.length - 1 ? 350 : 1000; }) };
+    if (mitKurs) nutzlast.bearings = kurse.map(function (k) { return k === null ? [] : [k, 45]; });
+    return UrlFetchApp.fetch(ORS_URL_SUMME, {
+      method: 'post', contentType: 'application/json', headers: { Authorization: schluessel },
+      payload: JSON.stringify(nutzlast), muteHttpExceptions: true,
+    });
+  };
+  let antwort = anfrage(true);
+  if (antwort.getResponseCode() === 400) antwort = anfrage(false);
+  const code = antwort.getResponseCode();
+  if (code !== 200) throw new Error('ORS HTTP ' + code + ': ' + antwort.getContentText().slice(0, 120));
+  const r = (JSON.parse(antwort.getContentText()).routes || [])[0];
+  if (!r || !r.summary) throw new Error('ORS ohne Route');
+  return { s: r.summary.duration || 0, m: r.summary.distance || 0 };
 }
 
 /**

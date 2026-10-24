@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.44.0 — Umweg je Station und Fahrtrichtung (routes.json, vom Script mit ORS gerechnet): Liste und Details zeigen
+                   „+4 min · +2,0 km" statt „Raststätte" / „x km abseits"; Entfernung und Akku rechnen mit dem halben Umweg bis zur
+                   Station statt mit dem Abstand zur Strecke. Ohne Umweg-Wert (fremde Stationen, Route ab hier) wie bisher.
   Version 0.43.0 — Streckenkarte: Staus/Baustellen/Sperrungen aus der TomTom-Abfrage dick auf der Strecke (rot/orange/schwarz,
                    antippen → Art und Verzug), beim Einschalten von „Verkehr" geholt (höchstens alle 10 min) mit Meldung;
                    Schild ohne „Rest" (nur unten); gewählte Station gelb statt größer; nicht erreichbare dunkelgrau.
@@ -795,7 +798,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.43.0';
+    const APP_VERSION = '0.44.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -1037,8 +1040,10 @@
         const abseits = x.z.quer_km > 1 ? x.z.quer_km : 0;
         if (abseits > km) continue;
         const hm = hin ? x.z.hm_hin - pr.hm_hin : pr.hm_rueck - x.z.hm_rueck;
+        // Umweg dieser Fahrtrichtung [min, km] (Script v0.26.0); bis zur Station zählt die Hälfte der Mehr-km
+        const umweg = (x.z.umweg && x.z.umweg[hin ? 'hin' : 'rueck']) || null;
         // km = entlang der Route (Reihenfolge, Lücken), weg = ganzer Weg zur Station (Anzeige)
-        eintraege.push({ punkt: x.punkt, z: x.z, km, weg: km + abseits, hm: Math.max(0, Math.round(hm)) });
+        eintraege.push({ punkt: x.punkt, z: x.z, km, weg: km + (umweg ? umweg[1] / 2 : abseits), hm: Math.max(0, Math.round(hm)), umweg });
       }
       eintraege.sort((a, b) => a.weg - b.weg || a.km - b.km);   // nach angezeigtem Weg, damit die Zahlen aufsteigen
       return { modus: 'strecke', q: pr.q, s: pr.km, pos: pr, rest: hin ? route.laenge_km - pr.km : pr.km, eintraege };
@@ -1524,7 +1529,7 @@
     /** Prognose für einen Listeneintrag; profil = akkuProfil ab der Position mit „Akku jetzt" (ohne Eingabe 100 %). */
     function prognose(e, profil) {
       if (!profil) return null;
-      const umweg = e.z && e.z.quer_km > 1 ? e.z.quer_km : 0;
+      const umweg = e.umweg ? e.umweg[1] / 2 : e.z && e.z.quer_km > 1 ? e.z.quer_km : 0;
       const ankunft = profil.bei(e.z) - (umweg ? profil.flach(umweg) : 0);
       const prozent = Math.max(0, profil.start - ankunft);
       return { kwh: prozent * modell.fahrzeug.kapazitaet_kwh / 100, prozent, ankunft, angenommen: profil.angenommen,
@@ -1581,18 +1586,25 @@
       return kurz || name;
     }
 
-    /** „Raststätte A 5", „3,2 km abseits · A 5" oder „an A 1" — leer, wenn nichts bekannt ist. */
-    function lageText(z) {
+    /** Umweg kurz: „+4 min · +2,0 km" (Christof 24.10.2026: immer so angeben). */
+    function umwegText(u) {
+      return '+' + Math.round(u[0]) + ' min · +' + (u[1] < 10 ? zahl(u[1], 1) : Math.round(u[1])) + ' km';
+    }
+
+    /** „+4 min · +2,0 km Umweg · A 5", sonst „Raststätte A 5", „3,2 km abseits · A 5" oder „an A 1". */
+    function lageText(z, umweg) {
       if (!z) return '';
       const strasse = z.strasse || '';
+      if (umweg) return umwegText(umweg) + ' Umweg' + (strasse ? ' · ' + strasse : '');
       if (z.quer_km > 1) return fmtKm(z.quer_km) + ' km abseits' + (strasse ? ' · ' + strasse : '');
       if (z.raststaette) return 'Raststätte' + (strasse ? ' ' + strasse : '');
       return strasse ? 'an ' + strasse : '';
     }
 
-    /** Für die Liste: Straße steht schon im Titel, hier nur „Raststätte" oder „3,2 km abseits". */
-    function lageKurz(z) {
+    /** Für die Liste: Straße steht schon im Titel, hier nur der Umweg bzw. „Raststätte" oder „3,2 km abseits". */
+    function lageKurz(z, umweg) {
       if (!z) return '';
+      if (umweg) return umwegText(umweg);
       if (z.quer_km > 1) return fmtKm(z.quer_km) + ' km abseits';
       return z.raststaette ? 'Raststätte' : '';
     }
@@ -1708,8 +1720,9 @@
         if (e.punkt.fremd) zeile.append(el('span', 'fremd-marke', 'nicht in deiner Liste'));
         if (pg) zeile.append(el('span', 'akku' + rot, akkuText(pg)));
         const meta = el('span', 'meta');
-        const lage = lageKurz(e.z);
-        if (lage) meta.append(el('span', 'lage' + (e.z.raststaette && !(e.z.quer_km > 1) ? ' rast' : ''), lage), ' · ');
+        const lage = lageKurz(e.z, e.umweg);
+        const direkt = e.umweg ? e.umweg[0] <= 3 : e.z.raststaette && !(e.z.quer_km > 1);   // grün: praktisch kein Umweg
+        if (lage) meta.append(el('span', 'lage' + (direkt ? ' rast' : ''), lage), ' · ');
         meta.append(metaZeile(e));
         zeile.append(meta);
         const preis = preisKurz(e.punkt);
@@ -1856,7 +1869,7 @@
         ['Akkubedarf', pg ? '≈ ' + Math.round(pg.prozent) + ' %' : '–'],
         ['Verbrauch heute', (() => { const tag = tagesKorrektur(); return tag ? tagesText(tag) + ' gegenüber dem Modell (eingerechnet)' : '–'; })()],
       ] : [
-        ['Lage', lageText(e.z) || '–'],
+        ['Lage', lageText(e.z, e.umweg) || '–'],
         ['Akkubedarf', pg ? '≈ ' + Math.round(pg.prozent) + ' %' : '–'],
         ['Notiz', p.notiz || '–'],
         ['Adresse', ohneLand(p.adresse) || '–'],
