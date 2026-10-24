@@ -1,9 +1,10 @@
-# Bundesdaten Ladestationen — Version 1.1.1
+# Bundesdaten Ladestationen — Version 1.2.0
 #
 # Einmal im Monat (am 1., 05:00 UTC) und auf Knopfdruck (Actions → „Bundesdaten Ladestationen" → „Run workflow"):
 # lädt die Schweizer Ladestellen des Bundes (BFE, ich-tanke-strom.ch: AMAG, Migrol, Tesla) und das deutsche
-# Ladesäulenregister (Bundesnetzagentur: EnBW mobility+, Tesla Germany, E.ON Drive, EWE Go), jeweils ab 100 kW, und legt sie als fremde.json ins Repo. Die App zeigt sie bei „Route ab hier" als „nicht in deiner Liste".
+# Ladesäulenregister (Bundesnetzagentur: EnBW mobility+, Tesla Germany, E.ON Drive, EWE Go), jeweils ab 100 kW, und legt sie als fremde.json ins Repo (dazu 11–99 kW als fremde-langsam.json). Die App zeigt sie bei „Route ab hier" als „nicht in deiner Liste".
 #
+# Version 1.2.0 — fremde-langsam.json mit committen (tests/hole-bundesdaten.js 1.5.0, 24.10.2026).
 # Version 1.1.1 — nur Beschreibung: E.ON Drive und EWE Go (tests/hole-bundesdaten.js 1.4.0, 22.10.2026).
 # Version 1.1.0 — Deutschland und AMAG dazu (14.10.2026).
 # Version 1.0.0 — erste Fassung (14.10.2026).
@@ -47,16 +48,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -e
-          if git diff --quiet -- fremde.json; then
+          if git diff --quiet -- fremde.json && [ -z "$(git status --porcelain -- fremde-langsam.json)" ]; then
             echo "Keine Änderung." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add fremde.json
+          git add fremde.json fremde-langsam.json
           git commit -m "fremde.json: Ladestationen aus den Registern (CH, DE) aktualisiert"
           git pull --rebase
           git push
           # Pushes mit dem Action-Schlüssel stoßen GitHub Pages nicht sicher an → Bau ausdrücklich anfordern
           gh api -X POST "repos/${GITHUB_REPOSITORY}/pages/builds" || echo "Pages-Bau nicht angefordert (kommt mit dem nächsten Push)"
-          echo "fremde.json aktualisiert." >> "$GITHUB_STEP_SUMMARY"
+          echo "fremde.json / fremde-langsam.json aktualisiert." >> "$GITHUB_STEP_SUMMARY"

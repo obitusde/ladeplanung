@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.41.0 — Karte „Alle Ladepunkte": Schalter „ab 11 kW" (sichtbar mit „Andere Anbieter") zeigt auch langsamere
+                   Säulen von EnBW, E.ON und EWE Go (fremde-langsam.json, ≈ 2100, erst beim Einschalten geladen); klein und
+                   grau, Schild erst beim Hineinzoomen. Standard bleibt schnell (ab 100 kW).
   Version 0.40.2 — Andere Anbieter um E.ON und EWE Go (Deutschland, ab 100 kW) erweitert (fremde.json); Info-Text angepasst.
   Version 0.40.1 — Ladepreis E.ON (über EWE Go 0,62 €/kWh, preise.json); Preis-Zuordnung über den Stationsnamen, wenn das
                    Betreiber-Feld zu keinem Anbieter passt (E.ON Schallstadt).
@@ -283,9 +286,9 @@
     /* Alle Ladepunkte (v0.40.0): Karte ohne Route, Ortssuche, große Zoom-Knöpfe */
     #alle-seite { position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column; background: var(--grund); padding-top: env(safe-area-inset-top); }
     #alle-seite .kopf { display: flex; gap: 6px; padding: 8px 10px 4px; }
-    #alle-seite .kopf .knopf { min-height: 44px; }
+    #alle-seite .kopf .knopf { min-height: 44px; padding: 0 10px; font-size: 16px; white-space: nowrap; }
     #alle-fremde { margin-left: auto; }
-    #alle-fremde[aria-pressed="true"] { background: var(--akzent); color: var(--akzent-text); border-color: var(--akzent); }
+    #alle-fremde[aria-pressed="true"], #alle-langsam[aria-pressed="true"] { background: var(--akzent); color: var(--akzent-text); border-color: var(--akzent); }
     .alle-suche { display: flex; gap: 6px; padding: 4px 10px 8px; }
     .alle-suche input { flex: 1; min-width: 0; min-height: 44px; font-size: 18px; padding: 0 10px; border: 2px solid var(--linie); border-radius: 10px; background: var(--flaeche); color: var(--text); }
     .alle-suche .knopf { min-height: 44px; }
@@ -607,6 +610,7 @@
     <div class="kopf">
       <button id="alle-zurueck" class="knopf" type="button">← Zurück</button>
       <button id="alle-fremde" class="knopf" type="button" aria-pressed="false">Andere Anbieter</button>
+      <button id="alle-langsam" class="knopf" type="button" aria-pressed="false" hidden>ab 11 kW</button>
     </div>
     <form id="alle-suche" class="alle-suche">
       <input id="alle-ort" type="search" placeholder="Ort suchen, z. B. Basel" enterkeyhint="search" autocomplete="off" spellcheck="false">
@@ -769,7 +773,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.40.2';
+    const APP_VERSION = '0.41.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -1839,10 +1843,11 @@
         ['Richtung', { hin: 'nur Hinfahrt', rueck: 'nur Rückfahrt', beide: 'beide' }[p.richtung] || p.richtung],
       ];
       if (p.fremd) felder.push(['Quelle', (String(p.id).startsWith('bnetza') ? 'Ladesäulenregister der Bundesnetzagentur'
-        : 'Bundesdaten (ich-tanke-strom.ch)') + ', Stand ' + datumText(fremde && fremde.stand) + ' – nicht in deiner Liste']);
+        : 'Bundesdaten (ich-tanke-strom.ch)') + ', Stand ' + datumText(p.langsam ? fremdeLangsam && fremdeLangsam.stand : fremde && fremde.stand) + ' – nicht in deiner Liste']);
       const dl = $('d-felder');
       dl.replaceChildren();
-      for (const [k, v] of felder) dl.append(el('dt', '', k), el('dd', '', v));
+      // von der Karte „Alle Ladepunkte" (nicht an der Strecke): leere Zeilen wie Lage/Akkubedarf weglassen
+      for (const [k, v] of felder) if (!e.ausAlle || (v && v !== '–')) dl.append(el('dt', '', k), el('dd', '', v));
 
       // Ans Auto senden nur mit Webhook aus Cupra-Ziel; dann ist „In My CUPRA öffnen" der zweite Weg
       const mitWebhook = !!cupraWebhook();
@@ -3710,6 +3715,28 @@
 
     const ALLE_RADIUS_M = 100e3, ALLE_SCHILDER_MAX = 150;
     let alleKarte = null, alleEbene = null, alleSuchMarke = null, alleWahl = null, alleMarken = [];
+    let fremdeLangsam = null;   // fremde-langsam.json (11–99 kW), erst beim Einschalten von „ab 11 kW" geladen
+    const ALLE_LANGSAM_SCHILD_ZOOM = 12;   // langsame bekommen erst ab hier ein Schild (sonst verdecken sie die schnellen)
+
+    function alleKnoepfe() {
+      $('alle-fremde').setAttribute('aria-pressed', String(!!zustand.einst.alleFremde));
+      $('alle-langsam').hidden = !zustand.einst.alleFremde;
+      $('alle-langsam').setAttribute('aria-pressed', String(!!zustand.einst.alleLangsam));
+    }
+
+    /** Langsame Säulen einmal laden (≈ 430 KB); ohne Netz bleibt es bei den schnellen. */
+    async function ladeFremdeLangsam() {
+      if (fremdeLangsam) return true;
+      try {
+        const antwort = await fetch('fremde-langsam.json?t=' + Date.now(), { cache: 'no-store' });
+        if (!antwort.ok) throw new Error('HTTP ' + antwort.status);
+        fremdeLangsam = await antwort.json();
+        return true;
+      } catch (err) {
+        toast('Langsame Ladesäulen nicht ladbar – keine Verbindung?');
+        return false;
+      }
+    }
 
     async function zeigeAlle() {
       if ($('alle-seite').hidden) { $('alle-seite').hidden = false; history.pushState({ alle: true }, ''); }
@@ -3717,8 +3744,9 @@
       alleWahl = null;
       $('alle-wahl').hidden = true;
       $('alle-text').hidden = false;
-      $('alle-fremde').setAttribute('aria-pressed', String(!!zustand.einst.alleFremde));
+      alleKnoepfe();
       $('alle-text').textContent = 'Karte wird geladen …';
+      if (zustand.einst.alleFremde && zustand.einst.alleLangsam) await ladeFremdeLangsam();
       try { await ladeLeaflet(); } catch (err) { $('alle-text').textContent = err.message; return; }
       if (!alleKarte) {
         alleKarte = L.map('alle-karte', { zoomControl: false, renderer: L.canvas({ tolerance: 12 }) });
@@ -3743,10 +3771,11 @@
     function allePunkte() {
       const eigene = ((daten && daten.punkte) || []).filter(p => isFinite(p.lat) && isFinite(p.lon));
       if (!zustand.einst.alleFremde || !fremde || !fremde.punkte) return eigene;
-      const fremd = fremde.punkte
-        .filter(f => !eigene.some(p => Math.abs(p.lat - f.lat) < 0.01 && haversine(p.lat, p.lon, f.lat, f.lon) <= 0.15))
-        .map(f => ({ ...f, fremd: true }));
-      return eigene.concat(fremd);
+      const neben = f => eigene.some(p => Math.abs(p.lat - f.lat) < 0.01 && haversine(p.lat, p.lon, f.lat, f.lon) <= 0.15);
+      const fremd = fremde.punkte.filter(f => !neben(f)).map(f => ({ ...f, fremd: true }));
+      const langsam = zustand.einst.alleLangsam && fremdeLangsam && fremdeLangsam.punkte
+        ? fremdeLangsam.punkte.filter(f => !neben(f)).map(f => ({ ...f, fremd: true, langsam: true })) : [];
+      return eigene.concat(fremd, langsam);
     }
 
     function zeichneAlle() {
@@ -3756,33 +3785,36 @@
       const akzent = getComputedStyle(document.documentElement).getPropertyValue('--akzent').trim();
       const punkte = allePunkte();
       // unwichtige zuerst zeichnen, damit deine Stationen oben liegen
-      const reihe = punkte.slice().sort((x, y) => vorrang(y) - vorrang(x));
+      const rang = p => vorrang(p) + (p.langsam ? 100 : 0);
+      const reihe = punkte.slice().sort((x, y) => rang(y) - rang(x));
       alleMarken = [];
       for (const p of reihe) {
         const gewaehlt = !!(alleWahl && alleWahl.id === p.id);
         const m = L.circleMarker([p.lat, p.lon], {
-          radius: gewaehlt ? 11 : p.fremd ? 6 : 8, color: gewaehlt ? '#000000' : p.fremd ? '#666666' : akzent, weight: gewaehlt ? 3 : 2,
-          fillColor: p.fremd ? '#ffffff' : akzent, fillOpacity: 0.95, dashArray: p.fremd ? '4 3' : null,
+          radius: gewaehlt ? 11 : p.langsam ? 4 : p.fremd ? 6 : 8, color: gewaehlt ? '#000000' : p.langsam ? '#777777' : p.fremd ? '#666666' : akzent,
+          weight: gewaehlt ? 3 : p.langsam ? 1.5 : 2, fillColor: p.langsam ? '#cfcfcf' : p.fremd ? '#ffffff' : akzent, fillOpacity: 0.95,
+          dashArray: p.fremd && !p.langsam ? '4 3' : null,
         }).addTo(alleEbene);
         m.on('click', () => waehleAlle(p));
-        alleMarken.push({ m, p, text: (p.favorit ? '★ ' : '') + (firmaVon(p) || kurzname(p.name)), vorrang: vorrang(p), gewaehlt });
+        alleMarken.push({ m, p, text: (p.favorit ? '★ ' : '') + (firmaVon(p) || kurzname(p.name)), vorrang: rang(p), gewaehlt });
       }
       if (alleSuchMarke) alleSuchMarke.addTo(alleEbene);
       // Überdecken sich Schilder, bleibt: gewählte, dann deine (★ zuerst), dann nach Firma
       alleMarken.sort((x, y) => (y.gewaehlt - x.gewaehlt) || x.vorrang - y.vorrang);
-      const eigene = punkte.filter(p => !p.fremd).length;
-      $('alle-text').textContent = eigene + ' eigene Ladepunkte' + (punkte.length > eigene ? ' + ' + (punkte.length - eigene) + ' andere' : '') + ' – antippen';
+      const eigene = punkte.filter(p => !p.fremd).length, langsam = punkte.filter(p => p.langsam).length;
+      $('alle-text').textContent = eigene + ' eigene Ladepunkte' + (punkte.length > eigene ? ' + ' + (punkte.length - eigene - langsam) + ' andere' : '') +
+        (langsam ? ' + ' + langsam + ' langsamere (grau)' : '') + ' – antippen';
       ordneAlleSchilder();
     }
 
     /** Schilder nur im sichtbaren Ausschnitt, höchstens 150, überdeckte ausgeblendet; bei jedem Verschieben/Zoomen neu. */
     function ordneAlleSchilder() {
       if (!alleKarte || $('alle-seite').hidden) return;
-      const sicht = alleKarte.getBounds().pad(0.1), belegt = [];
+      const sicht = alleKarte.getBounds().pad(0.1), belegt = [], nah = alleKarte.getZoom() >= ALLE_LANGSAM_SCHILD_ZOOM;
       let n = 0;
       for (const s of alleMarken) {
         let zeigen = false;
-        if (n < ALLE_SCHILDER_MAX && sicht.contains(s.m.getLatLng())) {
+        if (n < ALLE_SCHILDER_MAX && (nah || !s.p.langsam || s.gewaehlt) && sicht.contains(s.m.getLatLng())) {
           const p = alleKarte.latLngToContainerPoint(s.m.getLatLng());
           const breite = s.text.length * 8 + 14, hoehe = 22;
           const box = { x0: p.x - breite / 2, x1: p.x + breite / 2, y0: p.y - 12 - hoehe, y1: p.y - 8 };
@@ -4133,7 +4165,17 @@
       $('alle-fremde').addEventListener('click', () => {
         zustand.einst.alleFremde = !zustand.einst.alleFremde;
         speichere();
-        $('alle-fremde').setAttribute('aria-pressed', String(zustand.einst.alleFremde));
+        alleKnoepfe();
+        zeichneAlle();
+      });
+      $('alle-langsam').addEventListener('click', async () => {
+        zustand.einst.alleLangsam = !zustand.einst.alleLangsam;
+        speichere();
+        alleKnoepfe();
+        if (zustand.einst.alleLangsam && !fremdeLangsam) {
+          $('alle-text').textContent = 'Langsamere Ladesäulen werden geladen …';
+          if (!(await ladeFremdeLangsam())) { zustand.einst.alleLangsam = false; speichere(); alleKnoepfe(); }
+        }
         zeichneAlle();
       });
       $('karte-details').addEventListener('click', () => {

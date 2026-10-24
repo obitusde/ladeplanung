@@ -56,6 +56,10 @@ const csv = '﻿Ladesäulenregister Bundesnetzagentur;;;\r\nHinweis: ;;;\r\nLetz
   zeileDE('7', 'Tesla Germany GmbH', '', 'Außer Betrieb', '8', '250', 'X', '1', '70000', 'Stuttgart', '48,7', '9,1'),
 ].join('\r\n') + '\r\n';
 const de = auswertenDE(csv);
+// langsam (11–99 kW, seit 1.5.0): nur EnBW Klein mit 22 kW, eigene Kennung
+const deLangsam = auswertenDE(csv, true);
+pruefe(deLangsam.length === 1 && deLangsam[0].name === 'EnBW Klein' && deLangsam[0].kw === 22 && deLangsam[0].id.startsWith('bnetza-11-'),
+  'Deutschland langsam: ' + JSON.stringify(deLangsam));
 pruefe(de.length === 2, 'Deutschland: 2 Standorte erwartet, waren ' + de.length + ': ' + de.map(p => p.name).join(', '));
 const langenau = de.find(p => p.betreiber === 'EnBW');
 pruefe(langenau && langenau.name === 'EnBW Langenau' && langenau.anzahl === 8 && langenau.kw === 300, 'EnBW Langenau zusammengefasst: ' + JSON.stringify(langenau));

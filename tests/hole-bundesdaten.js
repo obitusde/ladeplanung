@@ -1,4 +1,6 @@
 // Ladestationen aus amtlichen Registern → fremde.json
+// Version 1.5.0 (24.10.2026) — zusätzlich fremde-langsam.json: Standorte mit 11–99 kW (ohne Tesla = Destination Charger,
+//                              meist nur für Teslas), für den Schalter „ab 11 kW“ auf der Karte „Alle Ladepunkte“.
 // Version 1.4.0 (22.10.2026) — Deutschland zusätzlich E.ON Drive (Infrastructure, Germany) und EWE Go (auch HOCHTIEF-
 //                              Ladepartner), Christof: „E.ON und EWE Go ergänzen“.
 // Version 1.3.0 (17.10.2026) — gleiche Namen mit der Straße unterscheiden („EnBW Pfungstadt (Raststätte Ost)“).
@@ -21,6 +23,7 @@ const CH_URL = 'https://data.geo.admin.ch/ch.bfe.ladestellen-elektromobilitaet/d
 const DE_SEITE = 'https://www.bundesnetzagentur.de/DE/Fachthemen/ElektrizitaetundGas/E-Mobilitaet/start.html';
 const SC_URL = 'https://supercharge.info/service/supercharge/allSites';
 const MIN_KW = 100;
+const MIN_KW_LANGSAM = 11;   // fremde-langsam.json: 11–99 kW (Christof 24.10.2026)
 const SC_ZUORDNUNG_M = 500;   // Tesla-Standort und Eintrag bei supercharge.info: höchstens so weit auseinander
 const STANDORT_M = 80;   // Ladepunkte eines Betreibers bis 80 m auseinander = ein Standort
 const KENNUNG = 'ladeplanung (github.com/obitusde/ladeplanung)';
@@ -62,11 +65,12 @@ function sammler() {
   };
 }
 
-function alsPunkte(standorte, praefix) {
+/** Standorte → Punkte; langsam = nur 11–99 kW (höchste Leistung am Standort), sonst ab 100 kW. */
+function alsPunkte(standorte, praefix, langsam) {
   return standorte
-    .filter(s => s.kw >= MIN_KW)
+    .filter(s => langsam ? s.kw >= MIN_KW_LANGSAM && s.kw < MIN_KW && s.betreiber !== 'Tesla' : s.kw >= MIN_KW)
     .map(s => ({
-      id: praefix + '-' + s.lat.toFixed(4) + '-' + s.lon.toFixed(4),
+      id: praefix + (langsam ? '-11' : '') + '-' + s.lat.toFixed(4) + '-' + s.lon.toFixed(4),   // langsame eigene Kennung
       name: s.name, betreiber: s.betreiber, lat: Number(s.lat.toFixed(6)), lon: Number(s.lon.toFixed(6)),
       kw: Math.round(s.kw), anzahl: s.anzahl, adresse: s.adresse,
     }))
@@ -96,7 +100,7 @@ function standortName(betreiber, name, ort) {
   return String(name).replace(/\s*\|\s*/g, ' ').replace(/\s+\d+\s*$/, '').replace(/\s+/g, ' ').trim();
 }
 
-function auswerten(bund) {
+function auswerten(bund, langsam) {
   const s = sammler();
   for (const block of bund.EVSEData || []) {
     for (const r of [].concat(block.EVSEDataRecord || [])) {
@@ -111,7 +115,7 @@ function auswerten(bund) {
       s.hinzu(betreiber, lat, lon, kw, 1, () => ({ name: standortName(betreiber, name, a.City), adresse: adresse(a.Street, a.PostalCode, a.City, 'Schweiz') }));
     }
   }
-  return alsPunkte(s.alle, 'bfe');
+  return alsPunkte(s.alle, 'bfe', langsam);
 }
 
 // ---------------------------------------------------------------------------
@@ -160,7 +164,7 @@ const firmenName = (anzeige, betreiber) => !!anzeige && (/\b(GmbH|AG|KG)\b/.test
 
 const zahlDE = s => { const t = String(s || '').trim(); return Number(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t); };
 
-function auswertenDE(text) {
+function auswertenDE(text, langsam) {
   const zeilen = zerlegeCsv(String(text).replace(/^﻿/, ''));
   const k = zeilen.findIndex(z => z[0] === 'Ladeeinrichtungs-ID');
   if (k < 0) throw new Error('Kopfzeile „Ladeeinrichtungs-ID" nicht gefunden – Format geändert?');
@@ -185,7 +189,7 @@ function auswertenDE(text) {
       adresse: adresse(sauber(f[i.strasse]) + (f[i.nr] ? ' ' + sauber(f[i.nr]) : ''), f[i.plz], ort, 'Deutschland'),
     }));
   }
-  return alsPunkte(s.alle, 'bnetza');
+  return alsPunkte(s.alle, 'bnetza', langsam);
 }
 
 // ---------------------------------------------------------------------------
@@ -253,7 +257,8 @@ async function lade(url) {
 
 async function main() {
   const [chDatei, deDatei] = process.argv.slice(2);
-  const ch = auswerten(JSON.parse(alsText(chDatei ? fs.readFileSync(chDatei) : await lade(CH_URL))));
+  const chDaten = JSON.parse(alsText(chDatei ? fs.readFileSync(chDatei) : await lade(CH_URL)));
+  const ch = auswerten(chDaten);
   if (ch.length < 20) throw new Error('Schweiz: nur ' + ch.length + ' Standorte – Datenformat geändert? fremde.json bleibt unverändert');
 
   let deStand = '', deText;
@@ -276,20 +281,30 @@ async function main() {
   const tesla = nurOffeneTesla(ch.concat(de), sites);
   const punkte = eindeutigeNamen(tesla.bleiben);
   if (tesla.entfernt.length) console.log('Tesla ohne Fremdfahrzeuge/geschlossen, weggelassen: ' + tesla.entfernt.join(', '));
-  const ziel = path.join(__dirname, '..', 'fremde.json');
+  const quellen = { CH: 'BFE, ich-tanke-strom.ch', DE: 'Bundesnetzagentur, Ladesäulenregister' + (deStand ? ' vom ' + deStand : ''),
+    Tesla: 'supercharge.info (nur offen für andere Autos)' };
+  schreibe('fremde.json', punkte, MIN_KW, null, quellen);
+
+  // 11–99 kW für den Schalter „ab 11 kW“ (ohne Tesla, die Destination Charger sind meist nur für Teslas)
+  const langsam = eindeutigeNamen(auswerten(chDaten, true).concat(auswertenDE(deText, true)));
+  if (langsam.length < 300) throw new Error('langsame Stationen: nur ' + langsam.length + ' – Datenformat geändert? fremde-langsam.json bleibt unverändert');
+  schreibe('fremde-langsam.json', langsam, MIN_KW_LANGSAM, MIN_KW, { CH: quellen.CH, DE: quellen.DE });
+}
+
+/** Schreibt eine Datei im Format 2; Stand bleibt, wenn sich die Punkte nicht geändert haben. */
+function schreibe(datei, punkte, minKw, maxKw, quellen) {
+  const ziel = path.join(__dirname, '..', datei);
   let alt = null;
   try { alt = JSON.parse(fs.readFileSync(ziel, 'utf8')); } catch (e) { /* erste Fassung */ }
   const gleich = alt && JSON.stringify(alt.punkte) === JSON.stringify(punkte);
   const stand = gleich ? alt.stand : new Date().toISOString().slice(0, 10);
-  const quellen = { CH: 'BFE, ich-tanke-strom.ch', DE: 'Bundesnetzagentur, Ladesäulenregister' + (deStand ? ' vom ' + deStand : ''),
-    Tesla: 'supercharge.info (nur offen für andere Autos)' };
   // Ein Punkt je Zeile: lesbar im Diff, aber deutlich kleiner als eingerückt (≈ 2000 Standorte)
-  const text = '{"version":2,"stand":' + JSON.stringify(stand) + ',"min_kw":' + MIN_KW + ',"quellen":' + JSON.stringify(quellen) +
-    ',"punkte":[\n' + punkte.map(p => JSON.stringify(p)).join(',\n') + '\n]}\n';
+  const text = '{"version":2,"stand":' + JSON.stringify(stand) + ',"min_kw":' + minKw + (maxKw ? ',"max_kw":' + maxKw : '') +
+    ',"quellen":' + JSON.stringify(quellen) + ',"punkte":[\n' + punkte.map(p => JSON.stringify(p)).join(',\n') + '\n]}\n';
   fs.writeFileSync(ziel, text);
   const z = {};
   punkte.forEach(p => { const k = (p.id.startsWith('bfe') ? 'CH ' : 'DE ') + p.betreiber; z[k] = (z[k] || 0) + 1; });
-  console.log('fremde.json: ' + punkte.length + ' Standorte ' + JSON.stringify(z) + (gleich ? ' (unverändert)' : ' (neu, Stand ' + stand + ')'));
+  console.log(datei + ': ' + punkte.length + ' Standorte ' + JSON.stringify(z) + (gleich ? ' (unverändert)' : ' (neu, Stand ' + stand + ')'));
 }
 
 module.exports = { auswerten, auswertenDE, standortName, betreiberVon, betreiberDE, neuesterCsvLink, zerlegeCsv, nurOffeneTesla, eindeutigeNamen };
