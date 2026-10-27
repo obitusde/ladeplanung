@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!--
   Ladeplanung Cupra Born — PWA
+  Version 0.46.0 — Liste kompakter (Christof 27.10.2026, 1a 2a): Ladepunkte „4×300 kW", Preis ohne Umbruch, App-Link nur
+                   „App ›" (klein), Notiz gelb hinterlegt.
   Version 0.45.0 — Station mit Umweg über 15 min (auf dieser Strecke und Richtung) grau wie „nicht erreichbar", auf der Karte
                    klein ohne Schild; zählt nicht als „letzte vor Reserve" und nicht als nächste Station.
   Version 0.44.0 — Umweg je Station und Fahrtrichtung (routes.json, vom Script mit ORS gerechnet): Liste und Details zeigen
@@ -176,6 +178,8 @@
       --warnung: #7a0000;
       --warnung-grund: #ffe3e3;
       --rot: #c00018;
+      --notiz: #ffe45c;
+      --notiz-text: #000000;
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -190,6 +194,8 @@
         --warnung: #ffc9c9;
         --warnung-grund: #3d0b0b;
         --rot: #ff6b6b;
+        --notiz: #e6c200;
+        --notiz-text: #000000;
       }
     }
     * { box-sizing: border-box; }
@@ -274,12 +280,12 @@
     .eintrag .km small { font-size: 14px; font-weight: 600; margin-left: 2px; }
     .eintrag .name { font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
     .eintrag .akku { font-weight: 700; font-variant-numeric: tabular-nums; }
-    .eintrag .meta { color: var(--text); font-variant-numeric: tabular-nums; }
+    .eintrag .meta { color: var(--text); font-size: 15px; font-variant-numeric: tabular-nums; }   /* Umweg + Ladepunkte in einer Zeile */
     .eintrag .luecke { color: var(--leise); font-size: 14px; }
     .eintrag .marke { justify-self: start; margin-top: 2px; padding: 0 8px; border-radius: 6px; background: var(--akzent); color: var(--akzent-text); font-weight: 700; font-size: 14px; }
     .eintrag .notiz {
       grid-column: 1 / -1; margin-top: 4px; padding: 0 8px; border-radius: 6px;
-      background: var(--flaeche); border: 1px solid var(--linie); overflow-wrap: anywhere;
+      background: var(--notiz); color: var(--notiz-text); border: 1px solid var(--linie); overflow-wrap: anywhere;   /* gelb: McDo & Co. fallen auf (Christof 27.10.2026) */
     }
     .rot, .eintrag .rot { color: var(--rot); }
     /* Nicht erreichbar: grau (Christof, 14.10.2026); nicht in der eigenen Liste: gestrichelt */
@@ -405,7 +411,8 @@
     .tarife { display: grid; grid-template-columns: max-content 1fr; column-gap: 12px; row-gap: 1px; margin: 2px 0; font-variant-numeric: tabular-nums; }
     .tarife .tname { white-space: nowrap; color: var(--leise); }
     .eintrag .preis { color: var(--leise); font-size: 15px; font-variant-numeric: tabular-nums; }
-    .eintrag .app { color: var(--akzent); font-weight: 700; white-space: nowrap; }
+    .eintrag .app { color: var(--akzent); font-weight: 700; font-size: 14px; white-space: nowrap; }
+    .eintrag .betrag { white-space: nowrap; }
     .menue { display: grid; gap: 8px; }
     .menue .knopf { display: flex; align-items: center; justify-content: flex-start; gap: 10px; text-decoration: none; color: var(--text); font-size: 19px; }
     .menue .knopf.haupt { justify-content: center; color: var(--akzent-text); }
@@ -800,7 +807,7 @@
   <script>
     'use strict';
 
-    const APP_VERSION = '0.45.0';
+    const APP_VERSION = '0.46.0';
     const QUER_MAX_KM = 10;         // darüber: Luftlinien-Hinweis (passend zum 10-km-Korridor der Zuordnung)
     const AUSBLENDEN_KM = 1;        // Punkte bis 1 km voraus ausblenden — dort steht man gerade
     const ERDRADIUS_KM = 6371.0088;
@@ -1629,8 +1636,9 @@
     function metaZeile(e) {
       const teile = [];
       const p = e.punkt, tt = ttInfo(p);
-      if (tt && tt.alle && tt.maxKw) teile.push(tt.alle + ' × bis ' + tt.maxKw + ' kW');   // von TomTom (beim Öffnen der Details gemerkt)
-      else if (p.kw) teile.push((p.anzahl ? p.anzahl + ' × ' : '') + p.kw + ' kW');
+      // kurz „4×300 kW", damit Umweg und Ladepunkte in eine Zeile passen (Christof 27.10.2026)
+      if (tt && tt.alle && tt.maxKw) teile.push(tt.alle + '×' + tt.maxKw + ' kW');   // von TomTom (beim Öffnen der Details gemerkt)
+      else if (p.kw) teile.push((p.anzahl ? p.anzahl + '×' : '') + p.kw + ' kW');
       else if (p.anzahl) teile.push(p.anzahl + ' Ladepunkte');
       const b = e.punkt.betreiber;
       if (b && kurzname(e.punkt.name).toLowerCase().indexOf(b.toLowerCase()) === -1) teile.push(b);
@@ -1733,9 +1741,11 @@
         const preis = preisKurz(e.punkt);
         const anbieter = preisEintrag(e.punkt);
         if (preis || (anbieter && anbieter.app)) {
-          const zeilePreis = el('span', 'preis', preis);
+          const zeilePreis = el('span', 'preis');
+          if (preis) zeilePreis.append(el('span', 'betrag', preis));
           if (anbieter && anbieter.app) {
-            const link = el('span', 'app', (preis ? ' · ' : '') + 'App ' + anbieter.app.name + ' ›');
+            if (preis) zeilePreis.append(' · ');
+            const link = el('span', 'app', 'App ›');   // Anbieter steht schon im Namen (Christof 27.10.2026)
             link.addEventListener('click', ev => { ev.stopPropagation(); location.href = appUrl(anbieter.app); });
             zeilePreis.append(link);
           }
