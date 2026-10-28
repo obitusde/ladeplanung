@@ -97,5 +97,12 @@ pruefe(zs.length === 2 && !zs.find(z => z.route === 'abMorges').richtung && zs.f
 const auf2 = gs.umwegAufgaben_(ex);
 pruefe(auf2.length === 2 && auf2.find(a => a.route === 'gegen').richtung === 'rueck', 'Umweg nach Richtung je Strecke: ' + JSON.stringify(auf2.map(a => [a.route, a.richtung])));
 
+// Fahrtrichtung knapp westlich von Nord: gerundet 360 → muss 0 sein (ORS lehnt 360 ab, p030 am 28.10.2026)
+const nord = [];
+for (let km = 0; km <= 10; km++) nord.push([46 + km / 111.2, 7 - km * 0.00006, km, 0, 0]);
+const kursNord = gs.umwegKurs_(nord, 5, true);
+pruefe(kursNord >= 0 && kursNord < 360, 'Kurs knapp unter 360° gibt 0: ' + kursNord);
+pruefe(gs.umwegKurs_(nord, 5, false) === 180, 'Kurs Gegenrichtung 180°: ' + gs.umwegKurs_(nord, 5, false));
+
 console.log(fehler === 0 ? 'Alle Prüfungen bestanden.' : fehler + ' Prüfungen fehlgeschlagen.');
 process.exit(fehler === 0 ? 0 : 1);

@@ -1,6 +1,7 @@
 /**
  * Ladeplanung Cupra Born — Apps Script, an das Sheet „Ladestationen" gebunden.
  *
+ * Version 0.27.2 — Umwege: Fahrtrichtung 360° als 0° (ORS lehnte 360 mit HTTP 500 ab, p030 hin).
  * Version 0.27.1 — Umwege schneller: 1,1 s Pause je Abfrage (Abfrage selbst ≈ 0,5 s → unter 40/min), 4,5 min je Lauf
  *                  (erster echter Lauf 24.10.2026: 66 von 219 in einem Lauf).
  * Version 0.27.0 — Richtung je Strecke: Die Richtung im Sheet gilt für die Strecke ab Morges; fährt eine andere Strecke an der
@@ -81,7 +82,7 @@
  * Grundlage: Umsetzungsbrief v5.0, Stufe 1.
  */
 
-const VERSION = '0.27.1';
+const VERSION = '0.27.2';
 
 // Das Sheet „Ladestationen". In der Web-App gibt es kein aktives Sheet, daher Rückfall auf die ID.
 const SHEET_ID = '1t7mFq1DEODDg_8TQ3rWCGfjkNyJXm0jL5kZSI2AWeaE';
@@ -2860,7 +2861,7 @@ function umwegKurs_(linie, km, hin) {
   const p = hin ? a : b, q = hin ? b : a, rad = Math.PI / 180;
   const y = Math.sin((q[0] - p[0]) * rad) * Math.cos(q[1] * rad);
   const x = Math.cos(p[1] * rad) * Math.sin(q[1] * rad) - Math.sin(p[1] * rad) * Math.cos(q[1] * rad) * Math.cos((q[0] - p[0]) * rad);
-  return Math.round((Math.atan2(y, x) / rad + 360) % 360);
+  return Math.round(Math.atan2(y, x) / rad + 360) % 360;   // erst runden, dann % 360 (359,6 → 360 lehnt ORS ab, p030 am 28.10.2026)
 }
 
 /**
